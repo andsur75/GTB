@@ -1,4 +1,4 @@
-// Mouse steering: hidden cursor, a world-locked marker that relative mouse motion swings round the car,
+// Mouse steering while the right button is held: hidden cursor, a world-locked marker that relative mouse motion swings round the car,
 // the car turning onto the marker direction and holding it, A/D winning over the mouse, cursor restored off the road.
 import { launch } from './harness.mjs';
 const t = await launch({ html: process.argv[2], out: process.argv[3] });
@@ -19,9 +19,13 @@ await t.eval(() => {
 await t.press('KeyF'); await t.wait(1400);
 const st = () => t.eval(() => { const X = PG.gta, c = X.player.car; return { th: c.th, aim: X.player.aim, r: c.dv.r, rot: X.lastView.rot, cursor: document.getElementById('game').style.cursor }; });
 // relative mouse motion, as a physical mouse reports it (also while the pointer is locked)
-const swing = dir => t.eval(d => { const X = PG.gta, a = X.player.aim + X.lastView.rot; document.getElementById('game').dispatchEvent(new PointerEvent('pointermove', { pointerType: 'mouse', movementX: -Math.sin(a) * 9 * d, movementY: Math.cos(a) * 9 * d, clientX: 650, clientY: 300, bubbles: true })); }, dir);
+const swing = dir => t.eval(d => { const X = PG.gta, a = X.player.aim + X.lastView.rot; document.getElementById('game').dispatchEvent(new PointerEvent('pointermove', { pointerType: 'mouse', movementX: -Math.sin(a) * 9 * d, movementY: Math.cos(a) * 9 * d, clientX: 650, clientY: 300, button: -1, buttons: 2, bubbles: true })); }, dir);
+const rmb = down => t.eval(d => document.getElementById('game').dispatchEvent(new PointerEvent(d ? 'pointerdown' : 'pointerup', { pointerType: 'mouse', button: 2, buttons: d ? 2 : 0, clientX: 650, clientY: 300, bubbles: true })), down);
 let s = await st();
-check(s.cursor === 'none', 'the OS cursor is hidden while driving');
+check(s.cursor === '', 'the cursor shows while driving without RMB');
+await rmb(true); await t.wait(250);
+s = await st();
+check(s.cursor === 'none', 'the OS cursor hides while RMB is held');
 check(Math.abs(wrap(s.aim - s.th)) < 0.05, 'the marker starts straight ahead');
 const a0 = s.aim;
 for (let k = 0; k < 400 && Math.abs(wrap((await st()).aim - a0)) < Math.PI / 2 - 0.05; k++) await swing(1);
@@ -51,6 +55,8 @@ check(Math.abs(wrap(s.th - s.aim)) < 0.3 && Math.abs(wrap(s.aim - h1)) < 0.6, `a
 await t.press('KeyP'); await t.wait(200);
 check((await st()).cursor === '', 'the cursor is back while paused');
 await t.press('KeyP'); await t.wait(200);
+await rmb(false); await t.wait(200);
+check((await st()).cursor === '', 'the cursor is back once RMB is let go');
 await t.shot('steering');
 check(t.errors.length === 0, 'no console errors' + (t.errors.length ? ': ' + t.errors.slice(0, 3).join(' | ') : ''));
 await t.close();
