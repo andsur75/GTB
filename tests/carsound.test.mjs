@@ -27,11 +27,14 @@ check('W raises rpm and speed', rev.rpm > idle + 1000 && rev.kmh > 5, { idle, re
 check('gearbox shifts up', later.gear > 1, later);
 check('lifting drops rpm', lift < rev.rpm, { lift });
 await t.eval(() => { const i = document.getElementById('cs-cyl'); i.value = 12; i.dispatchEvent(new Event('input')); });
-check('slider sets param and saves', await t.eval(() => PG.carSound.P.cyl === 12 && JSON.parse(localStorage.getItem('gtb-carsound-v1')).cyl === 12));
+check('slider sets param and saves', await t.eval(() => PG.carSound.P.cyl === 12 && JSON.parse(localStorage.getItem('gtb-carsound-v2')).cyl === 12));
 await t.eval(() => { const s = document.getElementById('cs-preset'); s.value = 'Test Engine'; s.dispatchEvent(new Event('change')); });
 check('preset applies', await t.eval(() => PG.carSound.P.redline === 9300 && PG.carSound.P.harm2 === 0.89 && PG.carSound.P.sub2 === 0 && document.getElementById('cs-redline').value === '9300'));
 await t.press('Escape');
 check('Esc back to title', await t.eval(() => PG.ui.screen() === 'title'));
+const prof = await t.eval(() => { const C = PG.carSound; return { bus: C.profileFor('bus').pitch, furia: C.profileFor('furia').pitch, main: C.profileFor('main').pitch, cars: Object.keys(C.CARS).length }; });
+check('cars get different profiles', prof.bus < prof.main && prof.furia > prof.main && prof.cars > 10, prof);
+check('Hear as selector', await t.eval(() => document.querySelectorAll('#cs-car option').length > 10));
 check('no page errors', t.errors.length === 0, t.errors);
 await t.close();
 process.exit(fails ? 1 : 0);

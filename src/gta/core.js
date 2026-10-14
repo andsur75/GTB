@@ -841,7 +841,7 @@
     const c = P.car;
     if (c && c.dv && !c.wrecked) {
       const v = c.dv, dy = v.dyn;
-      PG.audio.engineDrift({ ev: dy.type === 'ev', rpm: dy.type === 'ev' ? 0 : v.rpm, cyl: dy.cyl || 4, rf: dy.type === 'ice' ? v.rpm / dy.red : dy.type === 'cvt' ? v.rpm / 5000 : 0, sf: Math.min(1, v.speed / (dy.vmax / 3.6)), load: v.thr });
+      PG.audio.engineDrift({ ev: dy.type === 'ev', rpm: dy.type === 'ev' ? 0 : v.rpm, cyl: dy.cyl || 4, rf: dy.type === 'ice' ? v.rpm / dy.red : dy.type === 'cvt' ? v.rpm / 5000 : 0, sf: Math.min(1, v.speed / (dy.vmax / 3.6)), load: v.thr, car: c.model.id });
       if (v.shifted !== c.shiftSeen) { c.shiftSeen = v.shifted; PG.audio.shift(); }
     }
   }
