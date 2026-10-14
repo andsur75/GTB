@@ -633,7 +633,7 @@ body.city .not-city { display: none !important; }
     d.a = car.wb * (1 - d.ff); d.b = car.wb * d.ff;          // CG to front / rear axle
     d.mTot = d.m + (d.extra || 0);
     d.Iz = d.m * d.a * d.b * 1.1;
-    d.mu = d.mu || 0.98;
+    d.mu = d.mu || 1.1;   // dry asphalt, performance tyres (was 0.98; cars with their own mu keep it)
     if (d.type === 'ice') {                                   // redline road speed per gear, geometric spread
       d.vg = []; for (let i = 0; i < d.n; i++) d.vg.push(d.v1 / 3.6 * Math.pow(d.vN / d.v1, d.n > 1 ? i / (d.n - 1) : 0));
       d.idle = 850;
@@ -725,7 +725,8 @@ body.city .not-city { display: none !important; }
     if (u > 1) align = cl(Math.atan2(w + a * r, u), -lock, lock) * (env.assist ? 1 : 0.85) * cl((speed - 2) / 4, 0, 1);
     const sliding = Math.abs(beta) > 0.16;
     const scale = sliding ? 1 : 1 - 0.62 * cl((speed - 6) / 28, 0, 1);
-    const target = cl(align + input * lock * scale, -lock, lock);
+    // caster only centres the wheel when released; while steering the driver's angle is the one that counts
+    const target = cl((input ? 0 : align) + input * lock * scale, -lock, lock);
     let delta = veh.steer * c.maxSteer;
     delta += cl(target - delta, -7 * h, 7 * h);
     veh.steer = delta / c.maxSteer;
