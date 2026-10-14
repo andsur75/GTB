@@ -759,7 +759,7 @@ body.city .not-city { display: none !important; }
     veh.handK = hand ? Math.min(1, (veh.handK || 0) + h / 0.3) : 0;
     if (hand && vR > 0.25) {                                  // locked rear: kinetic friction against the contact-patch slide
       const Fk = mu * 0.88 * Fzr * veh.handK;
-      rx = -Fk * vxR / vR; ry = -0.3 * Fk * vyR / vR; veh.spinR = 1;
+      rx = -Fk * vxR / vR; ry = -0.1 * Fk * vyR / vR; veh.spinR = 1;
     } else {
       const aR = Math.atan2(vyR, Math.max(Math.abs(vxR), 2.5));
       const FxR = Fe * sR - lift * sR - Math.sign(vxR) * Math.min(BR * 0.34, 0.86 * mu * Fzr);
