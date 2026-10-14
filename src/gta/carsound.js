@@ -32,6 +32,7 @@
       ['rough', 'Roughness', 0, 1, 0.01, '', 'Uneven firing, loudest at idle.'],
     ]],
     ['Harmonics & sub bass', [
+      ['animAmp', 'Animation amplitude', 0, 1, 0.01, '', 'How far the animated sliders swing: 0 to this value.'],
       ['sub2', 'Deep sub (2 oct down)', 0, 1, 0.01, '', 'Sine two octaves below: chest rumble.'],
       ['subTri', 'Sub growl', 0, 1, 0.01, '', 'Triangle an octave below: rougher sub.'],
       ['sub3', 'Third sub (1/3)', 0, 1, 0.01, '', 'Odd undertone: lumpy, cammy idle.'],
@@ -61,7 +62,7 @@
   // Main engine: the default sound every car in the game is built from (see CARS below).
   const DEFAULTS = { cyl: 1, idle: 900, redline: 12000, shift: 87, gears: 6, revUp: 0.75, revDown: 0.4, drop: 24, shiftTime: 0.35,
     pitch: 0.8, saw: 0.49, square: 0.27, sub: 0.28, harm2: 0.06, detune: 8, drive: 0.84, rough: 0.59,
-    cutLo: 500, cutHi: 2030, cutLoad: 690, res: 2.7, sub2: 0, subTri: 0, sub3: 0, halfOrd: 0.29, harm3: 0, harm4: 0, subFollow: 1, bassBoost: 18, bassFreq: 115,
+    cutLo: 500, cutHi: 2030, cutLoad: 690, res: 2.7, sub2: 0, subTri: 0, sub3: 0, halfOrd: 0.29, harm3: 0, harm4: 0, subFollow: 1, animAmp: 1, bassBoost: 18, bassFreq: 115,
     vol: 1, volIdle: 0.32, volRpm: 1, volLoad: 0.33, noise: 0.57, pops: 0.51, limiter: 0.63 };
   const PRESETS = {
     'Main engine': {},
@@ -99,8 +100,9 @@
   // Animated sliders: ping-pong between lo and hi, one full cycle per period (s). Drives lab and game alike.
   const ANIM = { sub2: [0, 1, 3.1], subTri: [0, 1, 4.7], sub3: [0, 1, 2.3], halfOrd: [0, 1, 5.9], harm3: [0, 1, 6.8], harm4: [0, 1, 3.9], revDown: [0.3, 0.7, 4] };
   function animate() {
+    if (typeof P.animAmp !== 'number') P.animAmp = 1;
     const t = (typeof performance !== 'undefined' ? performance.now() : Date.now()) / 1000;
-    for (const k in ANIM) { const [lo, hi, per] = ANIM[k], ph = (t / per) % 1; P[k] = lo + (hi - lo) * (ph < 0.5 ? ph * 2 : 2 - ph * 2); }
+    for (const k in ANIM) { const [lo, hi, per] = ANIM[k], ph = (t / per) % 1; P[k] = lo + (hi - lo) * P.animAmp * (ph < 0.5 ? ph * 2 : 2 - ph * 2); }
   }
   function profileFor(id) {
     animate();
