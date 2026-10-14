@@ -1739,12 +1739,15 @@
     const armed = p.weapon && p.weapon !== 'fists' && !p.holster;
     const W = armed && X.WEAPONS ? X.WEAPONS[p.weapon] : null, held = armed ? (W ? W.held : 'pistol') : null;
     const lean = outfit === 'old' ? 0.07 : 0;
-    // legs and shoes
+    // legs and shoes: the player's legs turn to the walking direction, the upper body stays on the aim (p.th)
+    ctx.save();
+    if (p.isPlayer && p.legTh != null) ctx.rotate(PG.wrap(p.legTh - p.th));
     if (amp > 0.06) {
       ctx.strokeStyle = CC.pants; ctx.lineWidth = 0.15; ctx.beginPath(); ctx.moveTo(0, -0.1); ctx.lineTo(sw, -0.11); ctx.moveTo(0, 0.1); ctx.lineTo(-sw, 0.11); ctx.stroke();
       if (LOWD) { /* no shoes */ } else if (outfit === 'jog') { ctx.strokeStyle = CC.skin; ctx.lineWidth = 0.11; ctx.beginPath(); ctx.moveTo(sw * 0.5, -0.105); ctx.lineTo(sw, -0.11); ctx.moveTo(-sw * 0.5, 0.105); ctx.lineTo(-sw, 0.11); ctx.stroke(); }
       if (!LOWD) { ctx.fillStyle = outfit === 'jog' ? '#f2f2f2' : '#17171a'; ctx.beginPath(); dot(ctx, sw + 0.06, -0.11, 0.07); dot(ctx, -sw + 0.06, 0.11, 0.07); ctx.fill(); }
     } else if (!LOWD) { ctx.fillStyle = '#17171a'; ctx.beginPath(); dot(ctx, 0.12, -0.1, 0.065); dot(ctx, 0.12, 0.1, 0.065); ctx.fill(); }
+    ctx.restore();
     // hands (left = -y)
     let lx, ly, rx, ry;
     if (run) { lx = 0.12 - sw * 0.7; ly = -0.27; rx = 0.12 + sw * 0.7; ry = 0.27; }
