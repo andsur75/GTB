@@ -1,5 +1,5 @@
 // Mouse steering: hidden cursor, a world-locked marker that relative mouse motion swings round the car,
-// the car turning onto the marker direction and holding it, keys not steering, cursor restored off the road.
+// the car turning onto the marker direction and holding it, A/D winning over the mouse, cursor restored off the road.
 import { launch } from './harness.mjs';
 const t = await launch({ html: process.argv[2], out: process.argv[3] });
 const wrap = a => Math.atan2(Math.sin(a), Math.cos(a));
@@ -24,7 +24,7 @@ let s = await st();
 check(s.cursor === 'none', 'the OS cursor is hidden while driving');
 check(Math.abs(wrap(s.aim - s.th)) < 0.05, 'the marker starts straight ahead');
 const a0 = s.aim;
-for (let k = 0; k < 60 && Math.abs(wrap((await st()).aim - a0)) < Math.PI / 2 - 0.05; k++) await swing(1);
+for (let k = 0; k < 400 && Math.abs(wrap((await st()).aim - a0)) < Math.PI / 2 - 0.05; k++) await swing(1);
 s = await st();
 check(Math.abs(wrap(s.aim - a0) - Math.PI / 2) < 0.12, `mouse motion swings the marker a quarter turn clockwise (${wrap(s.aim - a0).toFixed(2)} rad)`);
 const target = s.aim;
@@ -38,10 +38,16 @@ check(reachedAt >= 0, `the car turns onto the marker direction (closest ${best.t
 const after = reachedAt >= 0 ? errs.slice(reachedAt, reachedAt + 4) : [];
 // today it swings up to ~0.4 rad past and settles within ~2.5 s; tighten to 0.25 once the steering lead is tuned
   check(after.every(e => Math.abs(e) < 0.45), `and settles on it without swinging far past (${after.map(e => e.toFixed(2)).join(' ')})`);
-// keys do not steer
+// D steers and wins over the mouse; the marker rides on the nose, so letting go holds the new heading
 const h0 = (await st()).th;
-await t.page.keyboard.down('KeyD'); await t.wait(600); await t.page.keyboard.up('KeyD');
-check(Math.abs(wrap((await st()).th - h0)) < 0.2, 'D does not steer');
+await t.page.keyboard.down('KeyW'); await t.page.keyboard.down('KeyD');
+for (let k = 0; k < 8; k++) { await swing(-1); await t.wait(90); }   // the mouse pulls left meanwhile
+await t.page.keyboard.up('KeyD');
+const h1 = (await st()).th;
+check(wrap(h1 - h0) > 0.35, `D turns the car right while the mouse pulls left (${wrap(h1 - h0).toFixed(2)} rad)`);
+await t.wait(1500); await t.page.keyboard.up('KeyW');
+s = await st();
+check(Math.abs(wrap(s.th - s.aim)) < 0.3 && Math.abs(wrap(s.aim - h1)) < 0.6, `after letting go the car holds its new heading (${wrap(s.th - h1).toFixed(2)} rad drift)`);
 await t.press('KeyP'); await t.wait(200);
 check((await st()).cursor === '', 'the cursor is back while paused');
 await t.press('KeyP'); await t.wait(200);
