@@ -341,7 +341,7 @@
   function endFrameInput() { pressedSet.clear(); mouse.pressed = false; X.touch.presses.clear(); }
 
   // ================= state =================
-  const P = X.player = { ped: null, car: null, money: 0, wanted: 0, state: 'play', stateT: 0, inv: { fists: Infinity }, weapon: 'fists', entering: null, kills: 0 };
+  const P = X.player = { ped: null, car: null, money: 0, wanted: 0, state: 'play', stateT: 0, inv: { fists: Infinity }, weapon: 'fists', entering: null, kills: 0, seatT: 0 };
   X.cars = []; X.peds = []; X.lights = []; X.blips = []; X.floats = []; X.interactions = [];
   // yaw: the view's heading (-PI/2 = north up). mode 'follow' turns it to the car while driving; lift: screen height of the focus (0..1), eased too.
   X.cam = { x: 0, y: 0, span: 30, yaw: -Math.PI / 2, mode: 'follow', lift: 0.5, zoom: 1 };
@@ -431,6 +431,8 @@
   X.occupants = function (c) {
     const out = [];
     if (c.driver) out.push(c.driver);
+    const e = P.entering;   // half way through the door (getting in or out) counts as inside
+    if (e && e.car === c && e.ped && e.ped.seqHidden && e.ped !== c.driver) out.push(e.ped);
     return out;
   };
   // Pull the NPC driver (and any extra occupants) out at the driver's door: returns the new peds.
@@ -452,15 +454,21 @@
     if (c.ctrl === 'path') toPhys(c);
     return out;
   };
-  function doorSpot(c, side) {   // side -1 = driver (left), 1 = right
+  // Car-local (x forward, y right, from the body centre) to world.
+  const carWorld = (c, l) => { const cs = Math.cos(c.th), sn = Math.sin(c.th); return { x: c.x + cs * l.x - sn * l.y, y: c.y + sn * l.x + cs * l.y }; };
+  const spotFree = (c, q, r) => !X.blocked(q.x, q.y, r) && !X.cars.some(o => o !== c && !o.removed && Math.abs(o.x - q.x) < o.len / 2 + 1 && Math.abs(o.y - q.y) < o.len / 2 + 1 && circlePoly(q.x, q.y, r, X.carPoly(o)));
+  // Where whoever sits on `side` (-1 driver, 1 front passenger) steps out: beside their own door (doors.js
+  // knows where every door is), else the other side, else behind or in front of the car.
+  function doorSpot(c, side) {
     const fx = Math.cos(c.th), fy = Math.sin(c.th), lx = fy * side * -1, ly = -fx * side * -1;
+    const ds = X.doors && X.doors.exitSpot, a = ds && ds(c, side), b = ds && ds(c, -side);
     const cands = [
-      { x: c.x + lx * (c.wid / 2 + 0.6) + fx * 0.4, y: c.y + ly * (c.wid / 2 + 0.6) + fy * 0.4 },
-      { x: c.x - lx * (c.wid / 2 + 0.6) + fx * 0.4, y: c.y - ly * (c.wid / 2 + 0.6) + fy * 0.4 },
+      a ? carWorld(c, a) : { x: c.x + lx * (c.wid / 2 + 0.6) + fx * 0.4, y: c.y + ly * (c.wid / 2 + 0.6) + fy * 0.4 },
+      b ? carWorld(c, b) : { x: c.x - lx * (c.wid / 2 + 0.6) + fx * 0.4, y: c.y - ly * (c.wid / 2 + 0.6) + fy * 0.4 },
       { x: c.x - fx * (c.len / 2 + 0.7), y: c.y - fy * (c.len / 2 + 0.7) },
       { x: c.x + fx * (c.len / 2 + 0.7), y: c.y + fy * (c.len / 2 + 0.7) },
     ];
-    for (const q of cands) if (!X.blocked(q.x, q.y, 0.35) && !X.cars.some(o => o !== c && !o.removed && Math.abs(o.x - q.x) < 6 && Math.abs(o.y - q.y) < 6 && circlePoly(q.x, q.y, 0.35, X.carPoly(o)))) return q;
+    for (const q of cands) if (spotFree(c, q, 0.35)) return q;
     return null;
   }
   X.doorSpot = doorSpot;
@@ -817,12 +825,15 @@
 
   // ================= the player =================
   function newPlayerPed(x, y, th) {
+    if (P.entering) endSeq();
     if (P.ped) { P.ped.isPlayer = false; if (!P.ped.dead || P.ped.car) { if (P.ped.car && P.ped.car.driver === P.ped) P.ped.car.driver = null; P.ped.removed = true; } }
     P.ped = X.makePed({ x, y, th, isPlayer: true, team: 'player', look: { skin: '#e0ac7e', hair: '#1b1612', shirt: '#f2c230', pants: '#1f2a44', hat: null }, hp: 100, maxHp: 100 });
     return P.ped;
   }
   function footControl(dt) {
-    const p = P.ped; if (p.dead) { X.movePed(p, dt, 0, 0); return; }
+    const p = P.ped;
+    if (p.seqHidden && !(P.entering && P.entering.ped === p)) { p.seqHidden = false; p.hidden = false; p.car = null; }   // a sequence cut short elsewhere
+    if (p.dead) { X.movePed(p, dt, 0, 0); return; }
     let mx = 0, my = 0;
     const k = X.input;
     if (P.state === 'play' && !P.entering) {
@@ -837,16 +848,7 @@
     let len = Math.hypot(mx, my); if (len > 1) { mx /= len; my /= len; len = 1; }
     const sprint = k.any('ShiftLeft', 'ShiftRight');
     const spd = (sprint ? 7.2 : 4.3) * (p.speedMul || 1);
-    if (P.entering) {   // walking to the car door
-      const e = P.entering, c = e.car;
-      e.t += dt;
-      const door = doorPoint(c);
-      const dx = door.x - p.x, dy = door.y - p.y, dd = Math.hypot(dx, dy);
-      if (c.removed || c.wrecked || dd > 7 || e.t > 2.2) { P.entering = null; }
-      else if (dd < 0.75 || e.t > 1.4) { finishEnter(c); return; }
-      else { X.movePed(p, dt, dx / dd * 5.5, dy / dd * 5.5); p.th = Math.atan2(dy, dx); }
-      return;
-    }
+    if (P.entering) { seqStep(dt); return; }   // getting in or out (below)
     X.movePed(p, dt, mx * spd, my * spd);
     if (X.input.mouseActive() && !X.touch.move) { p.th = Math.atan2(mouse.wy - p.y, mouse.wx - p.x); }
     else if (X.touch.aim != null) p.th = X.touch.aim;
@@ -876,10 +878,6 @@
       const m = circlePoly(p.x, p.y, p.r, X.carPoly(c)); if (m) { p.x += m.x; p.y += m.y; }
     }
   };
-  function doorPoint(c) {
-    const fx = Math.cos(c.th), fy = Math.sin(c.th);
-    return { x: c.x + fy * (c.wid / 2 + 0.45) + fx * 0.3, y: c.y - fx * (c.wid / 2 + 0.45) + fy * 0.3 };
-  }
   X.nearestEnterableCar = function (maxD) {
     const p = P.ped; let best = null, bd = maxD || 2.6;
     for (const c of X.cars) {
@@ -891,16 +889,96 @@
     }
     return best;
   };
-  X.enterCar = function (c) { P.entering = { car: c, t: 0 }; };
+  // ================= getting in and out =================
+  // In: walk round the car to its door (X.pathAroundCar), the door swings open (doors.js answers 'doorOpen'
+  // with how long that takes; without it the rest is instant), a driver is yanked out, you step in and sit,
+  // the door shuts ('doorClose'). Out: P.car clears at once (the world sees you on foot), the door opens, you
+  // climb out beside it and it shuts behind you, unless you sprint off or the car is still rolling.
+  // P.entering = {car, ped, mode: 'enter'|'exit', phase: walk|open|jack|in|out, t, pt (s in phase), ent}.
+  // ent (an entry) = {side, stand, seat, via?, door, any?}: car-local points (x forward, y right).
+  const carLocal = (c, x, y) => { const cs = Math.cos(c.th), sn = Math.sin(c.th), dx = x - c.x, dy = y - c.y; return { x: dx * cs + dy * sn, y: -dx * sn + dy * cs }; };
+  const plainEntry = (c, side) => ({ side, stand: { x: 0.3, y: side * (c.wid / 2 + 0.45) }, seat: { x: 0, y: -c.wid * 0.22 }, door: null });
+  function entryFor(c, side) {
+    if (X.doors && X.doors.entry) return X.doors.entry(c, side);
+    return plainEntry(c, side);
+  }
+  // The driver's own door unless a wall or a car is in the way (or there is no way round to it): then the other
+  // side, and climb across.
+  function pickEntry(c, p, avoid) {
+    const a = entryFor(c, -1), b = entryFor(c, 1);
+    const free = e => !!e && spotFree(c, carWorld(c, e.stand), 0.3), reach = e => !X.pathAroundCar(p, c, carWorld(c, e.stand)).blocked;
+    let order = a && b && a.any && carLocal(c, p.x, p.y).y > 0 ? [b, a] : [a, b];   // either side will do (the tank): the near one
+    if (avoid && order[0] === avoid) order = [order[1], order[0]];   // stuck getting to that one: try the other
+    for (const e of order) if (free(e) && reach(e)) return e;
+    for (const e of order) if (free(e)) return e;
+    return order[0] || order[1] || plainEntry(c, -1);
+  }
+  const exitEntry = c => { const a = entryFor(c, -1), b = entryFor(c, 1); return a && spotFree(c, carWorld(c, a.stand), 0.3) ? a : b && spotFree(c, carWorld(c, b.stand), 0.3) ? b : null; };
+  function segBox(a, b, ex, ey) {   // does segment a-b cross the open box |x| < ex, |y| < ey?
+    const dx = b.x - a.x, dy = b.y - a.y, pk = [-dx, dx, -dy, dy], qk = [a.x + ex, ex - a.x, a.y + ey, ey - a.y];
+    let t0 = 0, t1 = 1;
+    for (let k = 0; k < 4; k++) {
+      if (Math.abs(pk[k]) < 1e-12) { if (qk[k] <= 0) return false; continue; }
+      const t = qk[k] / pk[k];
+      if (pk[k] < 0) { if (t > t0) t0 = t; } else if (t < t1) t1 = t;
+      if (t0 >= t1) return false;
+    }
+    return t1 - t0 > 1e-4;
+  }
+  // Next waypoint for a person walking to `target` beside car c without cutting through it: the shortest way
+  // round the corners of its footprint grown by the walker's radius and a margin (corners in walls or other
+  // cars are out). Returns {x, y, len (what is left of the path), direct}. Cheap; re-plan every frame.
+  X.pathAroundCar = function (p, c, target) {
+    const r = p.r || 0.32, hl = c.len / 2, hw = c.wid / 2, a = carLocal(c, p.x, p.y), b = carLocal(c, target.x, target.y);
+    const gap = q => Math.hypot(Math.max(0, Math.abs(q.x) - hl), Math.max(0, Math.abs(q.y) - hw));
+    const e = Math.max(0, Math.min(r + 0.05, gap(a) - 0.03, gap(b) - 0.03)), bx = hl + e, by = hw + e;
+    const direct = { x: target.x, y: target.y, len: Math.hypot(b.x - a.x, b.y - a.y), direct: true };
+    if (!segBox(a, b, bx, by)) return direct;
+    const m = r + 0.35, K = [[1, 1], [-1, 1], [-1, -1], [1, -1]].map(([sx, sy]) => {   // a tree or a post on the corner: go wider
+      for (const x of [0, 0.6]) { const k = { x: sx * (hl + m + x), y: sy * (hw + m + x) }; if (spotFree(c, carWorld(c, k), r * 0.9)) return k; }
+      return null;
+    });
+    // legs that would run into a neighbouring car (parked bumper to bumper) are out too
+    const near = X.cars.filter(o => o !== c && !o.removed && Math.abs(o.x - c.x) < (o.len + c.len) / 2 + 3 && Math.abs(o.y - c.y) < (o.len + c.len) / 2 + 3);
+    const clear = (q0, q1) => {
+      if (!near.length) return true;
+      const w0 = carWorld(c, q0), w1 = carWorld(c, q1);
+      return !near.some(o => segBox(carLocal(o, w0.x, w0.y), carLocal(o, w1.x, w1.y), o.len / 2 + r * 0.9, o.wid / 2 + r * 0.9));
+    };
+    const ring = [0, 1, 2, 3].map(j => !!(K[j] && K[(j + 1) % 4]) && clear(K[j], K[(j + 1) % 4]));   // leg j -> j+1
+    let best = null, bl = Infinity;
+    for (let i = 0; i < 4; i++) {
+      if (!K[i] || segBox(a, K[i], bx, by) || !clear(a, K[i])) continue;
+      const l0 = Math.hypot(K[i].x - a.x, K[i].y - a.y);
+      for (const d of [1, 3]) {   // round the ring either way
+        let L = l0, j = i;
+        for (let n = 0; n < 4; n++) {
+          if (n) { const nj = (j + d) % 4; if (!ring[d === 1 ? j : nj]) break; L += Math.hypot(K[nj].x - K[j].x, K[nj].y - K[j].y); j = nj; }
+          if (!segBox(K[j], b, bx, by) && clear(K[j], b)) { const tot = L + Math.hypot(b.x - K[j].x, b.y - K[j].y); if (tot < bl) { bl = tot; best = K[i]; } break; }
+        }
+      }
+    }
+    if (!best) return Object.assign(direct, { blocked: true });   // no way round (hemmed in): straight at it
+    const w = carWorld(c, best);
+    return { x: w.x, y: w.y, len: bl, direct: false };
+  };
+  X.enterCar = function (c) {
+    if (!c || c.removed) return;
+    if (P.entering) endSeq();
+    P.entering = { car: c, ped: P.ped, mode: 'enter', phase: 'walk', t: 0, pt: 0, stall: 0, ent: null, pickT: 0 };
+  };
+  function jackOut(c) {
+    const was = c.model.kind, ej = X.ejectOccupants(c, 'carjack');
+    X.emit('carjack', { car: c, victims: ej });
+    X.crime(was === 'police' || was === 'swat' ? 'stealCopCar' : 'carjack', c.x, c.y, { car: c });
+  }
   function finishEnter(c) {
+    const e = P.entering && P.entering.car === c ? P.entering : null;
     P.entering = null;
     const p = P.ped;
-    if (c.npcDriver || (c.driver && !c.driver.isPlayer)) {
-      const was = c.model.kind;
-      const ej = X.ejectOccupants(c, 'carjack');
-      X.emit('carjack', { car: c, victims: ej });
-      X.crime(was === 'police' || was === 'swat' ? 'stealCopCar' : 'carjack', c.x, c.y, { car: c });
-    } else if (c.model.kind === 'police' || c.model.kind === 'swat') X.crime('stealCopCar', c.x, c.y, { car: c });
+    p.seqHidden = false;
+    if (c.npcDriver || (c.driver && !c.driver.isPlayer)) jackOut(c);
+    else if (!(e && e.jacked) && (c.model.kind === 'police' || c.model.kind === 'swat')) X.crime('stealCopCar', c.x, c.y, { car: c });
     toPhys(c);
     c.driver = p; c.ai = null; c.keep = false; c.owner = c.owner === 'police' ? null : c.owner;
     p.car = c; p.hidden = true; p.vx = p.vy = 0;
@@ -909,17 +987,130 @@
     if (c.dv) c.dv.gear = 1;
     X.popup(c.model.name);
     X.emit('enterCar', { car: c });
+    if (e && e.opened) { X.emit('doorClose', { car: c, side: e.ent.side, door: e.ent.door, by: p }); P.seatT = X.time + 0.3; }
+  }
+  // Pin the person to a car-local point (they ride along while the car rocks or rolls).
+  function hold(e, c, p, l) {
+    const w = carWorld(c, l), v = X.carVel(c);
+    p.x = w.x; p.y = w.y; p.vx = v.x; p.vy = v.y; p.speed = 0; e.px = p.x; e.py = p.y;
+  }
+  function along(pts, k) {   // point at fraction k along a polyline of car-local points
+    let tot = 0; for (let i = 1; i < pts.length; i++) tot += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+    let d = k * tot;
+    for (let i = 1; i < pts.length; i++) {
+      const L = Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+      if (d <= L || i === pts.length - 1) { const f = L ? Math.min(1, d / L) : 1; return { x: pts[i - 1].x + (pts[i].x - pts[i - 1].x) * f, y: pts[i - 1].y + (pts[i].y - pts[i - 1].y) * f }; }
+      d -= L;
+    }
+    return pts[pts.length - 1];
+  }
+  const ease = k => k * k * (3 - 2 * k);
+  // End whatever sequence is running, leaving the person standing beside the door if they were still inside.
+  function endSeq() {
+    const e = P.entering; P.entering = null;
+    if (!e) return;
+    const p = e.ped, c = e.car;
+    if (p && p.seqHidden) {
+      p.seqHidden = false; p.hidden = false; if (p.car === c && P.car !== c) p.car = null;
+      const l = carLocal(c, p.x, p.y);
+      if (e.ent && !c.removed && Math.abs(l.x) < c.len / 2 + 0.1 && Math.abs(l.y) < c.wid / 2 + 0.1) { const w = carWorld(c, e.ent.stand); p.x = w.x; p.y = w.y; }
+      if (c.wrecked && !e.wreck0 && !p.dead) { const a = Math.atan2(p.y - c.y, p.x - c.x); p.vx = Math.cos(a) * 6; p.vy = Math.sin(a) * 6; p.knock = Math.max(p.knock || 0, 0.9); p.spin = 8; }   // blown back out of the doorway
+    }
+    if (e.opened && !e.closed) X.emit('doorClose', { car: e.car, side: e.ent.side, door: e.ent.door, leave: true });
+  }
+  function arrive(e, c, p) {
+    const occ = !!(c.npcDriver || (c.driver && !c.driver.isPlayer));
+    if (occ && c.ctrl === 'path') toPhys(c);
+    const d = X.emit('doorOpen', { car: c, side: e.ent.side, door: e.ent.door, fast: occ, jack: occ, by: p });
+    if (d.wait == null) return finishEnter(c);   // nothing to animate: straight in
+    e.from = carLocal(c, p.x, p.y); e.phase = occ ? 'jack' : 'open'; e.pt = 0; e.wait = d.wait; e.opened = true;
+    e.dur = d.step || (e.ent.via ? 0.5 : 0.3);
+    hold(e, c, p, e.from);
+  }
+  const SEQ_RUN = 7;   // m/s: you hurry to a car
+  function walkStep(e, c, p, dt) {
+    if (!e.ent || e.avoid || (e.t - e.pickT > 0.5 && (e.stuck || !spotFree(c, carWorld(c, e.ent.stand), 0.3)))) { const n = pickEntry(c, p, e.avoid); if (n !== e.ent) { e.prog = Infinity; e.progT = e.t; } e.ent = n; e.avoid = null; e.pickT = e.t; }
+    if (!e.ent || X.input.anyPressed('KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight')) return endSeq();   // changed your mind
+    const T = carWorld(c, e.ent.stand), dT = Math.hypot(T.x - p.x, T.y - p.y);
+    if (dT > 16 || (c.speed > 6 && dT > 1.5)) return endSeq();   // it drove off
+    e.stall = p.speed < 0.5 && e.t > 0.3 ? e.stall + dt : 0;
+    if (dT < 0.35 || (dT < 0.9 && e.stall > 0.25)) return arrive(e, c, p);
+    const w = X.pathAroundCar(p, c, T), dx = w.x - p.x, dy = w.y - p.y, dd = Math.hypot(dx, dy) || 1;
+    // no headway for a second (pressed against another car, a post, a wall): try the other door once, then give up
+    // rather than sliding through whatever is in the way
+    if (w.len < e.prog - 0.25) { e.prog = w.len; e.progT = e.t; }
+    if (e.t - e.progT > 1 || e.t > 4.5) {
+      const l = carLocal(c, p.x, p.y), touch = Math.hypot(Math.max(0, Math.abs(l.x) - c.len / 2), Math.max(0, Math.abs(l.y) - c.wid / 2)) < 0.75;
+      if (dT < 1.2 || (touch && e.retried)) return arrive(e, c, p);   // right up against it (a tight alley): squeeze in
+      if (e.retried || e.t > 4.5) { X.popup('Can\'t get to the door'); return endSeq(); }
+      e.retried = true; e.avoid = e.ent; return;
+    }
+    e.stuck = !!w.blocked;
+    const sp = Math.min(SEQ_RUN * (p.speedMul || 1), 1.6 + w.len * 4.5);
+    X.movePed(p, dt, dx / dd * sp, dy / dd * sp);
+    p.th += wrap(Math.atan2(dy, dx) - p.th) * Math.min(1, dt * 16); p.aim = p.th;
+  }
+  function seqStep(dt) {
+    const e = P.entering, p = P.ped, c = e.car;
+    e.t += dt; e.pt += dt;
+    if (e.ped !== p || c.removed || e.t > 8) return endSeq();
+    if (e.px != null && (Math.hypot(p.x - e.px, p.y - e.py) > 0.6 || (p.knock > 0 && !p.seqHidden))) return endSeq();   // knocked or teleported away
+    if (e.mode === 'exit') return c.wrecked && !e.wreck0 ? endSeq() : exitStep(e, c, p, dt);
+    if (c.wrecked || P.state !== 'play') return endSeq();
+    if (e.phase === 'walk') return walkStep(e, c, p, dt);
+    if (c.speed > 7) return endSeq();
+    const seat = carWorld(c, e.ent.seat);
+    if (e.phase === 'open' || e.phase === 'jack') {
+      const tug = e.jacked ? Math.sin(Math.PI * Math.min(1, e.pt / e.wait)) * 0.3 : 0, out = e.ent.side;   // heave the driver out
+      hold(e, c, p, tug ? { x: e.from.x, y: e.from.y + out * tug } : e.from);
+      p.th += wrap(Math.atan2(seat.y - p.y, seat.x - p.x) - p.th) * Math.min(1, dt * 14);
+      if (e.phase === 'jack' && !e.jacked && e.pt >= e.wait) { e.jacked = true; e.pt = 0; e.wait = 0.16; jackOut(c); return; }   // yanked out, then a tug
+      if (e.pt >= e.wait && (e.phase === 'open' || e.jacked)) { e.phase = 'in'; e.pt = 0; p.hidden = true; p.seqHidden = true; p.car = c; }   // half in: as good as inside
+      return;
+    }
+    // 'in': step through the door into the seat (across the other one if needed), then sit
+    const k = Math.min(1, e.pt / e.dur);
+    hold(e, c, p, along(e.ent.via ? [e.from, e.ent.via, e.ent.seat] : [e.from, e.ent.seat], ease(k)));
+    p.th += wrap(c.th - p.th) * Math.min(1, dt * 10); p.speed = 1.6; p.walk += dt * 4;   // (legs still going)
+    if (k >= 1) finishEnter(c);
+  }
+  function exitStep(e, c, p, dt) {
+    if (e.phase === 'open') {
+      hold(e, c, p, e.ent.seat);
+      if (e.pt >= e.wait) { e.phase = 'out'; e.pt = 0; }
+      return;
+    }
+    const k = Math.min(1, e.pt / e.dur), out = c.th + e.ent.side * Math.PI / 2;
+    hold(e, c, p, along(e.ent.via ? [e.ent.seat, e.ent.via, e.ent.stand] : [e.ent.seat, e.ent.stand], ease(k)));
+    p.th = c.th + wrap(out - c.th) * ease(k); p.aim = p.th; p.speed = 1.6; p.walk += dt * 4;
+    if (k < 1) return;
+    P.entering = null; p.hidden = false; p.seqHidden = false; p.car = null; e.closed = true;
+    const v = X.carVel(c), sp = Math.hypot(v.x, v.y);
+    if (sp > 5) { p.knock = 0.45; p.spin = 3 * e.ent.side; }
+    X.emit('doorClose', { car: c, side: e.ent.side, door: e.ent.door, leave: X.input.any('ShiftLeft', 'ShiftRight') || sp > 1.5 || c.wrecked, by: p });
   }
   X.exitCar = function () {
     const c = P.car, p = P.ped; if (!c) return;
-    const fast = c.speed > 9;
-    const spot = doorSpot(c, -1);
+    const fast = c.speed > 9, ent = fast ? null : exitEntry(c);
+    const spot = ent ? carWorld(c, ent.stand) : doorSpot(c, -1);
     if (!spot && !fast) { X.popup('No room to get out'); return; }
     const s = spot || { x: c.x, y: c.y };
     c.driver = null; P.car = null;
     p.car = null; p.hidden = false; p.x = s.x; p.y = s.y; p.th = c.th;
     const vel = X.carVel(c);
-    if (fast) { p.vx = vel.x * 0.55; p.vy = vel.y * 0.55; p.knock = 0.9; p.spin = 6; X.damagePed(p, Math.min(40, (c.speed - 8) * 2.5), null, 'bail'); }
+    if (fast) {
+      p.vx = vel.x * 0.55; p.vy = vel.y * 0.55; p.knock = 0.9; p.spin = 6; X.damagePed(p, Math.min(40, (c.speed - 8) * 2.5), null, 'bail');
+      const side = spot && carLocal(c, s.x, s.y).y > 0.2 ? 1 : -1, a = entryFor(c, side);   // the door on the side you rolled out of
+      X.emit('doorOpen', { car: c, side, door: a && a.door, fast: true, bail: true, by: p });
+    } else if (ent) {
+      const hurry = c.burning > 0 || p.onFire > 0;
+      const d = X.emit('doorOpen', { car: c, side: ent.side, door: ent.door, fast: hurry, exit: true, by: p });
+      if (d.wait != null) {
+        const e = P.entering = { car: c, ped: p, mode: 'exit', phase: 'open', t: 0, pt: 0, ent, wait: d.wait, dur: d.step || (hurry ? 0.2 : ent.via ? 0.5 : 0.32), opened: true, wreck0: c.wrecked };
+        p.hidden = true; p.seqHidden = true; p.car = c;
+        hold(e, c, p, ent.seat);
+      }
+    }
     PG.audio.stopLoops();
     X.emit('exitCar', { car: c, bailed: fast });
   };
@@ -931,7 +1122,7 @@
     const c = X.nearestEnterableCar(); if (c) X.enterCar(c);
   }
   function currentHint() {
-    if (P.state !== 'play') return '';
+    if (P.state !== 'play' || P.entering) return '';
     if (P.car) return P.car.speed < 9 ? '' : '';
     let best = null;
     for (const it of X.interactions) { const r = safe(it, 'test', it.test, [P]); if (r && (!best || (r.priority || 0) > (best.priority || 0))) best = r; }
@@ -942,14 +1133,14 @@
   }
   X.wasted = function (kind) {
     if (P.state !== 'play') return;
-    P.state = 'wasted'; P.stateT = 0; P.entering = null;
+    P.state = 'wasted'; P.stateT = 0; endSeq();
     X.big('WASTED', '#e8402f', 3000);
     PG.audio.stopLoops(); PG.audio.trombone();
     X.emit('wasted', { kind });
   };
   X.bust = function () {
     if (P.state !== 'play') return;
-    P.state = 'busted'; P.stateT = 0; P.entering = null;
+    P.state = 'busted'; P.stateT = 0; endSeq();
     if (P.car && P.car.dv) { P.car.dv.vx *= 0.3; P.car.dv.vy *= 0.3; }
     X.big('BUSTED', '#5aa9ff', 3000);
     PG.audio.stopLoops();
@@ -1073,9 +1264,11 @@
     const k = 1 - Math.exp(-dt * (c ? 5 : 8));
     if (!isFinite(cam.x) || Math.hypot(cam.x - pos.x, cam.y - pos.y) > 120) { cam.x = pos.x; cam.y = pos.y; }
     cam.x += (pos.x + lx - cam.x) * k; cam.y += (pos.y + ly - cam.y) * k;
-    const follow = cam.mode === 'follow' && c && !X.scene;
+    // the view turns with the car once the door has shut behind you, and back only once you are out
+    const ex = P.entering && P.entering.mode === 'exit' ? P.entering.car : null, fc = c || ex;
+    const follow = cam.mode === 'follow' && fc && !X.scene && !(c && P.seatT > X.time);
     const ease = 1 - Math.exp(-dt * 3.2);
-    cam.yaw += wrap((follow ? c.th : -Math.PI / 2) - cam.yaw) * ease;
+    cam.yaw += wrap((follow ? fc.th : -Math.PI / 2) - cam.yaw) * ease;
     cam.lift += ((follow ? 0.6 : 0.5) - cam.lift) * ease;
     const scale = Math.min(cw, vh) / cam.span;
     let sx = 0, sy = 0;
@@ -1354,7 +1547,7 @@ body.gta .hud-top { justify-content: flex-end; }
     X.districtNames = DISTRICTS.slice().sort(() => R() - 0.5);
     X.places = makePlaces(R);
     X.skid = PG.makeCitySkid();
-    Object.assign(P, { loot: 0, car: null, money: X.save.money || 0, wanted: 0, wantedFlash: false, state: 'play', stateT: 0, inv: { fists: Infinity }, weapon: 'fists', entering: null, kills: 0 });
+    Object.assign(P, { loot: 0, car: null, money: X.save.money || 0, wanted: 0, wantedFlash: false, state: 'play', stateT: 0, inv: { fists: Infinity }, weapon: 'fists', entering: null, kills: 0, seatT: 0 });
     P.ped = null;
     const home = X.places.hideout || X.places.bank;
     newPlayerPed(home.door.x + home.door.nx * 1.4, home.door.y + home.door.ny * 1.4, Math.atan2(home.door.ny, home.door.nx));

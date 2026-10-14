@@ -141,6 +141,24 @@ running, but tests treat any console error as a failure.
   `lootLost`).
 * `X.enterCar(c)`, `X.exitCar()`, `X.nearestEnterableCar()`, `X.wasted(kind)`, `X.bust()`,
   `X.respawn(reason)` (hospital or police station; weapons cleared; emits `respawn`).
+* Getting in and out is a short sequence in `P.entering` `{car, ped, mode: 'enter'|'exit', phase:
+  'walk'|'open'|'jack'|'in'|'out', t, ent}`: `X.enterCar` walks the player round the car to the door
+  (`X.pathAroundCar`), then the door opens, a driver is yanked out (`carjack` happens there), the player steps
+  in. `X.exitCar()` clears `P.car` at once (emits `exitCar`; the world sees them on foot) and the player then
+  climbs out (hidden, with `ped.car` still set, until they stand beside the door). F is ignored meanwhile;
+  weapons and brawl stay off while `P.entering` is set. Teleporting the player, knocking them down, the car
+  leaving, burning or vanishing, wasted or busted all end it cleanly; someone half way through the door counts
+  as inside for `X.occupants` (so a car blowing up hurts them and throws them out). A walk that makes no headway
+  for a second tries the other door, then squeezes in if the player is right against the car (a tight alley) or
+  gives up with "Can't get to the door" (hemmed in by other cars) instead of sliding through anything. The
+  follow camera starts turning with the car once the door has shut (`P.seatT`) and keeps the car's heading
+  until the player is out. Without doors.js the door part is instant.
+* `X.pathAroundCar(ped, car, target)` → the next waypoint `{x, y, len (rest of the path), direct, blocked?}` for
+  walking to a point beside a car without cutting through it (round the corners of its footprint, the shorter
+  way, never through a wall corner or a car parked bumper to bumper; `blocked`: no way round). Re-plan every
+  frame. The player takes the driver's door, or the passenger's (and climbs across) when the driver's side is
+  walled in or cannot be reached. `X.doorSpot(c, side)` (-1 driver, 1 front
+  passenger) is where that occupant steps out.
 * Interactions (the F key on foot): `X.interactions.push({test(P) → {text, priority, run()} | null})`.
   The best non-null `test` result wins over entering a car; its `text` is shown as the on-screen hint.
   Push in `init()` (the list is reset every game).
@@ -161,6 +179,9 @@ running, but tests treat any console error as a failure.
 `X.on(type, fn)` (register once at module load; check `X.active`), `X.emit(type, data)`.
 
 Core emits: `start`, `crime {type, x, y, by, ...}`, `pedHurt`, `pedKilled {ped, by, kind}`,
+`doorOpen {car, side, door, fast, jack, bail, exit, by}` (a listener sets `wait`: seconds until a person fits
+through, and may set `step`: seconds to climb in or out; nobody setting `wait` means no door animation),
+`doorClose {car, side, door, leave}` (`leave`: left swinging, e.g. you sprinted off),
 `pedHitByCar {ped, car, speed}`, `pedEjected {ped, car, reason}`, `carjack {car, victims}`, `carHurt`,
 `carImpact`, `carDestroyed {car, by}`, `explosion {x, y, power, by, source}`, `enterCar`, `exitCar`,
 `honk`, `horn`, `trafficRammed`, `money`, `loot`, `lootBanked`, `lootLost`, `wasted`, `busted`,
@@ -227,6 +248,30 @@ another module deals directly still gets a swing and a flinch drawn.
   a ring of watchers), `X.brawl.stats`, `X.brawl.opts`.
 * Events: `brawlStart {ped, target}`, `brawlHit {by, ped, type, dmg, blocked, knockdown}`, `brawlKnockdown
   {ped, by}`, `brawlEnd`.
+
+## Doors: doors.js
+
+Every vehicle gets `car.doors` (made on first use by `X.doors.of(car)`): `{kind: 'swing'|'rear'|'slide'|
+'fold'|'hatch', side (-1 left, 1 right), hx, hy (hinge, car-local metres from the body centre, x forward, y
+right), len, max, role: 'front'|'rear'|'crew'|'side'|'cargo'|'mid'|'driver'|'hatch', a (opening: rad, or 0..1 for slide
+and fold), w, mode: 'shut'|'anim'|'hold'|'free'|'gone', lock (intact), detached}`. Layouts: 2-door coupes,
+4-door cars and the police cruiser, pickups with a regular or crew cab, cab doors + sliding door + rear barn
+doors on the box van, cab + rear doors on the ambulance, SWAT van and Securicar, a crew cab on the fire truck,
+two folding doors on the bus's kerb side plus the driver's own door, a turret hatch on the tank. A `'free'`
+door swings from the car's motion in its own frame (braking opens front-hinged doors, accelerating slams them,
+cornering swings the outside ones, yaw, wind and road bumps), bounces off its stop and latches when slammed if
+its lock is intact.
+Impacts near a door (`carImpact`) spring its lock, hard ones and blasts tear it off into debris (flung off
+outwards, never through the body; cars kick it along); a big smash anywhere (> 9 m/s) may spring any lock as the
+body bends; bullets and blows pop a lock now and then; `carRepaired` restores them all. An intact lock catches
+when the door swings or eases shut. Drawn in the `cars` layer over any car renderer.
+
+* `X.doors.entry(car, side)` → how the driver gets in from that side `{side, door, stand, seat, via?, any?}`
+  (car-local points; `via` = the other seat to climb across; `any`: either side is as good, the near one is
+  used: bus, tank; null if there is no door that side), `X.doors.exitSpot(car, side)`.
+* `X.doors.open(car, door, {fast, then: 'hold'|'free', to})` → seconds until passable, `.close(car, door)`,
+  `.breakLock(car, door, kick)`, `.tear(car, door, vx, vy)`, `.debris`, `.stats`, `.opts`.
+* police.js crews: a cruiser whose crew got out (`car.pol.doorT`) gets its doors flung open here.
 
 ## Drawing helpers
 
