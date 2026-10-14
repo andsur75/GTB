@@ -299,7 +299,7 @@
 
   // ================= input =================
   const keys = new Set(), pressedSet = new Set();
-  const mouse = X.mouse = { sx: 0, sy: 0, wx: 0, wy: 0, down: false, pressed: false, t: -1e9 };
+  const mouse = X.mouse = { sx: 0, sy: 0, wx: 0, wy: 0, dx: 0, dy: 0, down: false, pressed: false, t: -1e9 };
   const GAME_KEYS = new Set(['Space', 'Tab', 'KeyF', 'KeyQ', 'KeyE', 'KeyH', 'KeyC', 'KeyG', 'KeyJ', 'KeyX', 'KeyV', 'KeyB', 'KeyN', 'KeyZ', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ControlLeft', 'ControlRight', 'ShiftLeft', 'ShiftRight', 'Enter', 'AltLeft']);
   const playing = () => X.active && G().status === 'play';
   window.addEventListener('keydown', e => {
@@ -315,9 +315,19 @@
     if (canvasHooked) return; canvasHooked = true;
     const cv = document.getElementById('game');
     const pos = e => { const r = cv.getBoundingClientRect(); mouse.sx = e.clientX - r.left; mouse.sy = e.clientY - r.top; };
-    cv.addEventListener('pointermove', e => { if (e.pointerType === 'mouse') { pos(e); mouse.t = performance.now(); } });
-    cv.addEventListener('pointerdown', e => { if (!X.active || e.pointerType !== 'mouse') return; pos(e); mouse.t = performance.now(); if (e.button === 0) { mouse.down = true; mouse.pressed = true; } e.preventDefault(); });
+    cv.addEventListener('pointermove', e => {
+      if (e.pointerType !== 'mouse') return;
+      // relative motion steers in a car; some browsers (and synthetic events) report no movementX, so fall back to the position change
+      let mx = e.movementX || 0, my = e.movementY || 0;
+      if (!mx && !my && mouse.lx != null) { mx = e.clientX - mouse.lx; my = e.clientY - mouse.ly; }
+      mouse.lx = e.clientX; mouse.ly = e.clientY;
+      // browsers send a bogus jump when the cursor is hidden or the pointer lock engages: drop those
+      if (performance.now() < (mouse.quietUntil || 0) || Math.abs(mx) > 160 || Math.abs(my) > 160) mx = my = 0;
+      pos(e); mouse.t = performance.now(); mouse.dx += mx; mouse.dy += my;
+    });
+    cv.addEventListener('pointerdown', e => { if (!X.active || e.pointerType !== 'mouse') return; if (P.car && P.state === 'play') lockPointer(); pos(e); mouse.t = performance.now(); if (e.button === 0) { mouse.down = true; mouse.pressed = true; } e.preventDefault(); });
     window.addEventListener('pointerup', e => { if (e.button === 0) mouse.down = false; });
+    document.addEventListener('pointerlockchange', () => { mouse.quietUntil = performance.now() + 150; mouse.dx = mouse.dy = 0; });
     cv.addEventListener('contextmenu', e => { if (X.active) e.preventDefault(); });
     // Wheel zooms the view: each notch scales the framing by ~10%, clamped so the car stays readable and the city stays in reach.
     cv.addEventListener('wheel', e => {
@@ -564,15 +574,45 @@
     return X.steerCtl(c, rp.x, rp.y, { speed: 6, dt });
   }
 
-  // Mouse steering: the front wheels turn to point at the cursor, clamped to full lock. With the follow camera a cursor held
-  // to the right keeps the car turning right; with north up the car steers round to the direction you point.
+  // Mouse steering. In a car the mouse moves a marker round the car at a fixed screen distance, and the marker holds a direction
+  // in the WORLD (P.aim, radians), not on the screen: as the follow camera turns, the marker turns with the world, so the car
+  // steers towards it and settles once it points that way. The OS cursor is hidden (pointer lock where the browser allows it).
+  const AIM_R = 200;
   const mouseUsed = () => mouse.t > 0;
   function mouseSteer(c) {
-    const def = c.def, fx = Math.cos(c.th), fy = Math.sin(c.th), front = def.wb - carMid(def);
-    const dx = mouse.wx - (c.x + fx * front), dy = mouse.wy - (c.y + fy * front);
-    if (dx * dx + dy * dy < 2.5 * 2.5) return c.mouseSteer || 0;   // cursor on the bonnet: keep the wheels where they are
-    const ahead = dx * fx + dy * fy, right = dx * -fy + dy * fx;
-    return (c.mouseSteer = cl(Math.atan2(right, ahead) / (def.maxSteer * 0.85), -1, 1));
+    if (P.aimCar !== c) { P.aimCar = c; P.aim = c.th; }
+    let err = wrap(P.aim - c.th);
+    if (c.dv && c.dv.v < -1) err = -err;                     // reversing: opposite lock turns the nose the same way
+    err -= (c.dv ? c.dv.r : 0) * 0.4;                        // aim with the heading the car will have ~0.4 s from now: counter-steers early, no overshoot
+    return (c.mouseSteer = cl(err / (c.def.maxSteer * 0.85), -1, 1));
+  }
+  // Called from X.view with the frame's view: turns mouse motion into a new world direction for the marker.
+  function updateAim(view) {
+    const c = P.car;
+    if (!c || P.state !== 'play' || X.scene) { mouse.dx = mouse.dy = 0; return; }
+    if (P.aimCar !== c) { P.aimCar = c; P.aim = c.th; }
+    const r = aimRadius(c, view);
+    if (mouse.dx || mouse.dy) {
+      const a = P.aim + view.rot;   // world direction -> screen direction
+      P.aim = Math.atan2(Math.sin(a) * r + mouse.dy * 1.15, Math.cos(a) * r + mouse.dx * 1.15) - view.rot;
+      mouse.dx = mouse.dy = 0;
+    }
+    // anything aiming with the mouse while driving (drive-bys) aims at the marker
+    mouse.wx = c.x + Math.cos(P.aim) * r / view.scale; mouse.wy = c.y + Math.sin(P.aim) * r / view.scale;
+  }
+  const aimRadius = (c, view) => Math.max(AIM_R, c.len / 2 * view.scale + 70);
+  function lockPointer() {
+    const cv = document.getElementById('game');
+    if (!cv || document.pointerLockElement === cv || !cv.requestPointerLock) return;
+    try { const r = cv.requestPointerLock(); if (r && r.catch) r.catch(() => {}); } catch (e) { /* not allowed here: the hidden cursor still steers */ }
+  }
+  // Cursor hidden and pointer locked only while driving and playing; released everywhere else (menus need the cursor).
+  function syncCursor() {
+    const cv = document.getElementById('game'); if (!cv) return;
+    const driving = X.active && !!P.car && P.state === 'play' && G().status === 'play' && mouseUsed();
+    const want = driving ? 'none' : '';
+    if (cv.style.cursor !== want) cv.style.cursor = want;
+    if (!driving && document.pointerLockElement === cv && document.exitPointerLock) document.exitPointerLock();
   }
   X.steerTarget = c => mouseSteer(c);
   function playerCarCtl(c) {
@@ -917,6 +957,8 @@
     p.car = c; p.hidden = true; p.vx = p.vy = 0;
     P.car = c;
     X.cam.mode = 'follow';
+    P.aimCar = c; P.aim = c.th; mouse.dx = mouse.dy = 0; mouse.quietUntil = performance.now() + 150;
+    if (mouseUsed()) lockPointer();
     if (c.dv) c.dv.gear = 1;
     X.popup(c.model.name);
     X.emit('enterCar', { car: c });
@@ -1095,6 +1137,7 @@
     const view = { scale, dpr, cw, ch, cx: cam.x, cy: cam.y, rot: Math.abs(rot) < 1e-4 ? 0 : rot, ax: cw / 2 + sx, ay: vh * cam.lift + sy, r: Math.hypot(cw, ch) / scale * 0.62 + 4, bottomPad: pad || 0 };
     X.lastView = view;
     const w = X.toWorld(mouse.sx, mouse.sy); mouse.wx = w.x; mouse.wy = w.y;
+    updateAim(view); syncCursor();
     return view;
   };
   X.toWorld = function (sx, sy) {
@@ -1221,23 +1264,23 @@
       ctx.restore();
     }
   }
-  // In a car: a faint line from the nose to the cursor and a steering reticle, so you can see where the wheels are pointing.
-  function drawSteerGuide(ctx) {
+  // In a car: the steering marker. A circle 200 px from the car in the world direction P.aim, joined to the car by a faint line;
+  // orange while the wheels are at full lock.
+  function drawSteerGuide(ctx, view) {
     const c = P.car; if (!c || c.wrecked || P.state !== 'play' || !mouseUsed() || X.scene) return;
-    const def = c.def, front = def.wb - carMid(def) + def.fo * 0.9, n = X.toScreen(c.x + Math.cos(c.th) * front, c.y + Math.sin(c.th) * front);
-    const st = c.mouseSteer || 0, full = Math.abs(st) >= 0.999;
+    const o = X.toScreen(c.x, c.y), r = aimRadius(c, view), a = P.aim + view.rot, ca = Math.cos(a), sa = Math.sin(a);
+    const r0 = c.len / 2 * view.scale + 8, full = Math.abs(c.mouseSteer || 0) >= 0.999;
+    const mx = o.x + ca * r, my = o.y + sa * r;
     ctx.save();
-    ctx.setLineDash([5, 7]); ctx.lineWidth = 1.5; ctx.strokeStyle = full ? 'rgba(255,190,70,0.4)' : 'rgba(255,255,255,0.28)';
-    ctx.beginPath(); ctx.moveTo(n.x, n.y); ctx.lineTo(mouse.sx, mouse.sy); ctx.stroke(); ctx.setLineDash([]);
-    ctx.lineWidth = 2; ctx.strokeStyle = full ? 'rgba(255,190,70,0.85)' : 'rgba(255,255,255,0.7)';
-    ctx.beginPath(); ctx.arc(mouse.sx, mouse.sy, 9, 0, TAU); ctx.stroke();
-    // a little steering bar: centre tick plus a marker for the wheel angle
-    ctx.beginPath(); ctx.moveTo(mouse.sx - 14, mouse.sy + 17); ctx.lineTo(mouse.sx + 14, mouse.sy + 17); ctx.stroke();
-    ctx.fillStyle = ctx.strokeStyle; ctx.fillRect(mouse.sx + st * 14 - 2, mouse.sy + 13, 4, 8);
+    ctx.setLineDash([5, 7]); ctx.lineWidth = 1.5; ctx.strokeStyle = full ? 'rgba(255,190,70,0.45)' : 'rgba(255,255,255,0.3)';
+    ctx.beginPath(); ctx.moveTo(o.x + ca * r0, o.y + sa * r0); ctx.lineTo(mx - ca * 10, my - sa * 10); ctx.stroke(); ctx.setLineDash([]);
+    ctx.lineWidth = 2; ctx.strokeStyle = full ? 'rgba(255,190,70,0.9)' : 'rgba(255,255,255,0.75)';
+    ctx.beginPath(); ctx.arc(mx, my, 9, 0, TAU); ctx.stroke();
+    ctx.fillStyle = ctx.strokeStyle; ctx.beginPath(); ctx.arc(mx, my, 2, 0, TAU); ctx.fill();
     ctx.restore();
   }
-  function drawCrosshair(ctx) {
-    drawSteerGuide(ctx);
+  function drawCrosshair(ctx, view) {
+    drawSteerGuide(ctx, view);
     if (P.car || P.state !== 'play' || !X.input.mouseActive()) return;
     const w = P.weapon; if (!w || w === 'fists') return;
     ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.lineWidth = 1.5;
@@ -1405,6 +1448,7 @@ body.gta .hud-top { justify-content: flex-end; }
     if (!X.active) return;
     hook('stop');
     X.active = false; X.scene = null;
+    { const cv = document.getElementById('game'); if (cv) cv.style.cursor = ''; if (document.pointerLockElement && document.exitPointerLock) document.exitPointerLock(); }
     PG.audio.stopLoops();
     if (H) { H.pager.hidden = true; H.big.hidden = true; }
   };
