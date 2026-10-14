@@ -723,10 +723,12 @@ body.city .not-city { display: none !important; }
     veh.beta = u >= 0 ? Math.atan2(w, u) : Math.atan2(-w, -u);
     let align = 0;
     if (u > 1) align = cl(Math.atan2(w + a * r, u), -lock, lock) * (env.assist ? 1 : 0.85) * cl((speed - 2) / 4, 0, 1);
-    const sliding = Math.abs(beta) > 0.16;
-    const scale = sliding ? 1 : 1 - 0.62 * cl((speed - 6) / 28, 0, 1);
+    // Wheel angle limit: the most the front tyres can turn the car at this speed, i.e. the arc where lateral
+    // acceleration stays under ~90% of grip (atan(L * a / v^2)). Only a handbrake turn lifts it, so a drift is
+    // deliberate instead of something the car falls into at full lock.
+    const dLim = hand ? lock : Math.min(lock, Math.atan(c.wb * 0.9 * mu * G9 / Math.max(speed * speed, 1)));
     // caster only centres the wheel when released; while steering the driver's angle is the one that counts
-    const target = cl((input ? 0 : align) + input * lock * scale, -lock, lock);
+    const target = cl((input ? 0 : align) + input * dLim, -lock, lock);
     let delta = veh.steer * c.maxSteer;
     delta += cl(target - delta, -7 * h, 7 * h);
     veh.steer = delta / c.maxSteer;
