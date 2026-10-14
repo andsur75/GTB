@@ -43,6 +43,19 @@
     off: OFF,
   };
 
+  // Quality settings (PG.settings), read again at the start of every tick and frame, never kept longer:
+  // weather (rain, fog, snow, storms), ambientLife (pigeons, cats, gulls, litter, steam, the train, moths),
+  // screenFx (rain and snow on the screen, lightning flashes, the fog closing in), detail (low: no reflections,
+  // halos, splashes or moths, fewer effect particles), shadows, particles (caps this module's own pool).
+  const Q = { weather: true, life: true, fx: true, hi: true, sh: true, cap: 900, soft: true };
+  function readQ() {
+    const s = PG.settings || {}, rc = PG.renderCaps;
+    Q.weather = s.weather !== false; Q.life = s.ambientLife !== false; Q.fx = s.screenFx !== false; Q.hi = s.detail !== 'low'; Q.sh = s.shadows !== false;
+    Q.cap = s.particles === 'low' ? 120 : s.particles === 'medium' ? 400 : 900;
+    Q.soft = !(rc && rc.gpu);   // software raster: no scaled or turned image blits (see "pixel-exact sprites")
+    return Q;
+  }
+
   function fresh() {
     return {
       sig: new Map(), sigList: [], force: new Map(),
@@ -62,17 +75,21 @@
   const QK = new Uint8Array(NQ), QC = new Uint8Array(NQ);
   const QX = new Float32Array(NQ), QY = new Float32Array(NQ), QZ = new Float32Array(NQ), QVX = new Float32Array(NQ), QVY = new Float32Array(NQ), QVZ = new Float32Array(NQ);
   const QL = new Float32Array(NQ), QM = new Float32Array(NQ), QS = new Float32Array(NQ), QR = new Float32Array(NQ), QVR = new Float32Array(NQ);
-  let qCur = 0;
+  let qCur = 0, qLive = 0;
   function qEmit(k, x, y, z, vx, vy, vz, life, size, col) {
+    if (qLive >= Q.cap) return;
+    qLive++;
     const i = qCur; qCur = qCur + 1 === NQ ? 0 : qCur + 1;
     QK[i] = k; QX[i] = x; QY[i] = y; QZ[i] = z; QVX[i] = vx; QVY[i] = vy; QVZ[i] = vz; QL[i] = life; QM[i] = life; QS[i] = size; QR[i] = Math.random() * TAU; QVR[i] = rand(-8, 8); QC[i] = col || 0;
   }
   const BITC = ['#f2f2ee', '#e8e2c8', '#9fc6d9', '#6b4a2b', '#c0392b', '#3a7d44', '#d8c08a', '#2b2d33'];   // paper, newsprint, glass, soil, red, leaf, crumb, dark
   function qTick(dt) {
     const wx = api.wind.x, wy = api.wind.y;
+    let live = 0;
     for (let i = 0; i < NQ; i++) {
       const k = QK[i]; if (!k) continue;
       QL[i] -= dt; if (QL[i] <= 0) { QK[i] = 0; continue; }
+      live++;
       if (k === K_STEAM) { const a = 1 - Math.exp(-dt * 0.9); QVX[i] += (wx * 0.7 - QVX[i]) * a; QVY[i] += (wy * 0.7 - QVY[i]) * a; }
       else if (k === K_SPRAY) { const a = Math.exp(-dt * 3); QVX[i] *= a; QVY[i] *= a; }
       else if (k === K_PAPER) {
@@ -90,6 +107,7 @@
       }
       QX[i] += QVX[i] * dt; QY[i] += QVY[i] * dt;
     }
+    qLive = live;
   }
 
   // ================= sprites =================
@@ -102,7 +120,7 @@
   }
   const TINTS = new Map();
   function tinted(src, col) {
-    const key = col + (src === SPR.streak ? 's' : 'g');
+    const key = col + (src === SPR.streak ? 's' : src === SPR.soft ? 'o' : 'g');
     let c = TINTS.get(key); if (c) return c;
     c = canvas(src.width, src.height); const g = c.getContext('2d');
     g.drawImage(src, 0, 0); g.globalCompositeOperation = 'source-in'; g.fillStyle = col; g.fillRect(0, 0, c.width, c.height);
@@ -140,6 +158,40 @@
     SPR.streak = st;
     SPR.fogL = fogTex('210,214,222'); SPR.fogD = fogTex('44,50,66');
     return SPR;
+  }
+
+  // ================= pixel-exact sprites =================
+  // A software canvas pays per pixel for every scaled or turned image ('lighter' about doubles it): 24 lamp halos
+  // as scaled glow sprites take ~7 ms there, the same glows pre-drawn at the exact size they appear and blitted
+  // 1:1 at whole pixels ~1.3 ms. So glows, reflections and street furniture are fetched at their on-screen size
+  // and put down in device space. Things that turn with a turning camera (furniture, pigeons) are plain vector
+  // shapes on a software canvas instead (30 turned pigeon sprites ~3.4 ms, as vector ~0.9 ms).
+  const XS = new Map(); let xsPx = 0;
+  function xsGet(key, w, h, draw) {
+    if (PG.sprites && PG.sprites.get) return PG.sprites.get('amb|' + key, w, h, draw);
+    let c = XS.get(key);
+    if (c) { XS.delete(key); XS.set(key, c); return c; }
+    c = canvas(w, h); try { draw(c.getContext('2d'), w, h); } catch (e) { /* a broken sprite stays blank */ }
+    XS.set(key, c); xsPx += w * h;
+    while (xsPx > 3e6 && XS.size > 1) { const k = XS.keys().next().value, o = XS.get(k); XS.delete(k); xsPx -= o.width * o.height; }
+    return c;
+  }
+  // A soft sprite ('glow' or 'streak', tinted) of wPx x hPx device pixels, centred on device (dx, dy) (a streak
+  // hangs from a quarter of its height); the context must be in device space (identity transform).
+  function blob(ctx, kind, col, dx, dy, wPx, hPx) {
+    const w = Math.max(2, Math.round(wPx)), h = Math.max(2, Math.round(hPx));
+    const c = xsGet(kind + col + w + 'x' + h, w, h, g => g.drawImage(tinted(SPR[kind], col), 0, 0, w, h));
+    ctx.drawImage(c, Math.round(dx - w / 2), Math.round(dy - h * (kind === 'streak' ? 0.25 : 0.5)));
+  }
+  // world matrix M: device x, y of a world point
+  const devX = (M, x, y) => M.a * x + M.c * y + M.e, devY = (M, x, y) => M.b * x + M.d * y + M.f;
+  // Thin lines: Skia draws a stroke no wider than one device pixel as a hairline with its alpha scaled down,
+  // 5-10x faster than a slightly wider one (640 rain streaks: 1.4 px wide ~3 ms, 1 px ~0.35 ms). Starts a device-
+  // space path for lines wPx wide in colour rgb at alpha a, as 1 px lines carrying the same amount of ink.
+  function thin(ctx, wPx, rgb, a) {
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(' + rgb + ',' + Math.min(1, a * Math.max(0.35, wPx)).toFixed(3) + ')';
+    ctx.beginPath();
   }
 
   // ================= traffic lights =================
@@ -241,6 +293,7 @@
   function setWeather(kind, instant) {
     if (!S) return false;
     if (!WK[kind]) kind = 'clear';
+    if (!Q.weather && kind !== 'clear') return false;   // weather switched off in the settings
     const W = S.W, d = WK[kind], prev = W.kind;
     W.kind = kind; W.t = 0; W.dur = rand(d.dur[0], d.dur[1]); W.tRain = d.rain; W.tFog = d.fog; W.tSnow = d.snow || 0; W.tWind = rand(d.wind[0], d.wind[1]);
     if (instant) { W.rain = d.rain; W.fog = d.fog; W.snow = W.tSnow; W.wet = d.rain > 0 ? 1 : 0; W.cover = W.tSnow > 0 ? 1 : 0; W.ws = W.tWind; }
@@ -263,6 +316,10 @@
   }
   function weatherTick(dt) {
     const W = S.W;
+    if (!Q.weather) {   // switched off: clear skies at once, and they stay clear
+      if (W.kind !== 'clear') setWeather('clear', true);
+      W.t = 0; W.rain = W.fog = W.snow = W.wet = W.cover = W.flash = W.tRain = W.tFog = W.tSnow = 0; W.flashes.length = 0; W.thunder.length = 0;
+    }
     W.t += dt; if (W.t > W.dur) setWeather(nextKind(W.kind));
     W.rain += cl(W.tRain - W.rain, -dt * 0.07, dt * 0.07);
     W.fog += cl(W.tFog - W.fog, -dt * 0.05, dt * 0.05);
@@ -280,7 +337,7 @@
     if (W.kind === 'storm' && W.rain > 0.6) { W.nextBolt -= dt; if (W.nextBolt <= 0) bolt(); }
     for (let k = W.flashes.length - 1; k >= 0; k--) {
       const f = W.flashes[k]; if (f.t > X.time) continue;
-      W.flash = Math.max(W.flash, f.k); if (X.lighting && X.lighting.flash && !X.scene) X.lighting.flash(f.k * 0.8);
+      W.flash = Math.max(W.flash, f.k); if (X.lighting && X.lighting.flash && !X.scene && Q.fx) X.lighting.flash(f.k * 0.8);
       W.flashes.splice(k, 1);
     }
     for (let k = W.thunder.length - 1; k >= 0; k--) { const th = W.thunder[k]; if (th.t > X.time) continue; sfxThunder(th.k); W.thunder.splice(k, 1); }
@@ -294,7 +351,7 @@
     if (hit || (Math.random() < 0.28 && !X.scene)) { if (strike()) return; }
     W.thunder.push({ t: X.time + 0.25 + near * 2.4, k: 1 - near * 0.6 });
   }
-  api.lightning = function (hit) { if (S) bolt(hit); };
+  api.lightning = function (hit) { if (S && Q.weather) bolt(hit); };
   // A bolt that comes down close by: a tree (it may catch fire), a street lamp (it pops) or the bare street.
   function strike() {
     const f = X.focus(), C = X.city; let tx = 0, ty = 0, lamp = null, tree = null;
@@ -317,7 +374,7 @@
     S.strikes.push({ x: tx, y: ty, t: X.time, arms, seed: R() });
     if (S.strikes.length > 4) S.strikes.shift();
     S.stats.strikes++;
-    S.W.flash = 1; if (X.lighting && X.lighting.flash) X.lighting.flash(1);
+    S.W.flash = 1; if (X.lighting && X.lighting.flash && Q.fx) X.lighting.flash(1);
     G().shake = Math.max(G().shake, 0.4);
     PG.burst(tx, ty, 'spark', 46, 13, 0.6, 0.12);
     X.decal(tx, ty, 'scorch', 1.7);
@@ -626,7 +683,7 @@
     p.gush -= dt;
     const x = p.hx, y = p.hy, k = Math.min(1, p.gush / 3);
     if (seen(x, y, 12)) {
-      p.wacc = (p.wacc || 0) + dt * (S.low ? 30 : 70) * k;
+      p.wacc = (p.wacc || 0) + dt * (S.low || !Q.hi ? 30 : 70) * k;
       while (p.wacc >= 1) { p.wacc--; const a = rand(0, TAU), s = rand(0.3, 2.6); qEmit(K_WATER, x, y, 0.4, Math.cos(a) * s + api.wind.x * 0.4, Math.sin(a) * s + api.wind.y * 0.4, rand(5.5, 9.5) * (0.5 + k * 0.5), 2, rand(0.06, 0.12)); }
     }
     p.pud = Math.min(3.2, (p.pud || 0.4) + dt * 0.25);
@@ -732,7 +789,7 @@
     S.flocks.push(F);
     return F;
   }
-  api.spawnFlock = (x, y, n) => S ? spawnFlock(x, y, n || 7) : null;
+  api.spawnFlock = (x, y, n) => S && Q.life ? spawnFlock(x, y, n || 7) : null;
   function scareFlock(F, sx, sy) {
     if (F.st === 'air' || F.cool > 0) return false;
     F.st = 'air'; F.t = 0; S.stats.scares++;
@@ -795,6 +852,7 @@
     return null;
   }
   function flocksTick(dt) {
+    if (!Q.life) { S.flocks.length = 0; return; }   // ambient life switched off
     const f = X.focus(), indoor = !!X.scene;
     for (let i = S.flocks.length - 1; i >= 0; i--) {
       const F = S.flocks[i];
@@ -865,6 +923,7 @@
   // seagulls circling high over the harbour districts
   const GULL_D = { 'Old Pier': 5, Fjordheim: 3 };
   function gullsTick(dt) {
+    if (!Q.life) { S.gulls.length = 0; return; }
     const f = X.focus(), want = X.scene ? 0 : GULL_D[X.districtAt(f.x, f.y)] || 0;
     for (let i = S.gulls.length - 1; i >= 0; i--) {
       const g = S.gulls[i];
@@ -884,7 +943,7 @@
   }
   function drawGull(ctx, g) {
     const k = 1.25 * (1 + g.z * 0.03);
-    ctx.fillStyle = 'rgba(0,0,0,0.18)'; ctx.beginPath(); ctx.ellipse(g.x + g.z * 0.35, g.y + g.z * 0.5, 0.5, 0.18, g.th, 0, TAU); ctx.fill();
+    if (Q.sh) { ctx.fillStyle = 'rgba(0,0,0,0.18)'; ctx.beginPath(); ctx.ellipse(g.x + g.z * 0.35, g.y + g.z * 0.5, 0.5, 0.18, g.th, 0, TAU); ctx.fill(); }
     ctx.save(); ctx.translate(g.x, g.y); ctx.rotate(g.th); ctx.scale(k, k);
     const sp = 0.55 + 0.12 * Math.sin(g.flap), sw = g.flapT > 0 ? 0.06 * Math.cos(g.flap) : 0;
     ctx.fillStyle = '#c9ced6';
@@ -925,6 +984,7 @@
     }
   }
   function catsTick(dt) {
+    if (!Q.life) { S.cats.length = 0; return; }
     const f = X.focus();
     for (let i = S.cats.length - 1; i >= 0; i--) {
       const c = S.cats[i];
@@ -979,7 +1039,7 @@
       if (near < 2) { const v = X.lastView, r0 = v ? Math.min(140, v.r + 10) : 50; const sp = X.randomSidewalkPoint(f.x, f.y, r0, r0 + 60); if (sp) spawnCat(sp.x, sp.y); }
     }
   }
-  api.spawnCat = (x, y) => S ? spawnCat(x, y) : null;
+  api.spawnCat = (x, y) => S && Q.life ? spawnCat(x, y) : null;
   function petTest() {
     if (P.car || !P.ped || X.scene) return null;
     const p = P.ped; let best = null, bd = 1.7;
@@ -1016,6 +1076,7 @@
     return { x, y, vx: 0, vy: 0, z: 0, rot: rand(0, TAU), vr: 0, k: park ? 2 : Math.random() < 0.55 ? 0 : Math.random() < 0.5 ? 1 : 3, ph: rand(0, TAU), c: Math.floor(Math.random() * 3) };
   }
   function litterTick(dt) {
+    if (!Q.life) { S.litter.length = 0; S.litterInit = false; return; }
     if (X.scene) return;
     const f = X.focus(), W = S.W;
     while (S.litter.length < 46) {
@@ -1091,9 +1152,10 @@
     S.stats.trains++;
     return S.train;
   }
-  api.callTrain = (dir) => S ? spawnTrain(dir || (Math.random() < 0.5 ? 1 : -1), true) : null;
+  api.callTrain = (dir) => S && Q.life ? spawnTrain(dir || (Math.random() < 0.5 ? 1 : -1), true) : null;
   function trainTick(dt) {
     const L = S.line; if (!L) return;
+    if (!Q.life) { S.train = null; S.trainT = rand(3, 9); return; }   // the viaduct stays, no trains run
     const T = S.train;
     if (!T) { S.trainT -= dt; if (S.trainT <= 0) spawnTrain(); return; }
     const stopFront = L.st + T.dir * TLEN / 2, toStop = (stopFront - T.a) * T.dir;
@@ -1132,7 +1194,8 @@
   // ================= lifecycle =================
   function init() {
     killVoices();
-    QK.fill(0); ST.fill(-9);
+    QK.fill(0); ST.fill(-9); qLive = 0;
+    readQ();
     S = fresh();
     sprites();
     const C = X.city, R = mkR((C.seed || 1) * 7 + 13);
@@ -1153,15 +1216,16 @@
     S.W.dur = rand(120, 200);
     // a few flocks and a cat around the start, the rest arrive as you move
     const f = X.focus();
-    for (let k = 0, n = 0; k < 40 && n < 5; k++) { const sp = X.randomSidewalkPoint(f.x, f.y, k < 10 ? 8 : 20, 150); if (sp && groundOk(sp.x, sp.y)) { spawnFlock(sp.x, sp.y, 4 + Math.floor(Math.random() * 7)); n++; } }
-    for (let k = 0; k < 8 && S.cats.length < 2; k++) { const sp = X.randomSidewalkPoint(f.x, f.y, 12, 90); if (sp) spawnCat(sp.x, sp.y); }
+    for (let k = 0, n = 0; k < 40 && n < 5 && Q.life; k++) { const sp = X.randomSidewalkPoint(f.x, f.y, k < 10 ? 8 : 20, 150); if (sp && groundOk(sp.x, sp.y)) { spawnFlock(sp.x, sp.y, 4 + Math.floor(Math.random() * 7)); n++; } }
+    for (let k = 0; k < 8 && S.cats.length < 2 && Q.life; k++) { const sp = X.randomSidewalkPoint(f.x, f.y, 12, 90); if (sp) spawnCat(sp.x, sp.y); }
     S.snd.hour = Math.floor(X.clock / 60);
     S.started = true;
   }
-  function stop() { killVoices(); if (S) S.started = false; for (let i = 0; i < NQ; i++) QK[i] = 0; }
+  function stop() { killVoices(); if (S) S.started = false; for (let i = 0; i < NQ; i++) QK[i] = 0; qLive = 0; hideFog(); }
 
   function tick(dt) {
     if (!S) return;
+    readQ();
     weatherTick(dt);
     gripTick();
     rainTick(dt);
@@ -1188,6 +1252,7 @@
     const v = X.lastView; if (!v) return;
     const W = S.W, R = v.r;
     S.steamAcc += dt;
+    if (S.steamAcc > 0.09 && !Q.life) S.steamAcc = 0;
     if (S.steamAcc > 0.09) {
       const st = S.steamAcc; S.steamAcc = 0;
       eachCell(S.mgrid, v.cx, v.cy, R + 6, m => {
@@ -1196,7 +1261,8 @@
         while (m.acc >= 1) { m.acc--; qEmit(K_STEAM, m.x + rand(-0.3, 0.3), m.y + rand(-0.3, 0.3), 0, rand(-0.3, 0.3), rand(-0.3, 0.3), 0, rand(2.2, 3.6), rand(0.5, 0.9)); }
       });
     }
-    if (W.cover > 0.3 && !S.low) for (const c of X.cars) {
+    const lo = S.low || !Q.hi;
+    if (W.cover > 0.3 && !lo) for (const c of X.cars) {
       if (c.removed || c.wrecked) continue;
       const sp = Math.abs(c.speed || 0); if (sp < 6 || Math.abs(c.x - v.cx) > R + 8 || Math.abs(c.y - v.cy) > R + 8) continue;
       if (Math.random() < dt * 14 * Math.min(1, sp / 20)) { const fx = Math.cos(c.th), fy = Math.sin(c.th), s2 = Math.random() < 0.5 ? -1 : 1; qEmit(K_SPRAY, c.x - fx * c.len * 0.45 - fy * s2 * c.wid * 0.45, c.y - fy * c.len * 0.45 + fx * s2 * c.wid * 0.45, 0, -fx * sp * 0.12 + rand(-0.5, 0.5), -fy * sp * 0.12 + rand(-0.5, 0.5), 0, rand(0.5, 0.9), rand(0.3, 0.55)); }
@@ -1205,7 +1271,7 @@
       if (c.removed || c.wrecked) continue;
       const sp = Math.abs(c.speed || 0); if (sp < 4 || Math.abs(c.x - v.cx) > R + 8 || Math.abs(c.y - v.cy) > R + 8) continue;
       const fx = Math.cos(c.th), fy = Math.sin(c.th);
-      if (sp > 9 && !S.low && Math.random() < dt * 20 * W.wet * Math.min(1, sp / 25)) {
+      if (sp > 9 && !lo && Math.random() < dt * 20 * W.wet * Math.min(1, sp / 25)) {
         const s = Math.random() < 0.5 ? -1 : 1, bx = c.x - fx * c.len * 0.45 - fy * s * c.wid * 0.45, by = c.y - fy * c.len * 0.45 + fx * s * c.wid * 0.45;
         qEmit(K_SPRAY, bx, by, 0, -fx * sp * 0.15 + rand(-0.6, 0.6), -fy * sp * 0.15 + rand(-0.6, 0.6), 0, rand(0.4, 0.8), rand(0.35, 0.6));
       }
@@ -1216,7 +1282,7 @@
         if (dx * dx + dy * dy > 1) return;
         pd.hit = X.time; S.stats.splashes++;
         const vel = X.carVel(c);
-        for (let k = 0; k < 14; k++) { const a = rand(0, TAU); qEmit(K_WATER, pd.x + rand(-0.5, 0.5), pd.y + rand(-0.5, 0.5), 0.2, vel.x * 0.25 + Math.cos(a) * rand(1, 3.5), vel.y * 0.25 + Math.sin(a) * rand(1, 3.5), rand(2, 4.5), 1.2, rand(0.06, 0.12)); }
+        for (let k = 0, n = lo ? 6 : 14; k < n; k++) { const a = rand(0, TAU); qEmit(K_WATER, pd.x + rand(-0.5, 0.5), pd.y + rand(-0.5, 0.5), 0.2, vel.x * 0.25 + Math.cos(a) * rand(1, 3.5), vel.y * 0.25 + Math.sin(a) * rand(1, 3.5), rand(2, 4.5), 1.2, rand(0.06, 0.12)); }
         if (seen(pd.x, pd.y, 2)) sfxSplash(pd.x, pd.y, Math.min(1, sp / 15));
       });
     }
@@ -1276,6 +1342,8 @@
   }
   function renderGround(ctx, view, t) {
     if (!S) return;
+    readQ();
+    fogDrawn = false;
     governor(t);
     S.dark = darkness();
     S.vrot = view.rot || 0;
@@ -1310,11 +1378,12 @@
       ctx.fillStyle = `rgba(140,160,190,${(0.12 * pk).toFixed(3)})`; ctx.beginPath();
       eachCell(S.pgrid, cx, cy, R + 3, pd => { const g = 0.5 + 0.5 * pk; ctx.moveTo(pd.x - pd.rx * g * 0.1 + pd.rx * g * 0.45, pd.y - pd.ry * g * 0.25); ctx.ellipse(pd.x - pd.rx * g * 0.1, pd.y - pd.ry * g * 0.25, pd.rx * g * 0.45, pd.ry * g * 0.3, 0, 0, TAU); });
       ctx.fill();
-      // rings where the drops land in them
-      if (W.rain > 0.1 && view.scale >= 6 && !S.low) {
-        ctx.strokeStyle = `rgba(170,190,220,${(0.3 * pk).toFixed(3)})`; ctx.lineWidth = 0.04; ctx.beginPath();
-        eachCell(S.pgrid, cx, cy, R + 3, pd => { for (let k = 0; k < 2; k++) { const ph = (X.time * 1.7 + pd.seed * 7 + k * 0.5) % 1, a = pd.seed * 40 + k * 2.4 + Math.floor(X.time * 1.7 + pd.seed * 7 + k * 0.5) * 1.7, rr = ph * 0.35; const x = pd.x + Math.cos(a) * pd.rx * 0.5, y = pd.y + Math.sin(a) * pd.ry * 0.5; ctx.moveTo(x + rr, y); ctx.arc(x, y, rr, 0, TAU); } });
-        ctx.stroke();
+      // rings where the drops land in them: device-space hairlines (see thin())
+      if (W.rain > 0.1 && view.scale >= 6 && !S.low && Q.hi) {
+        const M = ctx.getTransform(), ppm = Math.hypot(M.a, M.b);
+        thin(ctx, 0.04 * ppm, '170,190,220', 0.3 * pk);
+        eachCell(S.pgrid, cx, cy, R + 3, pd => { for (let k = 0; k < 2; k++) { const ph = (X.time * 1.7 + pd.seed * 7 + k * 0.5) % 1, a = pd.seed * 40 + k * 2.4 + Math.floor(X.time * 1.7 + pd.seed * 7 + k * 0.5) * 1.7, rr = ph * 0.35 * ppm; const x = pd.x + Math.cos(a) * pd.rx * 0.5, y = pd.y + Math.sin(a) * pd.ry * 0.5, dx = devX(M, x, y), dy = devY(M, x, y); ctx.moveTo(dx + rr, dy); ctx.arc(dx, dy, rr, 0, TAU); } });
+        ctx.stroke(); ctx.setTransform(M);
       }
     }
     for (const p of S.loose) if (p.type === 'hydrant' && p.pud && pk <= 0.01 && vis(view, p.hx, p.hy, 4)) {
@@ -1349,6 +1418,7 @@
       const ex = sh.hx + sh.nx * 4.05, ey = sh.hy + sh.ny * 4.05, along = sh.nx === 0;
       ctx.strokeStyle = 'rgba(242,194,48,0.6)'; ctx.lineWidth = 0.14;
       if (along) ctx.strokeRect(ex - 7, ey + sh.ny * 0.25 + (sh.ny > 0 ? 0 : -2.6), 14, 2.6); else ctx.strokeRect(ex + sh.nx * 0.25 + (sh.nx > 0 ? 0 : -2.6), ey - 7, 2.6, 14);
+      if (!Q.hi) continue;
       ctx.save(); ctx.translate(ex + sh.nx * 1.55, ey + sh.ny * 1.55); if (!along) ctx.rotate(Math.PI / 2);
       ctx.fillStyle = 'rgba(242,194,48,0.55)'; ctx.font = '700 1.2px "Barlow Condensed", sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('BUS', 0, 0); ctx.restore();
     }
@@ -1365,32 +1435,40 @@
       for (let q = 0; q < 4; q++) { const px = s.x + (q & 1 ? hx : -hx), py = s.y + (q & 2 ? hy : -hy); ctx.moveTo(px + 0.22, py); ctx.arc(px, py, 0.22, 0, TAU); }
       ctx.fill();
     }
-    eachCell(S.grid, cx, cy, R + 3, p => { const sp = propSprite(p); ctx.drawImage(sp.cv, p.x - sp.hw, p.y - sp.hh, sp.w, sp.h); if (p.sx != null) stopSign(ctx, p); });
+    // standing furniture: pixel-exact sprites while the camera is level, vector shapes when it turns on a
+    // software canvas, scaled sprites on a GPU canvas
+    const M = ctx.getTransform(), level = Math.abs(M.b) < 1e-9 && Math.abs(M.c) < 1e-9;
+    if (level) {
+      const lv = exactLevel(M.a);
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      eachCell(S.grid, cx, cy, R + 3, p => { const sp = propSprite(p, lv); ctx.drawImage(sp.cv, Math.round(devX(M, p.x, p.y) - sp.hw * lv), Math.round(devY(M, p.x, p.y) - sp.hh * lv)); });
+      ctx.setTransform(M);
+      for (const p of S.stops) if (p.st === 0 && vis(view, p.sx, p.sy, 2)) stopSign(ctx, p);
+    } else if (Q.soft) eachCell(S.grid, cx, cy, R + 3, p => drawProp(ctx, p, t));
+    else eachCell(S.grid, cx, cy, R + 3, p => { const sp = propSprite(p, 0); ctx.drawImage(sp.cv, p.x - sp.hw, p.y - sp.hh, sp.w, sp.h); if (p.sx != null) stopSign(ctx, p); });
     for (const p of S.loose) if (vis(view, p.x, p.y, 4) || (p.gush > 0 && vis(view, p.hx, p.hy, 4))) drawProp(ctx, p, t);
     // coins
     for (const c of S.coins) {
       if (!vis(view, c.x, c.y, 1)) continue;
       const sx = Math.abs(Math.cos(X.time * 6 + c.ph)) * 0.22 + 0.04, blink = c.t > 44 && Math.floor(c.t * 8) % 2;
       if (blink) continue;
-      ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.ellipse(c.x + 0.06, c.y + 0.06, 0.24, 0.24, 0, 0, TAU); ctx.fill();
+      if (Q.sh) { ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.ellipse(c.x + 0.06, c.y + 0.06, 0.24, 0.24, 0, 0, TAU); ctx.fill(); }
       ctx.fillStyle = '#b8860b'; ctx.beginPath(); ctx.ellipse(c.x, c.y - c.z * 0.3, sx + 0.03, 0.27, 0, 0, TAU); ctx.fill();
       ctx.fillStyle = '#f2c230'; ctx.beginPath(); ctx.ellipse(c.x, c.y - c.z * 0.3, sx, 0.24, 0, 0, TAU); ctx.fill();
       ctx.fillStyle = '#fff3a8'; ctx.fillRect(c.x - sx * 0.45, c.y - c.z * 0.3 - 0.12, sx * 0.5, 0.06);
     }
     if (view.scale < 6) return;
     // litter
-    const LM = ctx.getTransform();
     for (const l of S.litter) {
       if (!vis(view, l.x, l.y, 1)) continue;
-      place(ctx, LM, l.x, l.y, l.rot, 1 + l.z * 0.25);
-      if (l.k === 0) { ctx.fillStyle = '#e4e0d6'; ctx.fillRect(-0.24, -0.17, 0.48, 0.34); ctx.fillStyle = 'rgba(40,40,40,0.35)'; ctx.fillRect(-0.18, -0.11, 0.2, 0.05); ctx.fillRect(-0.18, -0.02, 0.36, 0.03); ctx.fillRect(-0.18, 0.05, 0.3, 0.03); }
+      place(ctx, M, l.x, l.y, l.rot, 1 + l.z * 0.25);
+      if (l.k === 0) { ctx.fillStyle = '#e4e0d6'; ctx.fillRect(-0.24, -0.17, 0.48, 0.34); if (Q.hi) { ctx.fillStyle = 'rgba(40,40,40,0.35)'; ctx.fillRect(-0.18, -0.11, 0.2, 0.05); ctx.fillRect(-0.18, -0.02, 0.36, 0.03); ctx.fillRect(-0.18, 0.05, 0.3, 0.03); } }
       else if (l.k === 1) { ctx.fillStyle = '#d8d4ca'; ctx.beginPath(); ctx.arc(0, 0, 0.1, 0, TAU); ctx.fill(); }
       else if (l.k === 2) { ctx.fillStyle = LEAF[l.c]; ctx.beginPath(); ctx.ellipse(0, 0, 0.16, 0.08, 0, 0, TAU); ctx.fill(); }
       else { ctx.fillStyle = 'rgba(235,235,240,0.55)'; ctx.beginPath(); ctx.ellipse(0, 0, 0.26, 0.18 + 0.05 * Math.sin(X.time * 9 + l.ph), 0, 0, TAU); ctx.fill(); }
     }
-    ctx.setTransform(LM);
+    ctx.setTransform(M);
     // pigeons on the ground, cats
-    const M = LM;
     for (const F of S.flocks) {
       if (F.roof || !vis(view, F.x, F.y, 8)) continue;
       for (const b of F.birds) if (!b.air) drawBird(ctx, M, b);
@@ -1404,17 +1482,21 @@
     ctx.fillStyle = '#1b1f27'; ctx.font = '800 0.3px "Barlow Condensed", sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('BUS', p.sx, p.sy + 0.01);
   }
   // standing furniture is drawn from a sprite per type and facing: one drawImage instead of a dozen fills
+  // lv > 0: drawn at lv pixels per metre for a 1:1 blit (pixel-exact, LRU-cached); 0: at 48 px/m for scaled blits.
   const PSPR = new Map(), PPM = 48;
-  function propSprite(p) {
-    const key = p.type + (p.nx * 3 + p.ny) + (p.type === 'meter' ? (p.expired ? 'e' : 'p') : '');
+  function propSprite(p, lv) {
+    const key = p.type + (p.nx * 3 + p.ny) + (p.type === 'meter' ? (p.expired ? 'e' : 'p') : '') + (Q.sh ? '' : 'n') + (Q.hi ? '' : 'l');
+    const hw = (p.r || p.pw / 2) + 0.45, hh = (p.r || p.ph / 2) + 0.45, k = lv || PPM;
+    const paint = g => { g.setTransform(k, 0, 0, k, hw * k, hh * k); drawProp(g, { type: p.type, x: 0, y: 0, nx: p.nx, ny: p.ny, pw: p.pw, ph: p.ph, r: p.r, st: 0, expired: p.expired }, 0); };
+    if (lv) return { cv: xsGet('p' + key + '|' + lv.toFixed(3), Math.ceil(hw * 2 * k), Math.ceil(hh * 2 * k), paint), hw, hh };
     let sp = PSPR.get(key); if (sp) return sp;
-    const hw = (p.r || p.pw / 2) + 0.45, hh = (p.r || p.ph / 2) + 0.45;
-    const cv = canvas(Math.ceil(hw * 2 * PPM), Math.ceil(hh * 2 * PPM)), g = cv.getContext('2d');
-    g.setTransform(PPM, 0, 0, PPM, hw * PPM, hh * PPM);
-    drawProp(g, { type: p.type, x: 0, y: 0, nx: p.nx, ny: p.ny, pw: p.pw, ph: p.ph, r: p.r, st: 0, expired: p.expired }, 0);
+    const cv = canvas(Math.ceil(hw * 2 * PPM), Math.ceil(hh * 2 * PPM)); paint(cv.getContext('2d'));
     sp = { cv, hw, hh, w: cv.width / PPM, h: cv.height / PPM }; PSPR.set(key, sp);
     return sp;
   }
+  // Pixels per metre for pixel-exact sprites: steps of 1/48 octave (~1.5%), so a sprite is shown within 0.75% of
+  // its true size and a zoom makes a new set only every few frames.
+  const exactLevel = ppm => Math.pow(2, Math.round(Math.log2(Math.max(0.5, ppm)) * 48) / 48);
   function drawProp(ctx, p, t) {
     const x = p.x, y = p.y;
     if (p.st !== 0) { ctx.save(); ctx.translate(x, y); ctx.rotate(p.rot); ctx.translate(-x, -y); }
@@ -1428,14 +1510,14 @@
           ctx.fillStyle = '#c0392b'; ctx.fillRect(-0.3, -0.16, 0.6, 0.32); ctx.fillStyle = '#e0b020'; ctx.fillRect(0.22, -0.14, 0.12, 0.28);
           ctx.restore(); return;
         }
-        ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.arc(x + 0.08, y + 0.08, 0.28, 0, TAU); ctx.fill();
+        if (Q.sh) { ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.arc(x + 0.08, y + 0.08, 0.28, 0, TAU); ctx.fill(); }
         ctx.fillStyle = '#c0392b'; ctx.beginPath(); ctx.arc(x, y, 0.26, 0, TAU); ctx.fill();
         ctx.fillStyle = '#e74c3c'; ctx.fillRect(x - 0.36, y - 0.07, 0.72, 0.14); ctx.fillRect(x - 0.07, y - 0.36, 0.14, 0.72);
         ctx.fillStyle = '#e0b020'; ctx.beginPath(); ctx.arc(x, y, 0.13, 0, TAU); ctx.fill();
-        ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.beginPath(); ctx.arc(x - 0.06, y - 0.06, 0.05, 0, TAU); ctx.fill();
+        if (Q.hi) { ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.beginPath(); ctx.arc(x - 0.06, y - 0.06, 0.05, 0, TAU); ctx.fill(); }
         break;
       case 'meter': {
-        ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(x - 0.14, y - 0.12, 0.42, 0.4);
+        if (Q.sh) { ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(x - 0.14, y - 0.12, 0.42, 0.4); }
         ctx.fillStyle = '#4b5058'; ctx.fillRect(x - 0.21, y - 0.21, 0.42, 0.42);
         ctx.fillStyle = '#9aa2ad'; ctx.fillRect(x - 0.17, y - 0.17, 0.34, 0.34);
         ctx.fillStyle = p.st === 0 ? (p.expired ? '#e8402f' : '#4fbf6a') : '#2b2d33'; ctx.fillRect(x - 0.1 + p.nx * 0.05, y - 0.1 + p.ny * 0.05, 0.2, 0.2);
@@ -1444,7 +1526,7 @@
       }
       case 'bin':
         if (p.st === 0) {
-          ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.arc(x + 0.09, y + 0.09, 0.35, 0, TAU); ctx.fill();
+          if (Q.sh) { ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.arc(x + 0.09, y + 0.09, 0.35, 0, TAU); ctx.fill(); }
           ctx.fillStyle = '#2f5a3a'; ctx.beginPath(); ctx.arc(x, y, 0.34, 0, TAU); ctx.fill();
           ctx.fillStyle = '#1d3a25'; ctx.beginPath(); ctx.arc(x, y, 0.24, 0, TAU); ctx.fill();
           ctx.fillStyle = '#d8d4ca'; ctx.fillRect(x - 0.1, y - 0.06, 0.12, 0.09);
@@ -1452,7 +1534,7 @@
         break;
       case 'mailbox': case 'newsbox': {
         const mail = p.type === 'mailbox', w = p.pw, h = p.ph;
-        ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(x - w / 2 + 0.09, y - h / 2 + 0.09, w, h);
+        if (Q.sh) { ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(x - w / 2 + 0.09, y - h / 2 + 0.09, w, h); }
         ctx.fillStyle = mail ? '#c62828' : '#f2c230'; ctx.fillRect(x - w / 2, y - h / 2, w, h);
         ctx.fillStyle = mail ? '#8e1b1b' : '#1f5fbf'; ctx.fillRect(x - w / 2 + 0.06, y - h / 2 + 0.06, w - 0.12, h - 0.12);
         if (mail) { ctx.fillStyle = '#f2c230'; ctx.beginPath(); ctx.arc(x, y, 0.11, 0, TAU); ctx.fill(); }
@@ -1461,7 +1543,7 @@
       }
       case 'bench': {
         const w = p.pw, h = p.ph;
-        ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(x - w / 2 + 0.1, y - h / 2 + 0.1, w, h);
+        if (Q.sh) { ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(x - w / 2 + 0.1, y - h / 2 + 0.1, w, h); }
         ctx.fillStyle = '#3a3d44'; ctx.fillRect(x - w / 2, y - h / 2, w, h);
         ctx.fillStyle = p.st === 0 ? '#8a5a35' : '#6b4a2b';
         const along = w > h, n = 4;
@@ -1472,14 +1554,16 @@
         const w = p.pw, h = p.ph, along = w > h;
         if (p.sx != null) stopSign(ctx, p);
         if (p.st === 0) {
-          ctx.fillStyle = 'rgba(0,0,0,0.32)'; ctx.fillRect(x - w / 2 + 0.25, y - h / 2 + 0.25, w, h);
+          if (Q.sh) { ctx.fillStyle = 'rgba(0,0,0,0.32)'; ctx.fillRect(x - w / 2 + 0.25, y - h / 2 + 0.25, w, h); }
           ctx.fillStyle = 'rgba(160,200,220,0.35)'; ctx.fillRect(x - w / 2, y - h / 2, w, h);
           ctx.fillStyle = '#34495e'; ctx.fillRect(x - w / 2 + 0.1, y - h / 2 + 0.1, w - 0.2, h - 0.2);
           ctx.fillStyle = 'rgba(255,255,255,0.12)'; if (along) ctx.fillRect(x - w / 2 + 0.2, y - h / 2 + 0.15, w - 0.4, 0.25); else ctx.fillRect(x - w / 2 + 0.15, y - h / 2 + 0.2, 0.25, h - 0.4);
           // the ad panel at one end
           ctx.fillStyle = '#d9381e'; if (along) ctx.fillRect(x + w / 2 - 0.9, y - h / 2 + 0.1, 0.8, h - 0.2); else ctx.fillRect(x - w / 2 + 0.1, y + h / 2 - 0.9, w - 0.2, 0.8);
-          ctx.save(); ctx.translate(along ? x - 0.4 : x, along ? y : y - 0.4); if (!along) ctx.rotate(Math.PI / 2);
-          ctx.fillStyle = '#ffd23a'; ctx.font = '800 0.48px "Barlow Condensed", sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('TAKE THE BUS', 0, 0.02); ctx.restore();
+          if (Q.hi) {
+            ctx.save(); ctx.translate(along ? x - 0.4 : x, along ? y : y - 0.4); if (!along) ctx.rotate(Math.PI / 2);
+            ctx.fillStyle = '#ffd23a'; ctx.font = '800 0.48px "Barlow Condensed", sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('TAKE THE BUS', 0, 0.02); ctx.restore();
+          }
         } else {
           ctx.strokeStyle = '#2b3038'; ctx.lineWidth = 0.1; ctx.strokeRect(x - w / 2 + 0.05, y - h / 2 + 0.05, w - 0.1, h - 0.1);
           ctx.beginPath(); ctx.moveTo(x - w / 2, y - h / 2); ctx.lineTo(x - w / 2 + 0.6, y - h / 2 + 0.5); ctx.stroke();
@@ -1492,14 +1576,14 @@
   const BIRDC = [['#8d939c', '#6b717a', '#4e5560'], ['#efeee9', '#d8d6cf', '#c9c6be'], ['#24262b', '#16181c', '#0e0f12']];
   // Birds come from small cached sprites (8 wing beats in the air, standing / pecking on the ground), each
   // placed with one composed setTransform: dozens of birds for the price of a few draw calls.
-  function paintBird(g, kind, air, flap, peck) {
+  function paintBird(g, kind, air, flap, peck, shadow) {
     const C = BIRDC[kind];
     if (air) {
       const sp = 0.16 + 0.17 * Math.abs(Math.sin(flap)), sw = 0.05 * Math.cos(flap);
       g.fillStyle = C[1];
       g.beginPath(); g.moveTo(0.06, -0.04); g.lineTo(-0.05 + sw, -sp - 0.05); g.lineTo(-0.13 + sw, -sp); g.lineTo(-0.06, -0.03); g.closePath();
       g.moveTo(0.06, 0.04); g.lineTo(-0.05 + sw, sp + 0.05); g.lineTo(-0.13 + sw, sp); g.lineTo(-0.06, 0.03); g.closePath(); g.fill();
-    } else { g.fillStyle = 'rgba(0,0,0,0.25)'; g.beginPath(); g.ellipse(0.02, 0.03, 0.15, 0.08, 0, 0, TAU); g.fill(); }
+    } else if (shadow) { g.fillStyle = 'rgba(0,0,0,0.25)'; g.beginPath(); g.ellipse(0.02, 0.03, 0.15, 0.08, 0, 0, TAU); g.fill(); }
     g.fillStyle = C[0]; g.beginPath(); g.ellipse(0, 0, 0.15, 0.065, 0, 0, TAU); g.fill();
     g.fillStyle = C[1]; g.beginPath(); g.moveTo(-0.12, -0.035); g.lineTo(-0.22, -0.05); g.lineTo(-0.22, 0.05); g.lineTo(-0.12, 0.035); g.fill();
     if (!air) { g.beginPath(); g.ellipse(-0.03, 0, 0.09, 0.055, 0, 0, TAU); g.fill(); }
@@ -1509,11 +1593,11 @@
   }
   const BSPR = new Map(), BPM = 72, BH = 0.45;   // sprite: 0.9 x 0.9 m (unscaled bird), centred
   function birdSprite(kind, air, fr) {
-    const key = kind * 100 + (air ? 10 : 0) + fr;
+    const key = kind * 100 + (air ? 10 : 0) + fr + (Q.sh ? 0 : 1000);
     let c = BSPR.get(key); if (c) return c;
     c = canvas(Math.round(BH * 2 * BPM), Math.round(BH * 2 * BPM));
     const g = c.getContext('2d'); g.setTransform(BPM, 0, 0, BPM, BH * BPM, BH * BPM);
-    paintBird(g, kind, air, air ? fr / 8 * TAU : 0, air ? 0 : fr * 0.05);
+    paintBird(g, kind, air, air ? fr / 8 * TAU : 0, air ? 0 : fr * 0.05, Q.sh);
     BSPR.set(key, c); return c;
   }
   // world matrix M times translate(x, y) rotate(a) scale(k)
@@ -1525,9 +1609,12 @@
     const k = 1.6 * (1 + b.z * 0.05);
     const fr = b.air ? Math.floor(((b.flap % TAU) + TAU) % TAU / TAU * 8) % 8 : (b.peck > 0 && Math.sin(b.peck * 14) > 0.3 ? 1 : 0);
     place(ctx, M, b.x, b.y, b.th, k);
-    ctx.drawImage(birdSprite(b.kind, b.air, fr), -BH, -BH, BH * 2, BH * 2);
+    // a turned sprite is paid per pixel on a software canvas: there the shapes themselves are cheaper
+    if (Q.soft) paintBird(ctx, b.kind, b.air, b.air ? fr / 8 * TAU : 0, b.air ? 0 : fr * 0.05, Q.sh);
+    else ctx.drawImage(birdSprite(b.kind, b.air, fr), -BH, -BH, BH * 2, BH * 2);
   }
   function birdShadows(ctx, list) {
+    if (!Q.sh) return;
     ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.beginPath();
     for (const b of list) { if (!b.air) continue; const sx = b.x + b.z * 0.35, sy = b.y + b.z * 0.5; ctx.moveTo(sx + 0.24, sy); ctx.arc(sx, sy, 0.24, 0, TAU); }
     ctx.fill();
@@ -1535,7 +1622,7 @@
   function drawCat(ctx, c, t) {
     ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(c.th);
     const sit = c.st === 'sit' || c.st === 'groom' || c.st === 'purr', run = c.st === 'run' || c.st === 'pounce';
-    ctx.fillStyle = 'rgba(0,0,0,0.28)'; ctx.beginPath(); ctx.ellipse(0.03, 0.04, sit ? 0.2 : 0.3, 0.12, 0, 0, TAU); ctx.fill();
+    if (Q.sh) { ctx.fillStyle = 'rgba(0,0,0,0.28)'; ctx.beginPath(); ctx.ellipse(0.03, 0.04, sit ? 0.2 : 0.3, 0.12, 0, 0, TAU); ctx.fill(); }
     // tail
     ctx.strokeStyle = c.c1; ctx.lineWidth = 0.06; ctx.lineCap = 'round'; ctx.beginPath();
     const sw = Math.sin(c.tail) * (sit ? 0.15 : run ? 0.05 : 0.12);
@@ -1564,9 +1651,9 @@
     // billboards on the roofs
     for (const B of S.boards) {
       if (!vis(view, B.x + B.w / 2, B.y + B.h / 2, B.w)) continue;
-      ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(B.x + 0.7, B.y + 0.7, B.w, B.h + 0.3);
+      if (Q.sh) { ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(B.x + 0.7, B.y + 0.7, B.w, B.h + 0.3); }
       ctx.fillStyle = '#2a2b30'; ctx.fillRect(B.x - 0.2, B.y - 0.2, B.w + 0.4, B.h + 0.7);
-      ctx.drawImage(adCanvas(B.ad), B.x, B.y, B.w, B.h);
+      adBlit(ctx, B, 'ad');
       ctx.fillStyle = '#4a4c52'; ctx.fillRect(B.x - 0.2, B.y + B.h + 0.1, B.w + 0.4, 0.35);
       ctx.fillStyle = '#16171a'; for (let k = 0; k < 3; k++) ctx.fillRect(B.x + B.w * (0.17 + k * 0.33) - 0.15, B.y + B.h + 0.05, 0.3, 0.45);
     }
@@ -1577,6 +1664,15 @@
       for (const b of F.birds) drawBird(ctx, M, b);
     }
     ctx.setTransform(M);
+  }
+  // A billboard's ad (kind 'ad') or the glow it throws (kind 'glow'): pixel-exact while the camera is level.
+  function adBlit(ctx, B, kind) {
+    const M = ctx.getTransform(), src = kind === 'ad' ? adCanvas(B.ad) : SPR.streak;
+    const x = kind === 'ad' ? B.x : B.x - B.w * 0.05, y = kind === 'ad' ? B.y : B.y + B.h * 0.2, w = kind === 'ad' ? B.w : B.w * 1.1, h = kind === 'ad' ? B.h : B.h * 1.4;
+    if (Math.abs(M.b) > 1e-9 || Math.abs(M.c) > 1e-9 || (kind === 'ad' && AD_T[B.ad] !== 0)) { ctx.drawImage(src, x, y, w, h); return; }
+    const lv = exactLevel(M.a), pw = Math.max(1, Math.round(w * lv)), ph = Math.max(1, Math.round(h * lv));
+    const c = xsGet(kind + (kind === 'ad' ? B.ad : '') + '|' + pw + 'x' + ph, pw, ph, g => g.drawImage(src, 0, 0, pw, ph));
+    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(c, Math.round(devX(M, x, y)), Math.round(devY(M, x, y))); ctx.setTransform(M);
   }
   function renderCars(ctx, view, t) {
     if (!S || X.scene) return;
@@ -1605,10 +1701,11 @@
       if (p.team === 'cop' || p.team === 'guard' || p.team === 'gang' || (p.weapon && p.weapon !== 'fists')) continue;
       if (hsh(p.id * 1.37) > 0.5 || !vis(view, p.x, p.y, 1)) continue;
       const col = UMB[Math.floor(hsh(p.id * 3.1) * UMB.length)], r = 0.62, a0 = (p.th || 0) + X.time * 0.2;
-      ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.beginPath(); ctx.arc(p.x + 0.12, p.y + 0.15, r, 0, TAU); ctx.fill();
+      if (Q.sh) { ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.beginPath(); ctx.arc(p.x + 0.12, p.y + 0.15, r, 0, TAU); ctx.fill(); }
       ctx.fillStyle = col; ctx.beginPath();
       for (let k = 0; k < 8; k++) { const a = a0 + k * TAU / 8; ctx.lineTo(p.x + Math.cos(a) * r, p.y + Math.sin(a) * r); }
       ctx.closePath(); ctx.fill();
+      if (!Q.hi) continue;
       ctx.strokeStyle = 'rgba(0,0,0,0.3)'; ctx.lineWidth = 0.035; ctx.beginPath();
       for (let k = 0; k < 8; k += 2) { const a = a0 + k * TAU / 8; ctx.moveTo(p.x, p.y); ctx.lineTo(p.x + Math.cos(a) * r, p.y + Math.sin(a) * r); }
       ctx.stroke();
@@ -1676,7 +1773,7 @@
   }
   const SC = ['rgba(232,236,242,', 'rgba(190,215,240,', 'rgba(220,226,232,'];
   function drawParticles(ctx, view, pass) {
-    const spr = SPR.soft, vx = view.cx, vy = view.cy, vr = view.r + 3;
+    const vx = view.cx, vy = view.cy, vr = view.r + 3;
     // water droplets: one path, one fill
     ctx.fillStyle = '#bfe0f4'; ctx.globalAlpha = 0.7; ctx.beginPath();
     for (let i = 0; i < NQ; i++) {
@@ -1685,17 +1782,20 @@
       const s = QS[i] * (1 + QZ[i] * 0.12); ctx.rect(x - s, y - s, s * 2, s * 2);
     }
     ctx.fill();
+    // steam and spray: soft discs at their exact size in device space (2 px steps); paper and bits as small rects
+    const M = ctx.getTransform(), ppm = Math.hypot(M.a, M.b);
     for (let i = 0; i < NQ; i++) {
       const k = QK[i]; if (!k || k === K_WATER) continue;
       const x = QX[i], y = QY[i]; if (Math.abs(x - vx) > vr || Math.abs(y - vy) > vr) continue;
       const f = QL[i] / QM[i];
       if (k === K_STEAM || k === K_SPRAY) {
         const s = k === K_STEAM ? QS[i] * (1 + (1 - f) * 2.4) : QS[i] * (1 + (1 - f) * 1.5), a = k === K_STEAM ? 0.32 * Math.min(1, f * 1.6) * Math.min(1, (1 - f) * 6) : 0.3 * f;
-        ctx.globalAlpha = a; ctx.drawImage(spr, x - s, y - s, s * 2, s * 2);
+        const d = Math.max(2, Math.round(s * ppm)) * 2;
+        ctx.globalAlpha = a; ctx.setTransform(1, 0, 0, 1, 0, 0); blob(ctx, 'soft', '#ffffff', devX(M, x, y), devY(M, x, y), d, d); ctx.setTransform(M);
       } else {
         ctx.globalAlpha = Math.min(1, f * 3); ctx.fillStyle = BITC[QC[i]];
         const s = QS[i] * (1 + QZ[i] * 0.2);
-        if (k === K_PAPER) { ctx.save(); ctx.translate(x, y); ctx.rotate(QR[i]); ctx.fillRect(-s, -s * 0.7, s * 2, s * 1.4); ctx.restore(); }
+        if (k === K_PAPER) { place(ctx, M, x, y, QR[i], 1); ctx.fillRect(-s, -s * 0.7, s * 2, s * 1.4); ctx.setTransform(M); }
         else ctx.fillRect(x - s / 2, y - s / 2, s, s);
       }
     }
@@ -1703,8 +1803,8 @@
     // a gushing hydrant: a white column in the middle of the spray
     for (const p of S.loose) {
       if (!(p.gush > 0) || !vis(view, p.hx, p.hy, 4)) continue;
-      const k = Math.min(1, p.gush / 3), pulse = 0.85 + 0.15 * Math.sin(X.time * 30);
-      ctx.globalAlpha = 0.85 * k; ctx.drawImage(spr, p.hx - 1.1 * pulse, p.hy - 1.1 * pulse, 2.2 * pulse, 2.2 * pulse);
+      const k = Math.min(1, p.gush / 3), pulse = 0.85 + 0.15 * Math.sin(X.time * 30), d = Math.round(2.2 * pulse * ppm);
+      ctx.globalAlpha = 0.85 * k; ctx.setTransform(1, 0, 0, 1, 0, 0); blob(ctx, 'soft', '#ffffff', devX(M, p.hx, p.hy), devY(M, p.hx, p.hy), d, d); ctx.setTransform(M);
       ctx.globalAlpha = 0.5 * k; ctx.fillStyle = '#d6efff'; ctx.beginPath(); ctx.arc(p.hx, p.hy, 0.35 * pulse, 0, TAU); ctx.fill();
       ctx.globalAlpha = 1;
     }
@@ -1718,12 +1818,14 @@
     const rect = (a0, a1, o0, o1) => { if (L.horiz) ctx.rect(a0, L.c + o0, a1 - a0, o1 - o0); else ctx.rect(L.c + o0, a0, o1 - o0, a1 - a0); };
     const w = L.w / 2, sOn = L.st + L.stLen / 2 > lo && L.st - L.stLen / 2 < hi, sw = 2.5;
     // shadows: the deck, then the train (higher up, longer shadow)
-    ctx.save(); ctx.translate(2.6, 3.0);
-    ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.beginPath(); rect(lo, hi, -w, w); if (sOn) rect(L.st - L.stLen / 2, L.st + L.stLen / 2, -w - sw, w + sw); ctx.fill();
-    ctx.restore();
-    if (T) {
-      const a = T.a, b = T.a - T.dir * TLEN, t0 = Math.min(a, b), t1 = Math.max(a, b);
-      if (t1 > lo && t0 < hi) { ctx.save(); ctx.translate(3.6, 4.4); ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.beginPath(); rect(t0, t1, -1.45, 1.45); ctx.fill(); ctx.restore(); }
+    if (Q.sh) {
+      ctx.save(); ctx.translate(2.6, 3.0);
+      ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.beginPath(); rect(lo, hi, -w, w); if (sOn) rect(L.st - L.stLen / 2, L.st + L.stLen / 2, -w - sw, w + sw); ctx.fill();
+      ctx.restore();
+      if (T) {
+        const a = T.a, b = T.a - T.dir * TLEN, t0 = Math.min(a, b), t1 = Math.max(a, b);
+        if (t1 > lo && t0 < hi) { ctx.save(); ctx.translate(3.6, 4.4); ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.beginPath(); rect(t0, t1, -1.45, 1.45); ctx.fill(); ctx.restore(); }
+      }
     }
     ctx.globalAlpha = under ? 0.55 : 1;
     // deck
@@ -1742,10 +1844,10 @@
       ctx.fillStyle = '#16314a'; ctx.fillRect(-6, -0.55, 12, 1.1); ctx.fillStyle = '#ffffff'; ctx.font = '800 0.8px "Barlow Condensed", sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(L.name.toUpperCase(), 0, 0.03);
       ctx.restore();
     }
-    // sleepers and rails
-    ctx.strokeStyle = '#3d362f'; ctx.lineWidth = 2.3; ctx.setLineDash([0.26, 0.42]); ctx.beginPath();
-    if (L.horiz) { ctx.moveTo(lo - (lo % 0.68), L.c); ctx.lineTo(hi, L.c); } else { ctx.moveTo(L.c, lo - (lo % 0.68)); ctx.lineTo(L.c, hi); }
-    ctx.stroke(); ctx.setLineDash([]);
+    // sleepers (only the ones on screen: a dashed stroke paid for the whole length) and rails
+    ctx.fillStyle = '#3d362f'; ctx.beginPath();
+    for (let a = Math.ceil(Math.max(lo, along - view.r) / 0.68) * 0.68, a1 = Math.min(hi, along + view.r); a < a1; a += 0.68) rect(a, a + 0.26, -1.15, 1.15);
+    ctx.fill();
     ctx.strokeStyle = '#c3c7cf'; ctx.lineWidth = 0.11; ctx.beginPath();
     for (const o of [-0.72, 0.72]) { if (L.horiz) { ctx.moveTo(lo, L.c + o); ctx.lineTo(hi, L.c + o); } else { ctx.moveTo(L.c + o, lo); ctx.lineTo(L.c + o, hi); } }
     ctx.stroke();
@@ -1787,13 +1889,15 @@
   }
   function renderOverlay(ctx, view, t) {
     if (!S || X.scene) return;
-    const W = S.W, dk = S.dark, R = view.r;
+    const W = S.W, dk = S.dark, R = view.r, M = ctx.getTransform(), ppm = Math.hypot(M.a, M.b);
+    // round glows at their exact size, in device space
+    const glow = (col, x, y, d) => { ctx.setTransform(1, 0, 0, 1, 0, 0); blob(ctx, 'glow', col, devX(M, x, y), devY(M, x, y), d * ppm, d * ppm); ctx.setTransform(M); };
     // lightning strikes: a white-hot spot and the charge running out over the ground
     for (const k of S.strikes) {
       const age = X.time - k.t; if (age > 0.6 || !vis(view, k.x, k.y, 8)) continue;
       const a = 1 - age / 0.6;
       ctx.globalCompositeOperation = 'lighter';
-      ctx.globalAlpha = a; ctx.drawImage(tinted(SPR.glow, '#bcd4ff'), k.x - 4, k.y - 4, 8, 8);
+      ctx.globalAlpha = a; glow('#bcd4ff', k.x, k.y, 8);
       ctx.strokeStyle = '#e8f0ff'; ctx.lineWidth = 0.12 * (0.5 + a); ctx.beginPath();
       for (const pts of k.arms) { ctx.moveTo(k.x, k.y); for (let q = 0; q < pts.length; q += 2) ctx.lineTo(pts[q], pts[q + 1]); }
       ctx.stroke();
@@ -1802,10 +1906,8 @@
     // emissive bits at night: signal lamps, lit billboards, train windows
     if (dk > 0.05 && view.scale >= 3.5 && !OFF.emissive) {
       ctx.globalCompositeOperation = 'lighter';
-      for (let c = 0; c < 3; c++) {
-        const spr = tinted(SPR.glow, LAMPC[c]);
-        signalHeads(view, (s, px, py, ax, ay, d, st) => { if (st !== c) return; const o = (1 - c) * 0.38, x = px + ax * (d + o), y = py + ay * (d + o); ctx.globalAlpha = 0.8 * dk; ctx.drawImage(spr, x - 0.9, y - 0.9, 1.8, 1.8); });
-      }
+      ctx.globalAlpha = 0.8 * dk;
+      for (let c = 0; c < 3; c++) signalHeads(view, (s, px, py, ax, ay, d, st) => { if (st !== c) return; const o = (1 - c) * 0.38; glow(LAMPC[c], px + ax * (d + o), py + ay * (d + o), 1.8); });
       ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
       for (let c = 0; c < 3; c++) {
         ctx.fillStyle = LAMPC[c]; ctx.globalAlpha = Math.min(1, dk * 1.4); ctx.beginPath();
@@ -1815,13 +1917,13 @@
       for (const B of S.boards) {
         if (!vis(view, B.x + B.w / 2, B.y + B.h / 2, B.w)) continue;
         let k = 0.82 * dk; if (B.flick) k *= (Math.sin(t * 13 + B.seed * 40) > -0.6 ? 1 : 0.15);
-        ctx.globalAlpha = k; ctx.drawImage(adCanvas(B.ad), B.x, B.y, B.w, B.h);
-        ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.22 * k; ctx.drawImage(SPR.streak, B.x - B.w * 0.05, B.y + B.h * 0.2, B.w * 1.1, B.h * 1.4); ctx.globalCompositeOperation = 'source-over';
+        ctx.globalAlpha = k; adBlit(ctx, B, 'ad');
+        if (Q.hi) { ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.22 * k; adBlit(ctx, B, 'glow'); ctx.globalCompositeOperation = 'source-over'; }
       }
       ctx.globalAlpha = 1;
       drawTrainWindows(ctx, view, dk);
       // moths round the lamps on dry nights
-      if (dk > 0.5 && W.rain < 0.15 && view.scale >= 6 && !S.low) {
+      if (dk > 0.5 && W.rain < 0.15 && view.scale >= 6 && !S.low && Q.hi && Q.life) {
         ctx.fillStyle = 'rgba(255,243,200,0.75)'; ctx.beginPath();
         let n = 0;
         eachCell(S.lampG, view.cx, view.cy, R, l => {
@@ -1833,27 +1935,33 @@
       }
     }
     // wet roads mirror the lights
-    if (W.wet > 0.1 && view.scale >= 3.5 && !OFF.reflections && !S.low) drawReflections(ctx, view, dk);
-    // rain splashes on the ground
-    if (W.rain > 0.02 && view.scale >= 5 && !OFF.splashes && !S.low) {
-      const now = X.time;
-      ctx.strokeStyle = 'rgba(205,220,240,0.5)'; ctx.lineWidth = 0.04; ctx.beginPath();
-      for (let i = 0; i < SPN; i++) { const age = now - ST[i]; if (age < 0 || age > 0.12) continue; const r = 0.03 + age * 0.6; ctx.moveTo(SX[i] + r, SY[i]); ctx.arc(SX[i], SY[i], r, 0, TAU); }
-      ctx.stroke();
-      ctx.strokeStyle = 'rgba(205,220,240,0.2)'; ctx.beginPath();
-      for (let i = 0; i < SPN; i++) { const age = now - ST[i]; if (age < 0.12 || age > 0.26) continue; const r = 0.03 + age * 0.6; ctx.moveTo(SX[i] + r, SY[i]); ctx.arc(SX[i], SY[i], r, 0, TAU); }
-      ctx.stroke();
+    const lo = S.low || !Q.hi;
+    if (W.wet > 0.1 && view.scale >= 3.5 && !OFF.reflections && !lo) drawReflections(ctx, view, dk);
+    // rain splashes on the ground: device-space hairlines (see thin())
+    if (W.rain > 0.02 && view.scale >= 5 && !OFF.splashes && !lo) {
+      const now = X.time, lw = 0.04 * ppm;
+      for (let pass = 0; pass < 2; pass++) {
+        thin(ctx, lw, '205,220,240', pass ? 0.2 : 0.5);
+        for (let i = 0; i < SPN; i++) {
+          const age = now - ST[i]; if (pass ? age < 0.12 || age > 0.26 : age < 0 || age > 0.12) continue;
+          const r = (0.03 + age * 0.6) * ppm, x = devX(M, SX[i], SY[i]), y = devY(M, SX[i], SY[i]); ctx.moveTo(x + r, y); ctx.arc(x, y, r, 0, TAU);
+        }
+        ctx.stroke();
+      }
+      ctx.setTransform(M);
     }
     // halos round the lamps in fog and rain
     const halo = Math.max(W.fog, W.rain * 0.3) * dk;
-    if (halo > 0.05 && view.scale >= 3.5 && !OFF.halos && !S.low) {
-      ctx.globalCompositeOperation = 'lighter';
+    if (halo > 0.05 && view.scale >= 3.5 && !OFF.halos && !lo) {
+      ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.3 * halo;
       let nh = 0;
+      const r = 2.2 + 1.6 * W.fog, d = Math.round(r * 2 * ppm / 4) * 4;   // 4 px steps while the fog thickens
       eachCell(S.lampG, view.cx, view.cy, R + 4, l => {
         if (l.broken || nh > 24) return; nh++;
-        const i = S.lampIdx.get(l), spr = tinted(SPR.glow, S.lampCol[i]), hx = l.x + l.nx * 1.2, hy = l.y + l.ny * 1.2, r = 2.2 + 1.6 * W.fog;
-        ctx.globalAlpha = 0.3 * halo; ctx.drawImage(spr, hx - r, hy - r, r * 2, r * 2);
+        const i = S.lampIdx.get(l), hx = l.x + l.nx * 1.2, hy = l.y + l.ny * 1.2;
+        ctx.setTransform(1, 0, 0, 1, 0, 0); blob(ctx, 'glow', S.lampCol[i], devX(M, hx, hy), devY(M, hx, hy), d, d);
       });
+      ctx.setTransform(M);
       ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
     }
   }
@@ -1874,47 +1982,59 @@
     ctx.globalAlpha = 1;
   }
   function drawReflections(ctx, view, dk) {
-    const W = S.W, k = W.wet * (0.18 + 0.82 * dk), rot = view.rot || 0;
+    const W = S.W, k = W.wet * (0.18 + 0.82 * dk);
     if (k < 0.03) return;
-    // streaks run down the screen, whichever way the camera faces
-    const ux = Math.sin(-rot) * -1, uy = Math.cos(-rot);
-    const dirA = Math.atan2(uy, ux) - Math.PI / 2;
+    // streaks run down the screen whichever way the camera faces: in device space they are plain upright
+    // sprites, drawn at their exact size (lengths in 6 px steps)
+    const M = ctx.getTransform(), ppm = Math.hypot(M.a, M.b);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.globalCompositeOperation = 'lighter';
-    const draw = rot ? (spr, x, y, w, len, a) => { ctx.globalAlpha = a; ctx.save(); ctx.translate(x, y); ctx.rotate(dirA); ctx.drawImage(spr, -w / 2, -len * 0.25, w, len); ctx.restore(); }
-      : (spr, x, y, w, len, a) => { ctx.globalAlpha = a; ctx.drawImage(spr, x - w / 2, y - len * 0.25, w, len); };
+    const draw = (col, x, y, w, len, a) => { ctx.globalAlpha = a; blob(ctx, 'streak', col, devX(M, x, y), devY(M, x, y), w * ppm, Math.round(len * ppm / 6) * 6); };
     if (dk > 0.2) eachCell(S.lampG, view.cx, view.cy, view.r + 2, l => {
       if (l.broken) return; const i = S.lampIdx.get(l), hx = l.x + l.nx * 2.2, hy = l.y + l.ny * 2.2;
-      draw(tinted(SPR.streak, S.lampCol[i]), hx, hy, 1.6, 7 + 2 * Math.sin(X.time * 2 + i), 0.3 * k * (0.85 + 0.15 * Math.sin(X.time * 7 + i * 3)));
+      draw(S.lampCol[i], hx, hy, 1.6, 7 + 2 * Math.sin(X.time * 2 + i), 0.3 * k * (0.85 + 0.15 * Math.sin(X.time * 7 + i * 3)));
     });
-    const head = tinted(SPR.streak, '#fff1cf'), tail = tinted(SPR.streak, '#ff3020');
     for (const c of X.cars) {
       if (c.removed || c.wrecked || !c.lightsOn || !vis(view, c.x, c.y, 6)) continue;
       const fx = Math.cos(c.th), fy = Math.sin(c.th);
-      if (dk > 0.2) draw(head, c.x + fx * (c.len / 2 + 2.5), c.y + fy * (c.len / 2 + 2.5), 1.6, 6, 0.22 * k);
-      draw(tail, c.x - fx * (c.len / 2 + 1), c.y - fy * (c.len / 2 + 1), 1.2, c.braking ? 4.5 : 3, (c.braking ? 0.3 : 0.12) * k);
+      if (dk > 0.2) draw('#fff1cf', c.x + fx * (c.len / 2 + 2.5), c.y + fy * (c.len / 2 + 2.5), 1.6, 6, 0.22 * k);
+      draw('#ff3020', c.x - fx * (c.len / 2 + 1), c.y - fy * (c.len / 2 + 1), 1.2, c.braking ? 4.5 : 3, (c.braking ? 0.3 : 0.12) * k);
     }
-    if (dk > 0.1) for (let c = 0; c < 3; c++) {
-      const spr = tinted(SPR.streak, LAMPC[c]);
-      signalHeads(view, (s, px, py, ax, ay, d, st) => { if (st !== c) return; const o = (1 - c) * 0.38; draw(spr, px + ax * (d + o), py + ay * (d + o) + 0.3, 1.1, 4.5, 0.32 * k); });
-    }
+    if (dk > 0.1) for (let c = 0; c < 3; c++) signalHeads(view, (s, px, py, ax, ay, d, st) => { if (st !== c) return; const o = (1 - c) * 0.38; draw(LAMPC[c], px + ax * (d + o), py + ay * (d + o) + 0.3, 1.1, 4.5, 0.32 * k); });
+    ctx.setTransform(M);
     ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
   }
-  let fogCv = null, fogG = null, fogPat = null, fogPatTex = null;
-  function drawFog(ctx, view, f, dk, col) {
-    const K = 6, cw = view.cw, ch = view.ch, w = Math.ceil(cw / K) + 1, h = Math.ceil(ch / K) + 1;
-    if (!fogCv) { fogCv = canvas(w, h); fogG = fogCv.getContext('2d'); }
-    if (fogCv.width !== w || fogCv.height !== h) { fogCv.width = w; fogCv.height = h; }
+  // Thick fog is drawn at a sixth of the resolution on a small canvas of its own, laid over the game inside
+  // #gta-hud, and the browser's compositor scales it up (off the main thread; free on a GPU). Blitting it up onto
+  // the main canvas instead cost ~4-5 ms a frame on a software canvas. Shown only on frames that draw it.
+  let fogCv = null, fogG = null, fogPat = null, fogPatTex = null, fogOn = false, fogDrawn = false;
+  function fogLayer() {
+    if (fogCv && fogCv.isConnected) return fogCv;
+    const host = document.getElementById('gta-hud'); if (!host) return null;
+    if (!fogCv) {
+      fogCv = canvas(8, 8); fogCv.className = 'amb-fog'; fogG = fogCv.getContext('2d');
+      fogCv.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;display:none';
+    }
+    fogOn = false; fogCv.style.display = 'none';
+    host.insertBefore(fogCv, host.firstChild);
+    return fogCv;
+  }
+  function hideFog() { if (fogCv && fogOn) { fogCv.style.display = 'none'; fogOn = false; } }
+  function drawFog(view, f, dk, col) {
+    const el = fogLayer(); if (!el) return false;
+    const cw = view.cw, ch = view.ch, w = Math.max(1, Math.ceil(cw / 6)), h = Math.max(1, Math.ceil(ch / 6)), kx = cw / w, ky = ch / h;
+    if (el.width !== w || el.height !== h) { el.width = w; el.height = h; }
     const g = fogG;
     g.setTransform(1, 0, 0, 1, 0, 0); g.globalAlpha = 1; g.clearRect(0, 0, w, h);
     g.fillStyle = `rgba(${col},${(0.26 * f).toFixed(3)})`; g.fillRect(0, 0, w, h);
     const tex = dk > 0.5 ? SPR.fogD : SPR.fogL, sc = 0.32, ox = X.time * api.wind.x * 0.8, oy = X.time * api.wind.y * 0.8;
     if (fogPatTex !== tex) { fogPat = g.createPattern(tex, 'repeat'); fogPatTex = tex; }
-    g.setTransform(1 / K, 0, 0, 1 / K, 0, 0); g.translate(view.ax, view.ay); g.rotate(view.rot || 0); g.scale(view.scale, view.scale); g.translate(-view.cx, -view.cy);
+    g.setTransform(1 / kx, 0, 0, 1 / ky, 0, 0); g.translate(view.ax, view.ay); g.rotate(view.rot || 0); g.scale(view.scale, view.scale); g.translate(-view.cx, -view.cy);
     g.translate(ox, oy); g.scale(sc, sc);
     g.globalAlpha = Math.min(1, 1.1 * f); g.fillStyle = fogPat;
     const r = view.r / sc; g.fillRect((view.cx - ox) / sc - r, (view.cy - oy) / sc - r, r * 2, r * 2);
     if (!OFF.vignette) {
-      g.setTransform(1 / K, 0, 0, 1 / K, 0, 0);
+      g.setTransform(1 / kx, 0, 0, 1 / ky, 0, 0);
       const v = dk > 0.5 ? SPR.vigD : SPR.vigL, pos = X.playerPos(), pp = X.toScreen(pos.x, pos.y), s = Math.max(cw, ch) * (1.25 - 0.35 * f);
       g.globalAlpha = Math.min(1, 0.95 * f); g.drawImage(v, pp.x - s / 2, pp.y - s / 2, s, s);
       g.fillStyle = dk > 0.5 ? 'rgba(36,42,56,0.95)' : 'rgba(196,202,210,0.95)';
@@ -1922,23 +2042,25 @@
       if (pp.x - s / 2 > 0) g.fillRect(0, 0, pp.x - s / 2, ch); if (pp.x + s / 2 < cw) g.fillRect(pp.x + s / 2, 0, cw - pp.x - s / 2, ch);
       if (pp.y - s / 2 > 0) g.fillRect(x0, 0, x1 - x0, pp.y - s / 2); if (pp.y + s / 2 < ch) g.fillRect(x0, pp.y + s / 2, x1 - x0, ch - pp.y - s / 2);
     }
-    ctx.drawImage(fogCv, 0, 0, w * K, h * K);
+    if (!fogOn) { el.style.display = ''; fogOn = true; }
+    fogDrawn = true;
+    return true;
   }
   function renderScreen(ctx, view, t) {
     if (!S || X.scene) return;
-    const W = S.W, dk = S.dark, cw = view.cw, ch = view.ch;
-    // fog: a flat haze; thick fog adds banks drifting with the wind (anchored to the world) and closes in
-    // round the edges, drawn at a sixth of the resolution (it is soft anyway) and blitted up in one go
+    const W = S.W, dk = S.dark, cw = view.cw, ch = view.ch, dpr = view.dpr || 1;
+    // fog: a flat haze; thick fog adds banks drifting with the wind (anchored to the world) and closes in round
+    // the edges (a screen effect), drawn at a sixth of the resolution (it is soft anyway): see drawFog
     if (W.fog > 0.01) {
       const f = W.fog, col = dk > 0.5 ? '40,46,62' : '200,205,214';
-      if (f < 0.3 || OFF.fogBanks || S.low) { ctx.fillStyle = `rgba(${col},${(0.26 * f).toFixed(3)})`; ctx.fillRect(0, 0, cw, ch); }
-      else drawFog(ctx, view, f, dk, col);
+      if (f < 0.3 || OFF.fogBanks || S.low || !Q.fx || !drawFog(view, f, dk, col)) { ctx.fillStyle = `rgba(${col},${(0.26 * f).toFixed(3)})`; ctx.fillRect(0, 0, cw, ch); }
     }
     S.stats.drops = 0; S.stats.flakes = 0;
+    const lo = S.low || !Q.hi;
     if (W.snow > 0.02) {
       const g = W.snow * (1 - dk);
       if (g > 0.01) { ctx.fillStyle = `rgba(205,212,224,${(0.14 * g).toFixed(3)})`; ctx.fillRect(0, 0, cw, ch); }
-      const n = Math.floor(RN * 0.75 * W.snow * (S.low ? 0.5 : 1));
+      const n = Q.fx ? Math.floor(RN * 0.75 * W.snow * (lo ? 0.5 : 1)) : 0;
       ctx.fillStyle = `rgba(250,252,255,${(0.85 - dk * 0.15).toFixed(3)})`;
       for (let i = 0; i < n; i++) { const z = RZ[i], sz = 1.4 + z * 2.4; ctx.fillRect(RX[i] * cw, RY[i] * ch, sz, sz); }
       S.stats.flakes = n;
@@ -1947,21 +2069,24 @@
     if (W.rain > 0.02) {
       const g = W.rain * (1 - dk);
       if (g > 0.01) { ctx.fillStyle = `rgba(60,70,86,${(0.22 * g).toFixed(3)})`; ctx.fillRect(0, 0, cw, ch); }
-      // rain streaks: two depths
-      const n = Math.floor(RN * Math.min(1, W.rain * 1.05) * (S.low ? 0.5 : 1)), sl = S.slant || 0, len0 = ch * (0.02 + 0.016 * W.rain);
+      // rain streaks, two depths: one path of 1 device-pixel lines per depth (Skia's hairlines: ~5x cheaper than
+      // rects or wider lines on a software canvas), the near drops' extra width turned into alpha
+      const n = Q.fx ? Math.floor(RN * Math.min(1, W.rain * 1.05) * (lo ? 0.5 : 1)) : 0, sl = S.slant || 0, len0 = ch * (0.02 + 0.016 * W.rain);
       S.stats.drops = n;
-      // thin rects, not stroked lines: a fraction of the cost on a software canvas; a slanted drop is a few stacked pieces
-      for (let pass = 0; pass < 2 && !OFF.streaks; pass++) {
-        ctx.fillStyle = pass ? `rgba(215,228,246,${(0.36 - dk * 0.08).toFixed(3)})` : `rgba(190,205,228,${(0.22 - dk * 0.05).toFixed(3)})`;
-        const w = pass ? 1.4 : 1;
+      ctx.lineWidth = 1 / dpr;
+      for (let pass = 0; pass < 2 && n && !OFF.streaks; pass++) {
+        const a = (pass ? 0.36 - dk * 0.08 : 0.22 - dk * 0.05) * Math.max(1, (pass ? 1.4 : 1) * dpr);
+        ctx.strokeStyle = (pass ? 'rgba(215,228,246,' : 'rgba(190,205,228,') + Math.min(1, a).toFixed(3) + ')';
+        ctx.beginPath();
         for (let i = 0; i < n; i++) {
           const z = RZ[i]; if ((z > 0.55) !== !!pass) continue;
-          const x = RX[i] * cw, y = RY[i] * ch, len = len0 * (0.6 + z * 1.1), shift = sl * len, pieces = Math.min(4, 1 + Math.floor(Math.abs(shift) / 2.5));
-          if (pieces === 1) ctx.fillRect(x - shift / 2, y - len, w, len);
-          else { const pl = len / pieces; for (let q = 0; q < pieces; q++) ctx.fillRect(x - shift * (q + 0.5) / pieces, y - pl * (q + 1), w, pl + 0.5); }
+          const x = RX[i] * cw + 0.5, y = RY[i] * ch, len = len0 * (0.6 + z * 1.1);
+          ctx.moveTo(x, y); ctx.lineTo(x - sl * len, y - len);
         }
+        ctx.stroke();
       }
     }
+    if (!Q.fx) return;
     // a strike, seen from above the clouds: a jagged bolt down to the spot
     for (const k of S.strikes) {
       const age = X.time - k.t; if (age > 0.22) continue;
@@ -2135,6 +2260,7 @@
   const WX_TXT = { clear: '', rain: 'RAIN', storm: 'STORM', fog: 'FOG', snow: 'SNOW' }, WX_COL = { clear: '#c9cdd6', rain: '#8fb6ff', storm: '#c7a8ff', fog: '#b8c0cc', snow: '#e6f0ff' };
   function hud() {
     audioUpdate();
+    if (!fogDrawn) hideFog();
     if (!S) return;
     if (!hudEl || !hudEl.isConnected) {
       const host = document.querySelector('#gta-hud .g-tr') || document.getElementById('gta-hud'); if (!host) return;

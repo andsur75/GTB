@@ -323,6 +323,7 @@
     cv.addEventListener('wheel', e => {
       if (!X.active) return;
       e.preventDefault();
+      if ((PG.settings || {}).wheel === 'weapon') return;   // weapons.js switches weapons instead
       X.cam.zoom = cl(X.cam.zoom * Math.exp(e.deltaY * 0.0015), 0.45, 2.2);
     }, { passive: false });
   }
@@ -408,7 +409,8 @@
   X.decals = [];
   X.decal = function (x, y, kind, size, o) {
     X.decals.push(Object.assign({ x, y, kind, size: size || 1, rot: Math.random() * TAU, t: X.time, seed: Math.random() }, o));
-    if (X.decals.length > 400) X.decals.shift();
+    const cap = PG.DECAL_CAP[(PG.settings || {}).decals] || 400;
+    if (X.decals.length > cap) X.decals.splice(0, X.decals.length - cap);
   };
   // Objective marker for this frame: pulsing ring on the ground, an arrow at the screen edge when it is
   // off-screen, and a map blip. o: {color, label, radius}.
@@ -731,6 +733,7 @@
   // Tyre marks, smoke and squeal for every physics car; engine note for the player's.
   const skidLast = new Map();
   function tyreFx(dt) {
+    const S = PG.settings || {}, skids = S.skidMarks !== false, pcap = PG.PARTICLE_CAP[S.particles] || 600;
     for (const c of X.cars) {
       if (c.ctrl !== 'phys' || !c.dv || c.removed) { skidLast.delete(c.id); continue; }
       const v = c.dv, sp = v.speed;
@@ -741,9 +744,9 @@
       let last = skidLast.get(c.id) || [];
       for (let i = 0; i < 4; i++) {
         const w = wheels[i];
-        if (k[i] > 0.08 && last[i] && Math.hypot(w.x - last[i].x, w.y - last[i].y) < 3) X.skid.line(last[i].x, last[i].y, w.x, w.y);
+        if (k[i] > 0.08 && last[i] && skids && Math.hypot(w.x - last[i].x, w.y - last[i].y) < 3) X.skid.line(last[i].x, last[i].y, w.x, w.y);
         last[i] = { x: w.x, y: w.y };
-        if (i >= 2 && k[i] > 0.25 && G().particles.length < 600 && Math.random() < k[i] * dt * 26) G().particles.push({ x: w.x, y: w.y, vx: v.vx * 0.2 + rand(-1, 1), vy: v.vy * 0.2 + rand(-1, 1), life: rand(1, 2), max: 2.2, kind: 'tsmoke', size: rand(0.3, 0.5) });
+        if (i >= 2 && k[i] > 0.25 && G().particles.length < pcap && Math.random() < k[i] * dt * 26) G().particles.push({ x: w.x, y: w.y, vx: v.vx * 0.2 + rand(-1, 1), vy: v.vy * 0.2 + rand(-1, 1), life: rand(1, 2), max: 2.2, kind: 'tsmoke', size: rand(0.3, 0.5) });
       }
       skidLast.set(c.id, last);
       if (c === P.car) PG.audio.squeal(sp > 2 ? Math.min(1, Math.max(rear, front * 0.7)) * Math.min(1, 0.4 + sp / 15) : 0, 1500 + 1600 * Math.min(1, sp / 25));
@@ -798,21 +801,26 @@
     }
     return null;
   };
+  // Keeps about TRAFFIC_N moving and PARKED_N parked cars around the focus (times the traffic setting); with
+  // too many (the setting was lowered), the farthest unowned one out of sight goes, one per frame.
   function manageTraffic() {
-    const f = X.focus();
-    let path = 0, parked = 0;
+    const f = X.focus(), mul = (PG.settings || {}).traffic || 1;
+    const tN = Math.round(TRAFFIC_N * mul), pN = Math.round(PARKED_N * mul);
+    let path = 0, parked = 0, farPath = null, farPark = null, dPath = 0, dPark = 0;
     for (const c of X.cars) {
       if (c.removed) continue;
       const d = Math.hypot(c.x - f.x, c.y - f.y);
       const mine = c === P.car || c.keep || c.owner;
       if (!mine && c.ctrl === 'path' && d > 440) { X.removeCar(c); continue; }
       if (!mine && c.ctrl !== 'path' && d > 470) { X.removeCar(c); continue; }
-      if (c.ctrl === 'path') path++;
-      else if (c.ctrl === 'parked' && d < 400) parked++;
+      if (c.ctrl === 'path') { path++; if (!mine && d > dPath && d > 60 && !X.inView(c.x, c.y, 10)) { dPath = d; farPath = c; } }
+      else if (c.ctrl === 'parked' && d < 400) { parked++; if (!mine && d > dPark && d > 60 && !X.inView(c.x, c.y, 10)) { dPark = d; farPark = c; } }
     }
+    if (path > tN + 2 && farPath) X.removeCar(farPath);
+    if (parked > pN + 2 && farPark) X.removeCar(farPark);
     if (X.scene) return;
-    for (let k = 0; k < 3 && path < TRAFFIC_N; k++) if (X.spawnTraffic(f.x, f.y, X.time < 1 ? 30 : 170, X.time < 1 ? 420 : 400)) path++;
-    for (let k = 0; k < 2 && parked < PARKED_N; k++) if (X.spawnParked(f.x, f.y, X.time < 1 ? 15 : 160, 380)) parked++;
+    for (let k = 0; k < 3 && path < tN; k++) if (X.spawnTraffic(f.x, f.y, X.time < 1 ? 30 : 170, X.time < 1 ? 420 : 400)) path++;
+    for (let k = 0; k < 2 && parked < pN; k++) if (X.spawnParked(f.x, f.y, X.time < 1 ? 15 : 160, 380)) parked++;
   }
 
   // ================= the player =================
@@ -986,10 +994,10 @@
   // ================= drawing =================
   const PEDDRAW = {};
   X.drawPed = function (ctx, p, t) {
-    const lk = p.look || {};
+    const lk = p.look || {}, S = PG.settings || {}, shadows = S.shadows !== false, hi = S.detail !== 'low';
     ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.th);
     if (p.dead) {
-      ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.ellipse(0.05, 0.05, 0.75, 0.42, 0, 0, TAU); ctx.fill();
+      if (shadows) { ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.ellipse(0.05, 0.05, 0.75, 0.42, 0, 0, TAU); ctx.fill(); }
       ctx.fillStyle = lk.pants || '#333'; ctx.fillRect(-0.75, -0.2, 0.45, 0.14); ctx.fillRect(-0.75, 0.06, 0.45, 0.14);
       ctx.fillStyle = lk.shirt || '#888'; ctx.beginPath(); ctx.ellipse(0, 0, 0.32, 0.26, 0, 0, TAU); ctx.fill();
       ctx.fillRect(-0.05, -0.62, 0.14, 0.4); ctx.fillRect(-0.05, 0.22, 0.14, 0.4);
@@ -997,54 +1005,72 @@
       ctx.restore(); return;
     }
     const sw = Math.sin(p.walk * 3) * Math.min(1, p.speed / 2) * 0.24;
-    ctx.fillStyle = 'rgba(0,0,0,0.28)'; ctx.beginPath(); ctx.ellipse(0.05, 0.06, 0.26, 0.36, 0, 0, TAU); ctx.fill();
+    if (shadows) { ctx.fillStyle = 'rgba(0,0,0,0.28)'; ctx.beginPath(); ctx.ellipse(0.05, 0.06, 0.26, 0.36, 0, 0, TAU); ctx.fill(); }
     ctx.fillStyle = lk.pants || '#333';
     ctx.fillRect(sw - 0.1, -0.17, 0.22, 0.12); ctx.fillRect(-sw - 0.1, 0.05, 0.22, 0.12);
     const armed = p.weapon && p.weapon !== 'fists';
     ctx.fillStyle = lk.shirt || '#888'; ctx.beginPath(); ctx.ellipse(0, 0, 0.17, 0.31, 0, 0, TAU); ctx.fill();
     ctx.fillStyle = lk.skin || '#e0ac7e';
-    if (armed) { ctx.beginPath(); ctx.arc(0.3, 0.1, 0.07, 0, TAU); ctx.arc(0.26, -0.12, 0.07, 0, TAU); ctx.fill(); ctx.fillStyle = '#16181c'; ctx.fillRect(0.28, 0.02, 0.38, 0.08); }
-    else { ctx.beginPath(); ctx.arc(-sw * 0.8 + 0.02, -0.3, 0.07, 0, TAU); ctx.arc(sw * 0.8 + 0.02, 0.3, 0.07, 0, TAU); ctx.fill(); }
+    if (armed) { if (hi) { ctx.beginPath(); ctx.arc(0.3, 0.1, 0.07, 0, TAU); ctx.arc(0.26, -0.12, 0.07, 0, TAU); ctx.fill(); } ctx.fillStyle = '#16181c'; ctx.fillRect(0.28, 0.02, 0.38, 0.08); }
+    else if (hi) { ctx.beginPath(); ctx.arc(-sw * 0.8 + 0.02, -0.3, 0.07, 0, TAU); ctx.arc(sw * 0.8 + 0.02, 0.3, 0.07, 0, TAU); ctx.fill(); }
     ctx.fillStyle = lk.skin || '#e0ac7e'; ctx.beginPath(); ctx.arc(0.02, 0, 0.15, 0, TAU); ctx.fill();
     ctx.fillStyle = lk.hat || lk.hair || '#222'; ctx.beginPath(); ctx.arc(-0.03, 0, lk.hat ? 0.15 : 0.12, 0, TAU); ctx.fill();
     if (p.hurtT > 0) { ctx.fillStyle = 'rgba(255,40,30,0.45)'; ctx.beginPath(); ctx.arc(0, 0, 0.36, 0, TAU); ctx.fill(); }
     ctx.restore();
   };
+  // Markings by vehicle kind, in the car's own frame (x forward). With the fast renderer they are baked
+  // into the car's cached sprite; the key says which flash phase is showing.
+  const KIND_MARKS = {
+    police(ctx, c, on) {
+      const L = c.len, W = c.wid;
+      ctx.fillStyle = '#14161a'; ctx.fillRect(L / 2 - 1.0, -W / 2 + 0.05, 0.75, W - 0.1); ctx.fillRect(-L / 2 + 0.15, -W / 2 + 0.05, 0.7, W - 0.1);
+      ctx.fillStyle = c.siren ? (on ? '#ff2a2a' : '#5a1010') : '#7a2020'; ctx.fillRect(-0.15, -0.7, 0.28, 0.66);
+      ctx.fillStyle = c.siren ? (!on ? '#2a6bff' : '#10205a') : '#203070'; ctx.fillRect(-0.15, 0.04, 0.28, 0.66);
+    },
+    taxi(ctx) { ctx.fillStyle = '#1b1b1b'; ctx.fillRect(-0.25, -0.45, 0.36, 0.9); ctx.fillStyle = '#ffe680'; ctx.fillRect(-0.2, -0.38, 0.26, 0.76); },
+    ambulance(ctx, c, on) {
+      const L = c.len, fire = c.model.kind === 'fire';
+      ctx.fillStyle = fire ? '#f2f2f2' : '#d42a2a'; ctx.fillRect(-L / 2, -0.12, L * 0.68, 0.24);
+      ctx.fillStyle = c.siren ? (on ? '#ff3030' : '#3a5cff') : '#7a2020'; ctx.fillRect(L * 0.22, -0.6, 0.25, 1.2);
+    },
+    armored(ctx, c) { ctx.fillStyle = '#d4af37'; ctx.fillRect(-c.len / 2 + 0.1, -0.1, c.len * 0.66, 0.2); },
+    swat(ctx, c, on) {
+      ctx.fillStyle = '#f4f4f4'; ctx.font = '700 0.7px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.save(); ctx.rotate(Math.PI / 2); ctx.fillText('SWAT', 0, 0.6); ctx.restore();
+      ctx.fillStyle = c.siren ? (on ? '#ff2a2a' : '#2a6bff') : '#333'; ctx.fillRect(c.len * 0.25, -0.6, 0.25, 1.2);
+    },
+  };
+  KIND_MARKS.fire = KIND_MARKS.ambulance;
   X.drawCar = function (ctx, c, t) {
     const m = c.model;
     if (m.kind === 'bus') return drawBus(ctx, c, t);
     const def = c.def, mid = carMid(def), st = c.dv ? c.dv.steer * def.maxSteer : 0, hw = c.wid / 2 + 0.02;
     const wheels = [{ lx: def.wb - mid, ly: -hw, a: st }, { lx: def.wb - mid, ly: hw, a: st }, { lx: -mid, ly: -hw, a: 0 }, { lx: -mid, ly: hw, a: 0 }];
-    PG.drawCar(ctx, { x: c.x, y: c.y, th: c.th, len: c.len, wid: c.wid, color: c.color, truck: !!m.box, wheels, lights: c.lightsOn && !c.wrecked, brake: c.braking && !c.wrecked, reverse: c.reversing, charred: c.wrecked });
-    if (c.wrecked) return;
-    ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(c.th);
-    const L = c.len, W = c.wid;
-    if (m.kind === 'police') {
-      ctx.fillStyle = '#14161a'; ctx.fillRect(L / 2 - 1.0, -W / 2 + 0.05, 0.75, W - 0.1); ctx.fillRect(-L / 2 + 0.15, -W / 2 + 0.05, 0.7, W - 0.1);
-      const on = c.siren && Math.floor(t * 8) % 2 === 0;
-      ctx.fillStyle = c.siren ? (on ? '#ff2a2a' : '#5a1010') : '#7a2020'; ctx.fillRect(-0.15, -0.7, 0.28, 0.66);
-      ctx.fillStyle = c.siren ? (!on ? '#2a6bff' : '#10205a') : '#203070'; ctx.fillRect(-0.15, 0.04, 0.28, 0.66);
-    } else if (m.kind === 'taxi') {
-      ctx.fillStyle = '#1b1b1b'; ctx.fillRect(-0.25, -0.45, 0.36, 0.9); ctx.fillStyle = '#ffe680'; ctx.fillRect(-0.2, -0.38, 0.26, 0.76);
-    } else if (m.kind === 'ambulance' || m.kind === 'fire') {
-      const on = c.siren && Math.floor(t * 6) % 2 === 0;
-      ctx.fillStyle = m.kind === 'fire' ? '#f2f2f2' : '#d42a2a'; ctx.fillRect(-L / 2, -0.12, L * 0.68, 0.24);
-      ctx.fillStyle = c.siren ? (on ? '#ff3030' : '#3a5cff') : '#7a2020'; ctx.fillRect(L * 0.22, -0.6, 0.25, 1.2);
-    } else if (m.kind === 'armored') {
-      ctx.fillStyle = '#d4af37'; ctx.fillRect(-L / 2 + 0.1, -0.1, L * 0.66, 0.2);
-    } else if (m.kind === 'swat') {
-      ctx.fillStyle = '#f4f4f4'; ctx.font = '700 0.7px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.save(); ctx.rotate(Math.PI / 2); ctx.fillText('SWAT', 0, 0.6); ctx.restore();
-      const on = c.siren && Math.floor(t * 8) % 2 === 0;
-      ctx.fillStyle = c.siren ? (on ? '#ff2a2a' : '#2a6bff') : '#333'; ctx.fillRect(L * 0.25, -0.6, 0.25, 1.2);
+    const mk = !c.wrecked && KIND_MARKS[m.kind];
+    let overlay = null, overlayKey = '';
+    if (mk) {
+      const on = !!c.siren && Math.floor(t * (m.kind === 'ambulance' || m.kind === 'fire' ? 6 : 8)) % 2 === 0;
+      overlay = g => mk(g, c, on); overlayKey = m.kind + (c.siren ? (on ? 'A' : 'B') : '0');
     }
-    ctx.restore();
+    PG.drawCar(ctx, { x: c.x, y: c.y, th: c.th, len: c.len, wid: c.wid, color: c.color, truck: !!m.box, wheels, lights: c.lightsOn && !c.wrecked, brake: c.braking && !c.wrecked, reverse: c.reversing, charred: c.wrecked, overlay, overlayKey });
   };
   function drawBus(ctx, c, t) {
+    const S = PG.settings || {}, ppm = PG.renderPpm;
+    if (S.fastRender && PG.renderCaps && PG.renderCaps.cars && ctx === PG.mainCtx && ppm > 0) {
+      const lv = PG.spriteLevel(ppm), M = 0.6, hl = c.len / 2 + M, hw = c.wid / 2 + M;
+      if (ppm < lv * 1.25 && 2 * hl * lv <= 2048) {
+        const key = 'bus|' + c.len + '|' + c.wid + '|' + c.color + '|' + (c.wrecked ? 1 : 0) + (c.lightsOn ? 1 : 0) + (c.braking ? 1 : 0) + (S.shadows === false ? 0 : 1) + '|' + lv;
+        const spr = PG.sprites.get(key, 2 * hl * lv, 2 * hw * lv, g => { g.setTransform(lv, 0, 0, lv, hl * lv, hw * lv); busBody(g, c, S); });
+        ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(c.th); ctx.drawImage(spr, -hl, -hw, spr.width / lv, spr.height / lv); ctx.restore();
+        return;
+      }
+    }
+    ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(c.th); busBody(ctx, c, S); ctx.restore();
+  }
+  function busBody(ctx, c, S) {
     const L = c.len, W = c.wid;
-    ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(c.th);
-    ctx.fillStyle = 'rgba(0,0,0,0.35)'; PG.rr(ctx, -L / 2 + 0.2, -W / 2 + 0.25, L, W, 0.5); ctx.fill();
-    ctx.fillStyle = '#111'; for (const x of [L / 2 - 2.6, -L / 2 + 2.4]) { ctx.fillRect(x - 0.45, -W / 2 - 0.08, 0.9, 0.22); ctx.fillRect(x - 0.45, W / 2 - 0.14, 0.9, 0.22); }
+    if (S.shadows !== false) { ctx.fillStyle = 'rgba(0,0,0,0.35)'; PG.rr(ctx, -L / 2 + 0.2, -W / 2 + 0.25, L, W, 0.5); ctx.fill(); }
+    if (S.detail !== 'low') { ctx.fillStyle = '#111'; for (const x of [L / 2 - 2.6, -L / 2 + 2.4]) { ctx.fillRect(x - 0.45, -W / 2 - 0.08, 0.9, 0.22); ctx.fillRect(x - 0.45, W / 2 - 0.14, 0.9, 0.22); } }
     ctx.fillStyle = c.wrecked ? '#1b1b1b' : c.color; PG.rr(ctx, -L / 2, -W / 2, L, W, 0.45); ctx.fill();
     if (!c.wrecked) {
       ctx.fillStyle = '#e9e6dc'; PG.rr(ctx, -L / 2 + 0.4, -W / 2 + 0.3, L - 1.4, W - 0.6, 0.3); ctx.fill();
@@ -1055,7 +1081,6 @@
       ctx.fillStyle = c.lightsOn ? '#fff6c8' : '#d8d2b8'; ctx.fillRect(L / 2 - 0.1, -W / 2 + 0.15, 0.1, 0.4); ctx.fillRect(L / 2 - 0.1, W / 2 - 0.55, 0.1, 0.4);
       ctx.fillStyle = c.braking ? '#ff2a1a' : '#8e1d16'; ctx.fillRect(-L / 2, -W / 2 + 0.15, 0.1, 0.4); ctx.fillRect(-L / 2, W / 2 - 0.55, 0.1, 0.4);
     }
-    ctx.restore();
   }
 
   // ================= camera =================
@@ -1079,7 +1104,7 @@
     cam.lift += ((follow ? 0.6 : 0.5) - cam.lift) * ease;
     const scale = Math.min(cw, vh) / cam.span;
     let sx = 0, sy = 0;
-    if (g.shake > 0) { const q = g.shake * 12; sx = (Math.random() - 0.5) * q; sy = (Math.random() - 0.5) * q; }
+    if (g.shake > 0 && (PG.settings || {}).cameraShake !== false) { const q = g.shake * 12; sx = (Math.random() - 0.5) * q; sy = (Math.random() - 0.5) * q; }
     const rot = -cam.yaw - Math.PI / 2;
     const view = { scale, dpr, cw, ch, cx: cam.x, cy: cam.y, rot: Math.abs(rot) < 1e-4 ? 0 : rot, ax: cw / 2 + sx, ay: vh * cam.lift + sy, r: Math.hypot(cw, ch) / scale * 0.62 + 4, bottomPad: pad || 0 };
     X.lastView = view;
@@ -1124,11 +1149,13 @@
     layer('props', ctx, view, t);
     if (S) { if (S.drawWalls) S.drawWalls(ctx, view, t); } else CD.buildings(ctx, C, view, t);
     layer('buildings', ctx, view, t);
-    for (const p of X.peds) if (p.dead && !p.removed && !p.hidden && X.inView(p.x, p.y, 2)) X.drawPed(ctx, p, t);
+    let nCars = 0, nPeds = 0;
+    for (const p of X.peds) if (p.dead && !p.removed && !p.hidden && X.inView(p.x, p.y, 2)) { X.drawPed(ctx, p, t); nPeds++; }
     layer('bodies', ctx, view, t);
-    if (!S) for (const c of X.cars) if (!c.removed && X.inView(c.x, c.y, c.len)) X.drawCar(ctx, c, t);
+    if (!S) for (const c of X.cars) if (!c.removed && X.inView(c.x, c.y, c.len)) { X.drawCar(ctx, c, t); nCars++; }
     layer('cars', ctx, view, t);
-    for (const p of X.peds) if (!p.dead && !p.removed && !p.hidden && !p.car && X.inView(p.x, p.y, 2)) X.drawPed(ctx, p, t);
+    for (const p of X.peds) if (!p.dead && !p.removed && !p.hidden && !p.car && X.inView(p.x, p.y, 2)) { X.drawPed(ctx, p, t); nPeds++; }
+    const RS = PG.renderStats; if (RS) { RS.cars = nCars; RS.peds = nPeds; RS.particles = g.particles.length; RS.decals = X.decals.length; }
     layer('peds', ctx, view, t);
     if (!S) CD.canopies(ctx, C, view); else if (S.drawTop) S.drawTop(ctx, view, t);
     layer('air', ctx, view, t);
@@ -1147,7 +1174,46 @@
       ctx.fillStyle = P.state === 'wasted' ? `rgba(120,0,0,${0.35 * k})` : `rgba(0,30,90,${0.3 * k})`; ctx.fillRect(0, 0, view.cw, view.ch);
     }
   };
+  // Fast renderer: each decal is one blit of a cached sprite of its kind (canonical size 1, centred),
+  // placed with a single setTransform; broken glass stays a small batched path.
+  const DB = 1.15;
+  function decalShape(g, kind, color) {
+    if (kind === 'blood') {
+      g.fillStyle = color || 'rgba(110,8,10,0.78)';
+      g.beginPath(); g.ellipse(0, 0, 1, 0.7, 0, 0, TAU); g.fill();
+      g.beginPath(); g.arc(0.8, 0.3, 0.25, 0, TAU); g.arc(-0.6, -0.5, 0.18, 0, TAU); g.fill();
+    } else if (kind === 'scorch') {
+      const gr = g.createRadialGradient(0, 0, 0, 0, 0, 1); gr.addColorStop(0, 'rgba(8,8,8,0.85)'); gr.addColorStop(0.6, 'rgba(20,18,16,0.5)'); gr.addColorStop(1, 'rgba(20,18,16,0)');
+      g.fillStyle = gr; g.beginPath(); g.arc(0, 0, 1, 0, TAU); g.fill();
+    } else if (kind === 'oil') { g.fillStyle = 'rgba(12,12,16,0.7)'; g.beginPath(); g.ellipse(0, 0, 1, 0.6, 0, 0, TAU); g.fill(); }
+    else { g.fillStyle = color || 'rgba(255,255,255,0.4)'; g.beginPath(); g.arc(0, 0, 1, 0, TAU); g.fill(); }
+  }
   function drawDecals(ctx, view) {
+    const S = PG.settings || {}, cap = PG.DECAL_CAP[S.decals] || 400;
+    if (X.decals.length > cap) X.decals.splice(0, X.decals.length - cap);
+    if (!S.fastRender || ctx !== PG.mainCtx || !PG.sprites) return drawDecalsClassic(ctx, view);
+    const m = PG.cityDraw.worldMatrix(view), ppm = view.scale * view.dpr, sprites = !!(PG.renderCaps && PG.renderCaps.decals);
+    let moved = false;
+    for (const d of X.decals) {
+      if (!X.inView(d.x, d.y, d.size + 2)) continue;
+      const s = d.size, k = d.kind === 'blood' ? s * Math.min(1, 0.4 + (X.time - d.t) * 0.8) : d.kind === 'glass' ? 1 : s;
+      const c = Math.cos(d.rot) * k, sn = Math.sin(d.rot) * k;
+      ctx.setTransform(m[0] * c + m[2] * sn, m[1] * c + m[3] * sn, m[2] * c - m[0] * sn, m[3] * c - m[1] * sn, m[0] * d.x + m[2] * d.y + m[4], m[1] * d.x + m[3] * d.y + m[5]);
+      moved = true;
+      if (d.kind === 'glass') {
+        ctx.fillStyle = 'rgba(200,225,240,0.5)'; ctx.beginPath();
+        for (let q = 0; q < 7; q++) { const a = q * 2.4 + d.seed * 6, r = s * ((q * 37 % 10) / 10); ctx.rect(Math.cos(a) * r, Math.sin(a) * r, 0.12, 0.08); }
+        ctx.fill();
+        continue;
+      }
+      if (!sprites && d.kind !== 'scorch') { decalShape(ctx, d.kind, d.color); continue; }   // plain fills: cheaper as vector in software
+      const lv = Math.pow(2, Math.max(2, Math.min(17, Math.ceil(Math.log2(Math.max(1e-3, ppm * s)) * 2 - 0.12))) / 2);
+      const spr = PG.sprites.get('decal|' + d.kind + '|' + (d.color || '') + '|' + lv, 2 * DB * lv, 2 * DB * lv, g => { g.setTransform(lv, 0, 0, lv, DB * lv, DB * lv); decalShape(g, d.kind, d.color); });
+      ctx.drawImage(spr, -DB, -DB, spr.width / lv, spr.height / lv);
+    }
+    if (moved) ctx.setTransform(m[0], m[1], m[2], m[3], m[4], m[5]);
+  }
+  function drawDecalsClassic(ctx, view) {
     for (const d of X.decals) {
       if (!X.inView(d.x, d.y, d.size + 2)) continue;
       ctx.save(); ctx.translate(d.x, d.y); ctx.rotate(d.rot);
@@ -1232,6 +1298,7 @@
 body.gta .hud-top { justify-content: flex-end; }
 #gta-hud .g-clock { font-weight: 700; font-size: 16px; color: #c9cdd6; text-shadow: 0 2px 0 #000; font-variant-numeric: tabular-nums; }
 #gta-hud .g-tl { position: absolute; left: 12px; top: calc(12px + env(safe-area-inset-top, 0px)); display: flex; flex-direction: column; gap: 6px; }
+body.fps-on #gta-hud .g-tl { top: calc(40px + env(safe-area-inset-top, 0px)); }
 #gta-hud .g-bar { width: 150px; height: 10px; border-radius: 3px; background: rgba(0,0,0,0.6); border: 1px solid rgba(255,255,255,0.25); overflow: hidden; }
 #gta-hud .g-bar i { display: block; height: 100%; background: linear-gradient(90deg, #e8402f, #ff7a5a); width: 100%; transition: width .15s; }
 #gta-hud .g-bar.armor i { background: linear-gradient(90deg, #4f8cff, #9ec2ff); }
@@ -1307,6 +1374,22 @@ body.gta .hud-top { justify-content: flex-end; }
     hook('hud', g);
     X.blips.length = 0;
   };
+  // The map's streets, blocks and places, drawn once per city and scale (fast renderer).
+  const mapCache = {};
+  function mapBase(c, C, f, range) {
+    c.fillStyle = '#5b606c'; c.fillRect(-8, -8, C.W + 16, C.H + 16);
+    for (const b of C.blocks) { if (f && (Math.abs((b.x0 + b.x1) / 2 - f.x) > range * 1.5 || Math.abs((b.y0 + b.y1) / 2 - f.y) > range * 1.5)) continue; c.fillStyle = b.kind === 'park' ? '#1f3b27' : b.kind === 'plaza' ? '#3b3733' : '#1a1d24'; c.fillRect(b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0); }
+    for (const id in X.places) { const pl = X.places[id], b = pl.b; c.fillStyle = pl.color; c.fillRect(b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0); }
+  }
+  function staticMap(C, sc) {
+    const key = sc.toFixed(4), sig = Object.keys(X.places).map(id => X.places[id].color).join();
+    let m = mapCache[key];
+    if (m && m.city === C && m.sig === sig) return m;
+    const pad = 12, cv = document.createElement('canvas');
+    cv.width = Math.ceil((C.W + 2 * pad) * sc); cv.height = Math.ceil((C.H + 2 * pad) * sc);
+    const g = cv.getContext('2d'); g.setTransform(sc, 0, 0, sc, pad * sc, pad * sc); mapBase(g, C);
+    return (mapCache[key] = { cv, pad, sc, city: C, sig });
+  }
   function drawMap() {
     const cv = H.map, c = cv.getContext('2d'), S = cv.width, C = X.city, f = X.focus();
     const big = X.input.down('Tab');
@@ -1315,12 +1398,8 @@ body.gta .hud-top { justify-content: flex-end; }
     c.fillStyle = '#0d0f14'; c.fillRect(0, 0, S, S);
     const rot = X.lastView ? X.lastView.rot : 0;
     c.save(); c.translate(S / 2, S / 2); c.rotate(rot); c.scale(sc, sc); c.translate(-f.x, -f.y);
-    c.fillStyle = '#5b606c'; c.fillRect(-8, -8, C.W + 16, C.H + 16);
-    for (const b of C.blocks) {
-      if (Math.abs((b.x0 + b.x1) / 2 - f.x) > range * 1.5 || Math.abs((b.y0 + b.y1) / 2 - f.y) > range * 1.5) continue;
-      c.fillStyle = b.kind === 'park' ? '#1f3b27' : b.kind === 'plaza' ? '#3b3733' : '#1a1d24'; c.fillRect(b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0);
-    }
-    for (const id in X.places) { const pl = X.places[id], b = pl.b; c.fillStyle = pl.color; c.fillRect(b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0); }
+    if ((PG.settings || {}).fastRender && PG.renderCaps && PG.renderCaps.minimap) { const m = staticMap(C, sc); c.drawImage(m.cv, -m.pad, -m.pad, m.cv.width / m.sc, m.cv.height / m.sc); }
+    else mapBase(c, C, f, range);
     const r = 1 / sc;
     for (const b of X.blips) {
       c.fillStyle = b.color; c.beginPath();

@@ -479,6 +479,25 @@ const fps = await t.eval(async () => {
 check('a 6-cruiser chase with the helicopter keeps ~60 fps', fps.fps >= 45 && fps.cars >= 6 && fps.heli, fps);
 await snap('p10-big-chase');
 
+const setS = (k, v) => t.eval(([k, v]) => { if (PG.setSetting) PG.setSetting(k, v); else (PG.settings = PG.settings || {})[k] = v; }, [k, v]);
+const presetHigh = () => t.eval(() => { if (PG.applyPreset) PG.applyPreset('high'); else Object.assign(PG.settings = PG.settings || {}, { lighting: 'high', particles: 'high', detail: 'high', shadows: true, decals: 'high', pedDensity: 1, policeMax: 8, wheel: 'zoom' }); });
+// ---------- 17b. PG.settings.policeMax caps the police vehicles out at once ----------
+await setS('policeMax', 3);
+const capped = await t.eval(async () => {
+  const W = window, X = PG.gta, P = X.player, S = X.police._S;
+  W.__purge(); X.police.tune.arrestCar = 99; X.police.setWanted(6);
+  let most = 0;
+  for (let k = 0; k < 16; k++) {
+    await new Promise(r => setTimeout(r, 500));
+    if (P.wanted < 6) X.police.setWanted(6);
+    most = Math.max(most, S.cars.filter(c => !c.removed && !c.wrecked && c.pol.role !== 'parked' && c.pol.role !== 'stolen').length);
+  }
+  W.__purge();
+  return { most };
+});
+await presetHigh();
+check('policeMax 3: at 6 stars no more than 3 police vehicles are out', capped.most >= 1 && capped.most <= 3, capped);
+
 // ---------- 18. a second game starts clean ----------
 const again = await t.eval(async () => {
   const X = PG.gta;

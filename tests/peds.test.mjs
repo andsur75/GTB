@@ -382,6 +382,17 @@ const s18b = await t.eval(() => {
 });
 check('a honking car hurries people along' + (s18b.aimed ? '; a pointed gun raises hands or scatters them' : ''), s18b.brisk && s18b.jump && (!s18b.aimed || /hands|flee|cower/.test(s18b.st)), s18b);
 
+const setS = (k, v) => t.eval(([k, v]) => { if (PG.setSetting) PG.setSetting(k, v); else (PG.settings = PG.settings || {})[k] = v; }, [k, v]);
+const presetHigh = () => t.eval(() => { if (PG.applyPreset) PG.applyPreset('high'); else Object.assign(PG.settings = PG.settings || {}, { lighting: 'high', particles: 'high', detail: 'high', shadows: true, decals: 'high', pedDensity: 1, policeMax: 8, wheel: 'zoom' }); });
+// ---- 18c. graphics settings: pedDensity thins the crowd, detail 'low' draws simple figures ----
+const n0 = await t.eval(() => T.civs().length);
+await setS('pedDensity', 0.5); await t.wait(4500);
+const n1 = await t.eval(() => T.civs().length);
+await setS('detail', 'low'); await setS('shadows', false); await t.wait(400);
+await snap('11-low-detail');
+await presetHigh(); await t.wait(300);
+check('pedDensity 0.5 thins the crowd (walkers out of sight go home)', n1 <= Math.max(45, n0 * 0.75) && n1 >= 15, { before: n0, after: n1 });
+
 // ---- 19. a second game starts clean ----
 const s18 = await t.eval(async () => {
   const X = PG.gta;

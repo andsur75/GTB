@@ -83,8 +83,13 @@
   function shake(v) { const g = G(); g.shake = Math.max(g.shake || 0, v); }
   function addTracer(x0, y0, x1, y1, w) { if (tracers.length < 120) tracers.push({ x0, y0, x1, y1, life: 0.09, max: 0.09, c: w.tracer || '255,230,150', w: w.tw || 0.05 }); }
   function addFlash(x, y, a, w) { if (flashes.length < 40) flashes.push({ x, y, a, life: 0.06, max: 0.06, s: w.flash || 0.8, c: w.light || '#ffcf6a' }); }
+  // PG.settings.particles: 'low' drops two shells in three, 'medium' one in three
+  let shellN = 0;
+  const SET = () => PG.settings || {};
   function ejectShell(sh, a, w) {
     if (!w.shell || !X.inView(sh.x, sh.y, 4)) return;
+    const pl = SET().particles; shellN++;
+    if ((pl === 'low' && shellN % 3) || (pl === 'medium' && !(shellN % 3))) return;
     const s = SHELLS[shellI++ % SHELLS.length], rx = -Math.sin(a), ry = Math.cos(a), sp = rand(2.2, 3.6), back = rand(0, 1);
     s.on = true; s.x = sh.x + rx * 0.16; s.y = sh.y + ry * 0.16; s.z = 1.05; s.vz = rand(2, 3.4);
     s.vx = rx * sp - Math.cos(a) * back + (sh.vx || 0) * 0.5; s.vy = ry * sp - Math.sin(a) * back + (sh.vy || 0) * 0.5;
@@ -724,7 +729,7 @@
         X.popup(w.name + (w.ammo === Infinity ? '' : ' +' + got));
         X.floatText(pk.x, pk.y, w.name.toUpperCase(), '#ffd23a');
         sfx('pick');
-        if (X.save && !X.save.weaponHint) { X.save.weaponHint = true; X.persist(); X.pager('Armed. Mouse, Ctrl or J fires (Space on foot). Q/E, 1-9 or the wheel switch. Shooting near people brings the police.', 7000); }
+        if (X.save && !X.save.weaponHint) { X.save.weaponHint = true; X.persist(); X.pager('Armed. Mouse, Ctrl or J fires (Space on foot). ' + (SET().wheel === 'weapon' ? 'Q/E, 1-9 or the wheel switch.' : 'Q/E or 1-9 switch.') + ' Shooting near people brings the police.', 7000); }
         break;
       }
       case 'health':
@@ -937,14 +942,18 @@
   };
 
   // ================= drawing =================
-  function drawPickup(ctx, pk, t) {
+  function drawPickup(ctx, pk, t, set) {
     if (pk.ttl && pk.ttl - pk.t < 3 && Math.floor(t * 7) % 2 === 0) return;
     const col = PK_COLORS[pk.kind] || '#fff', bob = 1 + 0.08 * Math.sin(t * 4 + pk.ph), s = 0.62 * bob;
-    ctx.save(); ctx.translate(pk.x, pk.y);
-    ctx.globalAlpha = 0.25 + 0.15 * Math.sin(t * 3 + pk.ph); ctx.fillStyle = col; ctx.beginPath(); ctx.arc(0, 0, 0.95, 0, TAU); ctx.fill();
+    ctx.globalAlpha = 0.25 + 0.15 * Math.sin(t * 3 + pk.ph); ctx.fillStyle = col; ctx.beginPath(); ctx.arc(pk.x, pk.y, 0.95, 0, TAU); ctx.fill();
     ctx.globalAlpha = 1;
-    ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(-s + 0.12, -s + 0.14, s * 2, s * 2);
-    ctx.rotate(t * 1.6 + pk.ph);
+    if (set.shadows !== false) { ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(pk.x - s + 0.12, pk.y - s + 0.14, s * 2, s * 2); }
+    // (a cached sprite of the crate was measured slower than drawing it on a software-rasterised canvas)
+    ctx.save(); ctx.translate(pk.x, pk.y); ctx.rotate(t * 1.6 + pk.ph);
+    crateFace(ctx, pk, s, col);
+    ctx.restore();
+  }
+  function crateFace(ctx, pk, s, col) {
     if (pk.kind === 'weapon') {
       ctx.fillStyle = '#c9963f'; ctx.fillRect(-s, -s, s * 2, s * 2);
       ctx.fillStyle = '#e0b45e'; ctx.fillRect(-s + 0.08, -s + 0.08, s * 2 - 0.16, s * 2 - 0.16);
@@ -968,10 +977,9 @@
         ctx.fillText(pk.kind === 'double' ? '2×' : pk.kind === 'fast' ? '»' : '★', 0, s * 0.05);
       }
     }
-    ctx.restore();
   }
-  function drawFire(ctx, f, t) {
-    const k = Math.min(1, f.life / 1.2, f.t / 0.15), n = f.small ? 3 : 7;
+  function drawFire(ctx, f, t, set) {
+    const k = Math.min(1, f.life / 1.2, f.t / 0.15), n = f.small || set.detail === 'low' ? 3 : 7;
     ctx.globalAlpha = 0.35 * k; ctx.fillStyle = '#ff5a1a'; ctx.beginPath(); ctx.arc(f.x, f.y, f.r * 0.95, 0, TAU); ctx.fill();
     for (let i = 0; i < n; i++) {
       const a = i * 2.39996 + f.x, rr = f.r * (0.25 + 0.6 * ((i * 0.37) % 1)), fl = 0.5 + 0.5 * Math.sin(t * 13 + i * 1.7);
@@ -991,7 +999,7 @@
       return;
     }
     const z = pr.z, sc = 1 + z * 0.1;
-    ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.beginPath(); ctx.ellipse(pr.x + z * 0.25, pr.y + z * 0.3, 0.13, 0.09, 0, 0, TAU); ctx.fill();
+    if (SET().shadows !== false) { ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.beginPath(); ctx.ellipse(pr.x + z * 0.25, pr.y + z * 0.3, 0.13, 0.09, 0, 0, TAU); ctx.fill(); }
     ctx.save(); ctx.translate(pr.x, pr.y); ctx.scale(sc, sc); ctx.rotate(pr.rot);
     if (pr.kind === 'grenade') {
       ctx.fillStyle = '#1c2614'; ctx.beginPath(); ctx.ellipse(0, 0, 0.22, 0.18, 0, 0, TAU); ctx.fill();
@@ -1024,10 +1032,10 @@
     }
     ctx.stroke();
   }
-  function drawFlash(ctx, f) {
+  function drawFlash(ctx, f, lowD) {
     const k = f.life / f.max, s = f.s * (0.7 + 0.3 * k);
     ctx.save(); ctx.translate(f.x, f.y); ctx.rotate(f.a);
-    ctx.globalAlpha = 0.45 * k; ctx.fillStyle = f.c; ctx.beginPath(); ctx.arc(0, 0, 0.45 * s, 0, TAU); ctx.fill();
+    if (!lowD) { ctx.globalAlpha = 0.45 * k; ctx.fillStyle = f.c; ctx.beginPath(); ctx.arc(0, 0, 0.45 * s, 0, TAU); ctx.fill(); }
     ctx.globalAlpha = k; ctx.fillStyle = '#fff3c4';
     ctx.beginPath(); ctx.moveTo(-0.05, -0.12 * s); ctx.lineTo(0.62 * s, 0); ctx.lineTo(-0.05, 0.12 * s); ctx.lineTo(0.12 * s, 0.32 * s); ctx.lineTo(0.05 * s, 0); ctx.lineTo(0.12 * s, -0.32 * s); ctx.closePath(); ctx.fill();
     ctx.fillStyle = f.c; ctx.beginPath(); ctx.moveTo(0.05, -0.06 * s); ctx.lineTo(0.38 * s, 0); ctx.lineTo(0.05, 0.06 * s); ctx.closePath(); ctx.fill();
@@ -1128,8 +1136,8 @@
       hudEls = hudBuild();
       if (!wheelHooked) {
         wheelHooked = true;
-        window.addEventListener('wheel', e => {
-          if (!X.active || G().status !== 'play' || performance.now() - wheelT < 110) return;
+        window.addEventListener('wheel', e => {   // only when the settings give the wheel to weapons (core zooms otherwise)
+          if (!X.active || G().status !== 'play' || SET().wheel !== 'weapon' || performance.now() - wheelT < 110) return;
           wheelT = performance.now(); cycle(e.deltaY > 0 ? 1 : -1);
         }, { passive: true });
       }
@@ -1191,17 +1199,26 @@
     },
     render: {
       props(ctx, view, t) {
-        for (const pk of S.pickups) if (!pk.removed && X.inView(pk.x, pk.y, 2)) drawPickup(ctx, pk, X.time);
+        const set = SET();
+        for (const pk of S.pickups) if (!pk.removed && X.inView(pk.x, pk.y, 2)) drawPickup(ctx, pk, X.time, set);
       },
       bodies(ctx, view, t) {
-        for (const f of S.fires) if (X.inView(f.x, f.y, f.r + 1)) drawFire(ctx, f, t);
-        for (const s of SHELLS) {
-          if (!s.on || !X.inView(s.x, s.y, 1)) continue;
-          const L = s.big ? 0.17 : 0.11, Wd = s.big ? 0.075 : 0.045, c = Math.cos(s.rot), n = Math.sin(s.rot), sc = 1 + s.z * 0.15;
-          const ax = c * L / 2 * sc, ay = n * L / 2 * sc, bx = -n * Wd / 2 * sc, by = c * Wd / 2 * sc, y = s.y - s.z * 0.3;
-          ctx.globalAlpha = s.t > 10 ? Math.max(0, (12 - s.t) / 2) : 1;
-          ctx.fillStyle = s.c;
-          ctx.beginPath(); ctx.moveTo(s.x + ax + bx, y + ay + by); ctx.lineTo(s.x + ax - bx, y + ay - by); ctx.lineTo(s.x - ax - bx, y - ay - by); ctx.lineTo(s.x - ax + bx, y - ay + by); ctx.closePath(); ctx.fill();
+        const set = SET();
+        for (const f of S.fires) if (X.inView(f.x, f.y, f.r + 1)) drawFire(ctx, f, t, set);
+        // spent shells: one path per colour for the ones lying still, the fading ones on their own
+        if (view.scale < 4) return;   // smaller than a pixel on the big map
+        for (let pass = 0; pass < 2; pass++) {
+          let col = null;
+          for (const s of SHELLS) {
+            if (!s.on || (pass === 0) !== (s.t <= 10) || !X.inView(s.x, s.y, 1)) continue;
+            if (pass === 0 && col !== s.c) { if (col) ctx.fill(); col = s.c; ctx.fillStyle = col; ctx.globalAlpha = 1; ctx.beginPath(); }
+            const L = s.big ? 0.17 : 0.11, Wd = s.big ? 0.075 : 0.045, c = Math.cos(s.rot), n = Math.sin(s.rot), sc = 1 + s.z * 0.15;
+            const ax = c * L / 2 * sc, ay = n * L / 2 * sc, bx = -n * Wd / 2 * sc, by = c * Wd / 2 * sc, y = s.y - s.z * 0.3;
+            if (pass === 1) { ctx.globalAlpha = Math.max(0, (12 - s.t) / 2); ctx.fillStyle = s.c; ctx.beginPath(); }
+            ctx.moveTo(s.x + ax + bx, y + ay + by); ctx.lineTo(s.x + ax - bx, y + ay - by); ctx.lineTo(s.x - ax - bx, y - ay - by); ctx.lineTo(s.x - ax + bx, y - ay + by); ctx.closePath();
+            if (pass === 1) ctx.fill();
+          }
+          if (pass === 0 && col) ctx.fill();
         }
         ctx.globalAlpha = 1;
       },
@@ -1224,7 +1241,8 @@
         ctx.lineCap = 'butt';
         for (const pr of S.projectiles) if (X.inView(pr.x, pr.y, 2)) drawProjectile(ctx, pr, t);
         for (const b of bolts) if (X.inView(b.pts[0], b.pts[1], 20)) drawBolt(ctx, b, 0);
-        for (const f of flashes) if (X.inView(f.x, f.y, 2)) drawFlash(ctx, f);
+        const lowD = SET().detail === 'low';
+        for (const f of flashes) if (X.inView(f.x, f.y, 2)) drawFlash(ctx, f, lowD);
         // lights for the night (lighting.js renders them)
         for (const f of flashes) if (X.inView(f.x, f.y, 6)) X.addLight(f.x, f.y, 5 * f.s, f.c, f.life / f.max);
         for (const pr of S.projectiles) if (pr.kind !== 'grenade' && X.inView(pr.x, pr.y, 8)) X.addLight(pr.x, pr.y, pr.kind === 'rocket' ? 6 : 2.5, '#ffa040', 0.85);
