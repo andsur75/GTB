@@ -319,6 +319,12 @@
     cv.addEventListener('pointerdown', e => { if (!X.active || e.pointerType !== 'mouse') return; pos(e); mouse.t = performance.now(); if (e.button === 0) { mouse.down = true; mouse.pressed = true; } e.preventDefault(); });
     window.addEventListener('pointerup', e => { if (e.button === 0) mouse.down = false; });
     cv.addEventListener('contextmenu', e => { if (X.active) e.preventDefault(); });
+    // Wheel zooms the view: each notch scales the framing by ~10%, clamped so the car stays readable and the city stays in reach.
+    cv.addEventListener('wheel', e => {
+      if (!X.active) return;
+      e.preventDefault();
+      X.cam.zoom = cl(X.cam.zoom * Math.exp(e.deltaY * 0.0015), 0.45, 2.2);
+    }, { passive: false });
   }
   // Touch controls (HUD module) write here: move {x, y} in -1..1 screen space, fire, plus one-shot presses.
   X.touch = { move: null, fire: false, aim: null, presses: new Set() };
@@ -338,7 +344,7 @@
   const P = X.player = { ped: null, car: null, money: 0, wanted: 0, state: 'play', stateT: 0, inv: { fists: Infinity }, weapon: 'fists', entering: null, kills: 0 };
   X.cars = []; X.peds = []; X.lights = []; X.blips = []; X.floats = []; X.interactions = [];
   // yaw: the view's heading (-PI/2 = north up). mode 'follow' turns it to the car while driving; lift: screen height of the focus (0..1), eased too.
-  X.cam = { x: 0, y: 0, span: 30, yaw: -Math.PI / 2, mode: 'follow', lift: 0.5 };
+  X.cam = { x: 0, y: 0, span: 30, yaw: -Math.PI / 2, mode: 'follow', lift: 0.5, zoom: 1 };
   X.scene = null;    // null = the city; an interior scene object while inside (see interiors.js)
   X.playerPos = () => P.car ? { x: P.car.x, y: P.car.y } : { x: P.ped.x, y: P.ped.y };
   X.playerVel = () => P.car ? X.carVel(P.car) : { x: P.ped.vx, y: P.ped.vy };
@@ -1060,6 +1066,7 @@
     if (c && c.model.kind === 'bus') want += 10;
     if (X.scene && X.scene.camSpan) want = X.scene.camSpan;
     if (P.state !== 'play') want *= 0.8;
+    want *= cam.zoom;
     if (X.input.down('Tab')) want = 260;
     cam.span += (want - cam.span) * Math.min(1, dt * (X.input.down('Tab') ? 5 : 1.6));
     const lead = c ? 0.5 : 0.15, lx = cl(vel.x * lead, -18, 18), ly = cl(vel.y * lead, -18, 18);
