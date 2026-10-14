@@ -951,7 +951,7 @@
     } else if (p.dead) { const k = Math.exp(-6 * dt); p.vx *= k; p.vy *= k; }
     else { const a = 1 - Math.exp(-dt * 14); p.vx += (wx - p.vx) * a; p.vy += (wy - p.vy) * a; }
     p.x += p.vx * dt; p.y += p.vy * dt;
-    const sp = Math.hypot(p.vx, p.vy); p.speed = sp; p.walk += sp * dt * 2.4;
+    const sp = Math.hypot(p.vx, p.vy); p.speed = sp; p.walk += sp * dt * (p.isPlayer ? 0.6 : 2.4);   // player legs swing 4x slower (2.4 / 4)
     if (p.hitCd > 0) p.hitCd -= dt;
     if (p.hurtT > 0) p.hurtT -= dt;
     for (const o of PG.cityNear(X.city, p.x, p.y, p.r + 1)) {
