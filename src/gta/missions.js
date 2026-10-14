@@ -1,11 +1,11 @@
-// Missions for Grand Theft Bus. GTA2 payphones on the sidewalks ring when Trond has work (green, yellow and
-// red booths by difficulty, a gold one outside the bank); answering puts Trond on the pager: typed text, his
+// Missions for Grand Theft Bus. GTA2 payphones on the sidewalks ring when Artur has work (green, yellow and
+// red booths by difficulty, a gold one outside the bank); answering puts Artur on the pager: typed text, his
 // yapping voice and his face. A data-driven framework runs one mission at a time: stages with objectives and
 // markers, a HUD timer, success and fail checks (timer, target lost, car wrecked or dented, wasted, busted),
 // rewards, chain unlocking, persistence in X.save and random odd jobs once the story is done. The story: the
 // dentist's car, a ticking box van, the city bus against a rival car park, a parking-inspector chase, a hit
 // with bodyguards, a kill frenzy, a car barbecue, a police joyride, an armoured-van robbery and the
-// four-part Fjord Savings Bank heist. Delivered cars roll into Trond's Garage through a roll-up door.
+// four-part Fjord Savings Bank heist. Delivered cars roll into Artur's Garage through a roll-up door.
 // Owns X.missions.
 (function (PG) {
   if (typeof document === 'undefined') return;
@@ -40,9 +40,9 @@
     'Uff da. Try again. Try better.',
   ];
   const VOICEMAIL = [
-    'This is Trond. I am not here. Leave a message. Or a car.',
-    'Trond Holdings. When we need you, the phone rings. This one is not ringing.',
-    'You have reached Trond. If this is about the car park, I was never there.',
+    'This is Artur. I am not here. Leave a message. Or a car.',
+    'Artur Holdings. When we need you, the phone rings. This one is not ringing.',
+    'You have reached Artur. If this is about the car park, I was never there.',
   ];
   const MODELS_OLD = ['bambino', 'hatch', 'comet', 'hatch', 'rancher'];
   const MODELS_LOT = ['hatch', 'comet', 'voltage', 'regret', 'fjord', 'bambino', 'x5'];
@@ -519,14 +519,14 @@
         if (R.timer <= 0) R.timer = null;
       }
     }
-    if (R.brief) return;   // the world waits while Trond talks
+    if (R.brief) return;   // the world waits while Artur talks
     R.t += dt; R.st += dt;
     for (const g of R.guard) {
       const c = g.c;
       if (R.stage >= g.until || c.removed) continue;
       if (c.wrecked) return lose(R, `The ${g.name} is wrecked.`);
       if (c.burning > 0) return lose(R, `The ${g.name} is on fire!`);
-      if (g.minHp && c.hp < c.maxHp * g.minHp) return lose(R, `Too many dents in the ${g.name}. Trond wanted it mint.`);
+      if (g.minHp && c.hp < c.maxHp * g.minHp) return lose(R, `Too many dents in the ${g.name}. Artur wanted it mint.`);
       if (g.minHp && P.car === c) { R.bar = c.hp / c.maxHp; R.barLabel = 'condition'; }
     }
     const s = R.stages[R.stage];
@@ -590,7 +590,7 @@
         const inZ = Math.hypot(c.x - z.x, c.y - z.y) < z.r;
         if (P.car !== c && !inZ) { R.sub = 'Get back in the ' + (o.name || c.model.name); return; }
         if (!inZ) return;
-        if (z.garage && X.police && wantedLevel() >= 2) { R.sub = 'Lose the cops first. Trond keeps the door shut at 2+ stars.'; return; }
+        if (z.garage && X.police && wantedLevel() >= 2) { R.sub = 'Lose the cops first. Artur keeps the door shut at 2+ stars.'; return; }
         if (Math.abs(c.speed) > 1.5) { R.sub = 'Stop in the marker'; return; }
         if (P.car === c) {
           R.data.exitT -= dt;
@@ -645,7 +645,7 @@
   mission({
     id: 'hotwheels', title: 'Hot Wheels', tier: 'green', reward: 500,
     brief: R => R.p.brief ? R.p.brief(R) : [
-      "It's Trond. Yes, that Trond. The car park is gone, but I kept the garage. And the grudge.",
+      "It's Artur. Yes, that Artur. The car park is gone, but I kept the garage. And the grudge.",
       `My dentist parks his ${R.data.car.model.name} in ${R.district}. Four thousand kroner for one filling.`,
       'Bring it to my garage. Not a scratch. He counts the scratches. So do I.',
     ],
@@ -658,7 +658,7 @@
     },
     stages: [
       stGetIn('car', R => `Steal the ${R.data.name} in ${R.district}`),
-      stDeliver('car', 'garage', R => `Bring the ${R.data.name} to Trond's Garage. Not a scratch!`),
+      stDeliver('car', 'garage', R => `Bring the ${R.data.name} to Artur's Garage. Not a scratch!`),
     ],
     bonus(R) { const c = R.data.car; return c && c.hp / c.maxHp > 0.95 ? Math.round(R.reward * 0.5 / 50) * 50 : 0; },
   });
@@ -1015,7 +1015,7 @@
     brief: R => R.p.brief ? R.p.brief(R) : [
       'The police chief has parked in my spot at the station every day for eleven years.',
       `His cruiser is outside the station in ${R.district}. Take it for a spin. Wave at his colleagues.`,
-      `Keep ${R.data.stars} stars for ${R.data.hold} seconds. Then lose them. Nobody parks in Trond's spot.`,
+      `Keep ${R.data.stars} stars for ${R.data.hold} seconds. Then lose them. Nobody parks in Artur's spot.`,
     ],
     setup(R) {
       const pl = X.places.police;
@@ -1098,7 +1098,7 @@
         marks: bagMark,
       },
       {
-        text: "Stash the loot at Trond's Garage",
+        text: "Stash the loot at Artur's Garage",
         tick(R) { if (!P.loot && bagsLeft(R) === 0) lose(R, 'The loot is gone.'); R.count = P.loot ? fmt(P.loot) : ''; },
         marks: hideoutMark,
       },
@@ -1253,7 +1253,7 @@
     },
     stages: [
       stGetIn('car', R => `Steal the Securicar at the depot in ${R.district}`, { label: 'Securicar', onIn: alarm }),
-      stDeliver('car', 'garage', "Bring the Securicar to Trond's Garage", { name: 'Securicar' }),
+      stDeliver('car', 'garage', "Bring the Securicar to Artur's Garage", { name: 'Securicar' }),
     ],
   });
   mission({
@@ -1386,11 +1386,11 @@
   }
   function escapeStage() {
     return {
-      text: "Get to the getaway car and stash the loot at Trond's Garage",
+      text: "Get to the getaway car and stash the loot at Artur's Garage",
       tick(R) {
         R.count = P.loot ? fmt(P.loot) : '';
         const c = R.data.getaway;
-        if (P.car && P.car === c) R.sub = "Drive! Stash the loot at Trond's Garage";
+        if (P.car && P.car === c) R.sub = "Drive! Stash the loot at Artur's Garage";
         if (!P.loot) lose(R, 'The loot is gone.');
       },
       marks(R, add) {
@@ -1541,7 +1541,7 @@
       if (M.introT <= 0 && !M.run && P.state === 'play') {
         const ph = M.phones.find(q => q.mission);
         for (const q of M.phones) if (q.mission) M.notified.add(q.mission.id);
-        if (ph) X.pager(M.done.size ? `RING RING: a ${TIER[ph.tier].name.toLowerCase()} is ringing in ${ph.district}. Trond has work.` : "Trond: There is a phone ringing near the garage. Answer it. Walk up and press F.", 6500);
+        if (ph) X.pager(M.done.size ? `RING RING: a ${TIER[ph.tier].name.toLowerCase()} is ringing in ${ph.district}. Artur has work.` : "Artur: There is a phone ringing near the garage. Answer it. Walk up and press F.", 6500);
       }
     }
     const p = pos();
@@ -1562,13 +1562,13 @@
       if (c && c.lines.length > 1 && ((cp && Math.hypot(cp.x - P.ped.x, cp.y - P.ped.y) < 3.5) || !X.nearestEnterableCar())) return { text: 'F: Next', priority: 60, run: callNext };
       const ph = nearPhone(1.9); if (!ph) return null;
       if (ringing(ph)) return { text: 'F: Answer the phone', priority: 40, run: () => answer(ph) };
-      if (!M.run && !M.call && !X.nearestEnterableCar()) return { text: 'F: Call Trond', priority: 2, run: () => { sfxPick(); openCall([pick(VOICEMAIL)], { mood: 0.2 }); } };
+      if (!M.run && !M.call && !X.nearestEnterableCar()) return { text: 'F: Call Artur', priority: 2, run: () => { sfxPick(); openCall([pick(VOICEMAIL)], { mood: 0.2 }); } };
       return null;
     },
   };
   function answer(ph) {
     if (!live() || !ph.mission || M.run) return null;
-    if (M.call) closeCall(true);   // Trond's last remark can wait
+    if (M.call) closeCall(true);   // Artur's last remark can wait
     sfxPick();
     const d = ph.mission, R = begin(d, ph, true);
     if (!R) { openCall(['Wrong number. Call back in a minute.'], { mood: 0.4 }); M.quietT = 12; return null; }
@@ -1578,7 +1578,7 @@
     return R;
   }
 
-  // ================= Trond on the pager =================
+  // ================= Artur on the pager =================
   function openCall(lines, o) {
     if (!live()) return;
     if (M.call) closeCall(true);
@@ -1615,7 +1615,7 @@
     if ((done && c.wait > 1.35) || c.age > total + 6) nextLine();
   }
 
-  // ================= Trond's Garage =================
+  // ================= Artur's Garage =================
   // The roller door goes beside the hideout's front door, on the side of the facade with more room
   // (or the side given, when there is room for it there).
   function setupGarage(side) {
@@ -1629,7 +1629,7 @@
     const gx = wx + ux * off * sg, gy = wy + uy * off * sg;
     const st = streetOf({ x: gx + d.nx * 0.9, y: gy + d.ny * 0.9, nx: d.nx, ny: d.ny });
     const z = kerbSpot(st.x + d.nx * 2.5, st.y + d.ny * 2.5, 5, 1.8);
-    return { x: gx, y: gy, nx: d.nx, ny: d.ny, rot: Math.atan2(d.ny, d.nx) - Math.PI / 2, w: W, sg, side: (b.x1 - b.x0), zone: { x: z.x, y: z.y, r: 4.4, garage: true, label: "Trond's Garage" }, walk: Math.hypot(st.x - gx, st.y - gy) };
+    return { x: gx, y: gy, nx: d.nx, ny: d.ny, rot: Math.atan2(d.ny, d.nx) - Math.PI / 2, w: W, sg, side: (b.x1 - b.x0), zone: { x: z.x, y: z.y, r: 4.4, garage: true, label: "Artur's Garage" }, walk: Math.hypot(st.x - gx, st.y - gy) };
   }
   function swallow(c) {
     const g = M.garage; if (!g) { X.removeCar(c); return; }
@@ -1686,12 +1686,12 @@
     let call = root.querySelector('.m-call');
     if (!call) {
       call = document.createElement('div'); call.className = 'm-call'; call.hidden = true;
-      call.innerHTML = '<canvas width="136" height="136"></canvas><div class="m-cb"><div class="m-who"><span>TROND</span><b></b></div><div class="m-line"></div><div class="m-skip">F or tap: next</div></div>';
+      call.innerHTML = '<canvas width="136" height="136"></canvas><div class="m-cb"><div class="m-who"><span>ARTUR</span><b></b></div><div class="m-line"></div><div class="m-skip">F or tap: next</div></div>';
       call.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); if (live()) callNext(); });
       root.appendChild(call);
     }
     const face = call.querySelector('canvas'), fc = face.getContext('2d');
-    // drawTrondFace ends with the parking game's window pillar down the middle; a phone call has no window
+    // drawArturFace ends with the parking game's window pillar down the middle; a phone call has no window
     fc.stroke = function () { if (this.strokeStyle === '#6f6a5c') return; CanvasRenderingContext2D.prototype.stroke.call(this); };
     H = { root, box, t: box.querySelector('.m-t'), o: box.querySelector('.m-o'), c: box.querySelector('.m-c'), b: box.querySelector('.m-b'), bi: box.querySelector('.m-b i'), bl: box.querySelector('.m-b em'), timer, call, face, line: call.querySelector('.m-line'), callTier: call.querySelector('.m-who b'), skip: call.querySelector('.m-skip'), k: {} };
     return H;
@@ -1704,7 +1704,7 @@
     if (show) {
       put('mc', TIER[R.tier] ? TIER[R.tier].color : '#ffd23a', v => h.box.style.setProperty('--mc', v));
       put('t', R.title, v => { h.t.textContent = v; });
-      const o = R.brief ? 'Trond is on the line...' : (R.sub || R.text);
+      const o = R.brief ? 'Artur is on the line...' : (R.sub || R.text);
       put('o', o, v => { h.o.textContent = v; });
       put('sub', !!R.sub && !R.brief, v => h.o.classList.toggle('sub', v));
       put('c', R.count || '', v => { h.c.hidden = !v; h.c.textContent = v; });
@@ -1719,7 +1719,7 @@
     if (c) {
       if (G().status !== 'play' && c.tk && !c.tk.done) c.tk.finish();
       const talking = !!(c.tk && !c.tk.done);
-      if (PG.ui && PG.ui.drawTrondFace) PG.ui.drawTrondFace(h.face, c.mood, performance.now() / 1000, false, talking);
+      if (PG.ui && PG.ui.drawArturFace) PG.ui.drawArturFace(h.face, c.mood, performance.now() / 1000, false, talking);
     }
   }
 

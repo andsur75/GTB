@@ -3,7 +3,7 @@
 // unless they watched you go in at 4+ stars. Svein also fits remote car bombs (G detonates from anywhere in
 // radio range; G inside the car lights a 5 s fuse). Crusher & Export: leave a car on Knut's pad; models on
 // today's export list (new list every game day) are craned away in a container for real money, everything
-// else is squashed into a cube for scrap (a car with a bomb in it is a very short crushing). Trond's Garage
+// else is squashed into a cube for scrap (a car with a bomb in it is a very short crushing). Artur's Garage
 // at the hideout keeps one car, saved between games. Owns the X.places.spray / crusher pads; adds X.shops.
 (function (PG) {
   if (typeof document === 'undefined') return;
@@ -40,16 +40,16 @@
     broke: ['Svein: No money, no paint. Come back with ${price}.', 'Svein: Paint costs money, friend. Come back with ${price}.'],
     done: ['Svein: Fresh paint. Nobody will ever know.', 'Svein: New colour, new you. Same driving, sadly.', 'Svein: Wet paint! Try not to hit anything for five minutes.', 'Svein: Cops? What cops? Never seen this car before.'],
     same: ['Svein: Same colour as before? Bold. The cops will never... oh. Well, it is clean now.'],
-    free: ["Svein: First one's on the house. Trond says hi.", "Svein: Free respray for Trond's new driver. Next one is $250."],
+    free: ["Svein: First one's on the house. Artur says hi.", "Svein: Free respray for Artur's new driver. Next one is $250."],
     bomb: ['Svein: Bomb fitted. Press G to say goodbye. Not while sitting in it.', 'Svein: One car bomb, as ordered. G for goodbye.'],
     seen: ['They saw you go in! The paint only bought you so much.', 'The cops watched you drive in. Half the description is still good.'],
     crush: ['Knut: Nobody will ever find it.', 'Knut: Was there someone in the boot? ... Never mind.', 'Knut: Crunch. Lovely.', 'Knut: Another one for the pile.'],
     export: ['Knut: A buyer in Bergen will love it.', "Knut: Shipped. Don't ask where.", 'Knut: Loaded and gone. Nice wheels.'],
     tick: ['Knut: Is it... ticking?', 'Knut: Why is it beeping?'],
     copcar: ['Knut: A police cruiser. The evidence was getting heavy anyway.'],
-    garage: ["Trond: Stored in my garage. It'll be here next time.", "Trond: Parked. I'll keep an eye on it. Mostly."],
-    full: ['Trond: One car per garage. I am not running a car park. Not any more.'],
-    toobig: ['Trond: That does not fit in my garage. Nothing that size fits anywhere.'],
+    garage: ["Artur: Stored in my garage. It'll be here next time.", "Artur: Parked. I'll keep an eye on it. Mostly."],
+    full: ['Artur: One car per garage. I am not running a car park. Not any more.'],
+    toobig: ['Artur: That does not fit in my garage. Nothing that size fits anywhere.'],
   };
   const REFUSE_SHORT = { cop: 'No cop cars. Not even for you', bus: "Buses don't fit in the booth", tank: 'No tanks', big: 'Too big for the booth', wreck: "That's a wreck, not a car" };
 
@@ -131,14 +131,14 @@
     for (let i = 0; i < 4; i++) cr.pile.push({ c: pick(ALLP).c, seed: Math.random() * 100 });   // yesterday's work
     return cr;
   }
-  // Trond's Garage: a parking bay on the hideout's facade, beside (never in front of) the roller door.
+  // Artur's Garage: a parking bay on the hideout's facade, beside (never in front of) the roller door.
   function setupGarage() {
     const h = X.places.hideout; if (!h || !h.door) return null;
     const f0 = frameOf(h.door), C = X.city, pads = [S.spray, S.crusher].filter(Boolean);
     const ks = [-8.5, 8.5, -10.5, 10.5, -12.5, 12.5, -7.2, 7.2, -15, 15];
     for (let pass = 0; pass < 2; pass++) for (const k of ks) {
       const fr = { F: { x: f0.F.x + f0.T.x * k, y: f0.F.y + f0.T.y * k }, n: f0.n, T: f0.T };
-      if (pass === 0 && !inB(h.b, toW(fr, 0, -0.6, {}), 0)) continue;   // against Trond's own wall first
+      if (pass === 0 && !inB(h.b, toW(fr, 0, -0.6, {}), 0)) continue;   // against Artur's own wall first
       let ok = true;
       for (let u = -3; u <= 3.01 && ok; u += 1.5) for (let v = 1.4; v <= 5.21 && ok; v += 1.27) { const q = toW(fr, u, v); if (X.blocked(q.x, q.y, 0.35)) ok = false; }
       if (!ok) continue;
@@ -480,7 +480,7 @@
     return clampIn(cr.b, toW(fr, u, v, {}), 0.9);
   }
 
-  // ================= Trond's Garage =================
+  // ================= Artur's Garage =================
   function saveGarage(c) {
     S.save.garage = c ? { model: c.model.id, color: c.color, bomb: c === S.bomb.car } : null;
     if (S.garage) S.garage.savedColor = c ? c.color : null;
@@ -734,9 +734,9 @@
       return [`Crush ${c.model.name} for scrap · $${fmt(scrapPrice(c))} · get out to confirm`, ''];
     }
     if (g && inRect(g.fr, c.x, c.y, GARAGE_IN)) {
-      if (g.car === c) return ["Stored in Trond's Garage", 'cash'];
+      if (g.car === c) return ["Stored in Artur's Garage", 'cash'];
       if (g.car) return ['Garage is full', 'bad'];
-      return [`Trond's Garage · get out to store the ${c.model.name}`, ''];
+      return [`Artur's Garage · get out to store the ${c.model.name}`, ''];
     }
     return null;
   }
@@ -1058,7 +1058,7 @@
     ctx.strokeStyle = mag ? '#ff8a1a' : '#e3b23c'; ctx.lineWidth = 0.1; ctx.stroke();
   }
 
-  // --- Trond's Garage ---
+  // --- Artur's Garage ---
   function garageGround(ctx, g, t) {
     ctx.save(); local(ctx, g.fr);
     ctx.fillStyle = '#2a2d33'; ctx.fillRect(-3.25, 1.15, 6.5, 4.3);
@@ -1075,8 +1075,8 @@
     const q = toW(g.fr, 0, 4.85);
     let a = Math.atan2(g.fr.T.y, g.fr.T.x); if (Math.cos(a) < -0.01 || (Math.abs(Math.cos(a)) <= 0.01 && Math.sin(a) > 0)) a += Math.PI;
     ctx.save(); ctx.translate(q.x, q.y); ctx.rotate(a);
-    ctx.font = `700 ${fitSize(ctx, "TROND'S GARAGE · PRIVATE", '700 ' + HUDF, 0.5, 5.6)}px ${HUDF}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillStyle = 'rgba(236,232,220,0.55)'; ctx.fillText("TROND'S GARAGE · PRIVATE", 0, 0);
+    ctx.font = `700 ${fitSize(ctx, "ARTUR'S GARAGE · PRIVATE", '700 ' + HUDF, 0.5, 5.6)}px ${HUDF}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = 'rgba(236,232,220,0.55)'; ctx.fillText("ARTUR'S GARAGE · PRIVATE", 0, 0);
     ctx.restore();
   }
   function garageSign(ctx, g) {

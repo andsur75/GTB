@@ -2,7 +2,7 @@
 // positions restored, walls and furniture solid, bullets over counters), Ammu-Fjord stands (weapons with
 // weapons.js, armour, not enough money), the hospital, a 24/7 hold-up, the bank job (tellers, drill, alarm,
 // heist crime, vault, loot, guards shooting back, reset), sleeping at a safehouse, the police front desk,
-// the bar (drinks, Trond, jukebox, pool), breakables, music and pause, fps in a busy club and a shoot-out,
+// the bar (drinks, Artur, jukebox, pool), breakables, music and pause, fps in a busy club and a shoot-out,
 // and a second game. Works with or without the other modules.
 // Usage: node tests/interiors.test.mjs <built.html> <screenshot dir>
 import { launch } from './harness.mjs';
@@ -14,9 +14,9 @@ const fps = ms => t.eval(ms => new Promise(r => { let n = 0; const t0 = performa
 
 await t.eval(() => {
   const X = PG.gta, W = window, P = X.player;
-  W.__ev = { crime: [], heistAlarm: 0, vaultOpened: 0, storeRobbed: 0, tellerRobbed: 0, talkTrond: 0, sleep: 0, shopBuy: 0, enter: 0, leave: 0, smash: 0, playerHurtBy: [] };
+  W.__ev = { crime: [], heistAlarm: 0, vaultOpened: 0, storeRobbed: 0, tellerRobbed: 0, talkArtur: 0, sleep: 0, shopBuy: 0, enter: 0, leave: 0, smash: 0, playerHurtBy: [] };
   X.on('crime', e => W.__ev.crime.push(e.type));
-  for (const k of ['heistAlarm', 'vaultOpened', 'storeRobbed', 'tellerRobbed', 'talkTrond', 'sleep', 'shopBuy']) X.on(k, () => W.__ev[k]++);
+  for (const k of ['heistAlarm', 'vaultOpened', 'storeRobbed', 'tellerRobbed', 'talkArtur', 'sleep', 'shopBuy']) X.on(k, () => W.__ev[k]++);
   X.on('interiorEnter', () => W.__ev.enter++); X.on('interiorLeave', () => W.__ev.leave++); X.on('interiorSmash', () => W.__ev.smash++);
   X.on('pedHurt', e => { if (e.ped === P.ped && e.by && e.by.ai && e.by.ai.owner === 'interiors') W.__ev.playerHurtBy.push(e.by.ai.role); });
   W.__god = on => { const p = P.ped; if (on) { p.maxHp = 1e5; p.hp = 1e5; } else { p.maxHp = 100; p.hp = 100; } };
@@ -241,9 +241,9 @@ await t.eval(() => { const X = PG.gta; X.interiors.enter('bar'); X.player.money 
 await t.wait(100); await t.press('KeyF'); await t.wait(150);
 const drink = await t.eval(() => ({ hp: PG.gta.player.ped.hp, money: PG.gta.player.money }));
 check('a drink at the bar: +15 hp for $10', drink.hp === 65 && drink.money === 90, drink);
-await t.eval(() => window.__act(/Trond/)); await t.wait(100); await t.press('KeyF'); await t.wait(300);
-const trond = await t.eval(() => ({ ev: window.__ev.talkTrond, pager: document.querySelector('#gta-hud .g-pager').textContent, hidden: document.querySelector('#gta-hud .g-pager').hidden, alive: PG.gta.scene.peds.some(q => q.ai.role === 'trond' && !q.dead) }));
-check('Trond sits in his booth and gives you a tip', trond.ev === 1 && /TROND/.test(trond.pager) && !trond.hidden && trond.alive, trond);
+await t.eval(() => window.__act(/Artur/)); await t.wait(100); await t.press('KeyF'); await t.wait(300);
+const artur = await t.eval(() => ({ ev: window.__ev.talkArtur, pager: document.querySelector('#gta-hud .g-pager').textContent, hidden: document.querySelector('#gta-hud .g-pager').hidden, alive: PG.gta.scene.peds.some(q => q.ai.role === 'artur' && !q.dead) }));
+check('Artur sits in his booth and gives you a tip', artur.ev === 1 && /ARTUR/.test(artur.pager) && !artur.hidden && artur.alive, artur);
 const juke = await t.eval(() => { const W = window, X = PG.gta; W.__act(/song/); return X.scene.st.song || 'blues'; });
 await t.press('KeyF'); await t.wait(100);
 const juke2 = await t.eval(() => PG.gta.scene.st.song);
@@ -265,9 +265,9 @@ const smash = await t.eval(() => {
   const X = PG.gta, sc = X.scene, P = X.player, f = sc.furn.find(q => q.t === 'bottles');
   window.__at(14, 8, -Math.PI / 2); P.ped.aim = Math.atan2(f.y - P.ped.y, f.x - P.ped.x); P.ped.th = P.ped.aim;
   X.emit('gunfire', { x: P.ped.x, y: P.ped.y, by: P.ped, weapon: 'pistol' });
-  return { broken: f.broken, ev: window.__ev.smash, trond: sc.peds.find(q => q.ai.role === 'trond').dead };
+  return { broken: f.broken, ev: window.__ev.smash, artur: sc.peds.find(q => q.ai.role === 'artur').dead };
 });
-check('a bullet into the bottle shelf smashes it; Trond does not die in his own bar', smash.broken && smash.ev >= 1 && !smash.trond, smash);
+check('a bullet into the bottle shelf smashes it; Artur does not die in his own bar', smash.broken && smash.ev >= 1 && !smash.artur, smash);
 await t.eval(() => window.__out());
 
 // ---------- 14. music, pause, mute ----------

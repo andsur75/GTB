@@ -666,7 +666,7 @@
   // ================= billboards =================
   const ADS = [
     { bg: '#d9381e', fg: '#ffffff', t: 'TAKE THE BUS!', s: 'Cheaper than a tow truck.', icon: 'bus' },
-    { bg: '#2a2233', fg: '#c7a8ff', t: "TROND'S GARAGE", s: 'No questions. No receipts.' },
+    { bg: '#2a2233', fg: '#c7a8ff', t: "ARTUR'S GARAGE", s: 'No questions. No receipts.' },
     { bg: '#1f3b2e', fg: '#e8c86a', t: 'FJORD SAVINGS', s: 'Your money is safe.*   *probably' },
     { bg: '#8a5a2b', fg: '#fff3d6', t: 'BRUNOST', s: 'It is brown. It is cheese. It is fine.' },
     { bg: '#2f7d6d', fg: '#eafff8', t: "PAY 'N' SPRAY", s: 'New colour. Same you.' },
@@ -674,7 +674,7 @@
     { bg: '#dfe6ea', fg: '#1d3557', t: 'LUTEFISK', s: 'Now with less lye!' },
     { bg: '#111114', fg: '#ff2d95', t: 'DRIFT CLUB', s: 'Tyres are temporary.' },
     { bg: '#1f5fbf', fg: '#ffffff', t: 'PARKINGDAL', s: 'Parking for everyone.*  *not you', icon: 'p' },
-    { bg: '#f2c230', fg: '#16181c', t: 'VOTE TROND', s: 'He knows where you park.' },
+    { bg: '#f2c230', fg: '#16181c', t: 'VOTE ARTUR', s: 'He knows where you park.' },
     { bg: '#c0392b', fg: '#fff1c8', t: 'PØLSE 10,-', s: 'With lompe. Obviously.' },
     { bg: '#e9f2f7', fg: '#1f4f9c', t: 'SKI FJORDHEIM', s: 'It is all downhill from here.' },
     { bg: '#2b2d33', fg: '#ffd23a', t: 'BUSSBY METRO', s: 'Above the traffic. Literally.' },
@@ -1005,7 +1005,7 @@
       if (P.money < 1) { X.popup('The meter wants a coin. You have none.'); return; }
       X.money(-1, 'meter', best.x, best.y); best.paid = 1; best.expired = false;
       PG.audio.chime && PG.audio.chime(2);
-      X.popup(pick(['Paid for parking. Trond would be proud.', 'You fed the meter. On foot. Respect.', 'A law-abiding citizen! In this city?']));
+      X.popup(pick(['Paid for parking. Artur would be proud.', 'You fed the meter. On foot. Respect.', 'A law-abiding citizen! In this city?']));
     } };
   }
 

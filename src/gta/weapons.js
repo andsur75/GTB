@@ -1130,7 +1130,7 @@
           wheelT = performance.now(); cycle(e.deltaY > 0 ? 1 : -1);
         }, { passive: true });
       }
-      // a starter crate or two outside Trond's Garage, then the rest of the city's stash
+      // a starter crate or two outside Artur's Garage, then the rest of the city's stash
       const home = X.places.hideout || X.places.bank, f = X.focus();
       if (home) for (const k of ['pistol', 'bat']) {
         const pt = X.randomSidewalkPoint(home.door.x, home.door.y, 7, 22);

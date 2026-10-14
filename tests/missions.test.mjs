@@ -1,4 +1,4 @@
-// Missions test: payphones ring and answer with Trond's briefing, every story mission played to the end
+// Missions test: payphones ring and answer with Artur's briefing, every story mission played to the end
 // with teleports (plus fail paths: wrecked car, timer, wasted), odd jobs after the story, persistence after
 // a page reload, a second game, fps in a busy scenario and screenshots of the visuals.
 // Usage: node tests/missions.test.mjs <built.html> <shotDir>
@@ -70,13 +70,13 @@ await t.shot('missions-1-phone-ringing');
 await t.press('KeyF');
 await t.wait(300);
 const call = await t.eval(() => ({ vis: !document.querySelector('#gta-hud .m-call').hidden, act: PG.gta.missions.active, box: !document.querySelector('#gta-hud .m-box').hidden }));
-ok('F answers: Trond is on the pager and the mission starts', call.vis && call.act && call.act.id === 'hotwheels' && call.act.brief && call.box, call);
+ok('F answers: Artur is on the pager and the mission starts', call.vis && call.act && call.act.id === 'hotwheels' && call.act.brief && call.box, call);
 await t.wait(1000);
 const talk = await t.eval(() => PG.ui.talking());
 await t.press('KeyP');
 await t.wait(200);
 const paused = await t.eval(() => ({ st: PG.game.status, talking: PG.ui.talking(), call: !!PG.gta.missions.call }));
-ok('pause hushes Trond, the call waits', talk && paused.st === 'paused' && !paused.talking && paused.call, { talk, paused });
+ok('pause hushes Artur, the call waits', talk && paused.st === 'paused' && !paused.talking && paused.call, { talk, paused });
 await t.press('KeyP');
 await t.wait(1600);
 const typed = await t.eval(() => document.querySelector('#gta-hud .m-call .m-line').textContent);

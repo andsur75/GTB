@@ -240,7 +240,7 @@
     return X.districtNames[j * 3 + i];
   };
   const PLACE_DEFS = [
-    { id: 'hideout', name: "Trond's Garage", color: '#4a3f5c' },
+    { id: 'hideout', name: "Artur's Garage", color: '#4a3f5c' },
     { id: 'bank', name: 'Fjord Savings Bank', color: '#b39b55', big: true },
     { id: 'police', name: 'Police Station', color: '#2c4f8a' },
     { id: 'hospital', name: 'St. Bussby Hospital', color: '#d9dde2' },

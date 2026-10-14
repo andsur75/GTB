@@ -427,7 +427,7 @@ const fm = await t.eval(async () => {   // a mission starting mid-frenzy takes o
   const F = S.frenzy; if (!F) return { started: false };
   const w = F.w, bought = X.giveWeapon(w, 10), stillInf = P.inv[w] === Infinity;
   // the frenzy readout keeps clear of a long pager message
-  X.pager('Trond: A long message to check the layout. The frenzy counter must sit below this box, never on top of it, whatever the screen.', 0);
+  X.pager('Artur: A long message to check the layout. The frenzy counter must sit below this box, never on top of it, whatever the screen.', 0);
   await new Promise(r => setTimeout(r, 450));
   const a = document.querySelector('#gta-hud .g-pager').getBoundingClientRect(), b = document.querySelector('#gta-hud .w-frenzy').getBoundingClientRect();
   const overlap = !(b.top >= a.bottom || b.bottom <= a.top || b.left >= a.right || b.right <= a.left);

@@ -1,6 +1,6 @@
 // HUD for Grand Theft Bus: everything on screen that is not the world, layered over core's HUD frame.
 // Car radio: five live, procedurally generated stations (Fjord FM synthwave, Pillar Rock punk, Bass Station
-// hip-hop, Parking Classics chiptune Grieg/Bach/Beethoven, Trond Talk with callers, ads and news about what
+// hip-hop, Parking Classics chiptune Grieg/Bach/Beethoven, Artur Talk with callers, ads and news about what
 // the player just did), a police scanner in cop cars, R / Shift+R to switch, "radio off", every car keeps its
 // station, music ducks under the pager and phone calls, static when the car is falling apart. Touch controls
 // in GTA mode: floating joystick, fire button that doubles as an aim stick (auto-aim when tapped), use,
@@ -84,7 +84,7 @@
     o.start(t); o.stop(t + dur + 0.05); RS.notes++;
   }
   const VOICES = {
-    trond: { base: 150, panic: 0.35, gain: 6, dest: () => A.voice, who: 'TROND' },
+    artur: { base: 150, panic: 0.35, gain: 6, dest: () => A.voice, who: 'ARTUR' },
     caller: { base: 200, panic: 0.2, gain: 5, dest: () => A.phone, who: 'CALLER' },
     ad: { base: 195, panic: 0.65, gain: 5.5, dest: () => A.voice, who: 'AD' },
     news: { base: 172, panic: 0.1, gain: 6, dest: () => A.voice, who: 'NEWS' },
@@ -136,7 +136,7 @@
   const NAMES = {
     fjord: { a: ['Neon', 'Midnight', 'Fjord', 'Chrome', 'Aurora', 'Tunnel', 'Polar', 'Turbo', 'Velvet', 'Toll Road', 'Brunost'], b: ['Nights', 'Drive', 'Runner', 'Horizon', 'Highway', 'Lights', 'Dreams', 'Overdrive', 'Sunset', 'Kiss'], art: ['DJ Brunost', 'Laser Viking', 'Synthia Fjell', 'The Night Buses', 'Retro Rolf', 'Nordlys 84', 'Kavli Kid'] },
     pillar: { title: ['I Hate the Bus', 'Concrete Pillar', 'Wrong Way Down a One Way', 'Tow Truck Blues', 'No Parking (Anarchy)', 'Riot at the Roundabout', 'Smash the Meter', 'Handbrake Turn', 'Traffic Cone Crown', 'Six Stars and a Stinger', 'Bail Money'], art: ['The Parking Tickets', 'Bent Bumper', 'Kebab Riot', 'Pillar of Salt', 'Sex Pistonheads', 'Fjordcore', 'Ole Brumm & the Thrash'] },
-    bass: { title: ['Straight Outta Bussby', 'Bank Row Hustle', 'Drive-By Waffles', 'Six Star Flow', "Pay 'n' Spray Freestyle", 'Low Rider, High Tolls', 'Cold Like the Fjord', 'Paper Route', 'Trond Is Watching', 'Loot Drop'], art: ['MC Pølse', 'Lil Brunost', 'Notorious T.R.O.N.D.', 'Grandmaster Fjell', 'Bussby Boyz', 'DJ Lutefisk', 'Kid Kavli'] },
+    bass: { title: ['Straight Outta Bussby', 'Bank Row Hustle', 'Drive-By Waffles', 'Six Star Flow', "Pay 'n' Spray Freestyle", 'Low Rider, High Tolls', 'Cold Like the Fjord', 'Paper Route', 'Artur Is Watching', 'Loot Drop'], art: ['MC Pølse', 'Lil Brunost', 'Notorious T.R.O.N.D.', 'Grandmaster Fjell', 'Bussby Boyz', 'DJ Lutefisk', 'Kid Kavli'] },
   };
   function genFjord(r) {
     const s = song(r, { names: NAMES.fjord, bpm: 96 + Math.floor(r() * 16), root: 45 + Math.floor(r() * 7), sc: SC.minor, bars: 28 + 4 * Math.floor(r() * 3),
@@ -199,7 +199,7 @@
     if (p === 0 || p === s.stab) for (const iv of ch) { note(k, 'triangle', s.root + 12 + iv, t, s.sd * 5, 0.028, { lp: 1700, dest: A.bus }); note(k, 'sine', s.root + 24 + iv, t, s.sd * 2.5, 0.01, { dest: A.bus }); }
     if (Math.random() < 0.3) nz(k, t + Math.random() * s.sd, 0.008, 0.035, 'highpass', 3000, { dest: A.bus });   // vinyl crackle
     if (sec === 'chorus' && bar % 4 === 3 && p === 8) { nz(k, t, s.sd * 2, 0.07, 'bandpass', 700, { to: 3200, Q: 4, dest: A.bus }); nz(k, t + s.sd * 2, s.sd * 2, 0.07, 'bandpass', 3000, { to: 600, Q: 4, dest: A.bus }); }
-    if (rt && p === 0 && (sec === 'verse' && bar % 8 === 4 || sec === 'chorus' && bar % 8 === 0)) rt.sp.push(speech(pick(['YEAH!', 'UH!', 'BUSSBY!', 'SIX STARS!', 'WORD UP, TROND!', 'LOOT!']), VOICES.shout, t, 150));
+    if (rt && p === 0 && (sec === 'verse' && bar % 8 === 4 || sec === 'chorus' && bar % 8 === 0)) rt.sp.push(speech(pick(['YEAH!', 'UH!', 'BUSSBY!', 'SIX STARS!', 'WORD UP, ARTUR!', 'LOOT!']), VOICES.shout, t, 150));
   }
   // Parking Classics: public-domain tunes in 8 bits. Tokens: note[/len] or -[/len], len in units of s.unit 16ths.
   const CLASSICS = [
@@ -270,20 +270,20 @@
   // ================= radio: talk + scanner scripts =================
   const TALK = {
     open: [
-      [['trond', 'Good evening, Bussby. This is Trond Talk. I talk. You drive. Badly.']],
-      [['trond', 'You are listening to six-six-six AM. The only station that never takes the bus.']],
-      [['trond', 'Trond here. The lines are open. Unlike the bank. Unfortunately.']],
+      [['artur', 'Good evening, Bussby. This is Artur Talk. I talk. You drive. Badly.']],
+      [['artur', 'You are listening to six-six-six AM. The only station that never takes the bus.']],
+      [['artur', 'Artur here. The lines are open. Unlike the bank. Unfortunately.']],
     ],
     calls: [
-      [['trond', 'Caller, you are on the air.'], ['caller', 'Hi Trond. Someone stole my car while I was parking it.'], ['trond', 'While you were IN it?'], ['caller', 'They said they needed it more.'], ['trond', 'Did you try taking the bus?']],
-      [['caller', 'Trond, why are there so many explosions tonight?'], ['trond', 'Fireworks. Old Norwegian tradition. Next caller.']],
-      [['caller', 'Is it true you run this city now?'], ['trond', 'I run a garage. The city just happens to be built around it.']],
-      [['caller', 'My husband parked across four spaces.'], ['trond', 'Four? Amateur. I have seen eleven. On fire.']],
-      [['caller', 'I want to report a crime.'], ['trond', 'This is a talk show. Call the police.'], ['caller', 'The police told me to call you.'], ['trond', 'Smart police.']],
-      [['caller', 'Trond, the cops are chasing a bus down Bank Row!'], ['trond', 'Good. Finally somebody is taking the bus.']],
-      [['caller', 'Hello? Am I on? HELLO?'], ['trond', 'You are on. You were always on. That is the problem.']],
-      [['caller', 'I found a phone box that keeps ringing.'], ['trond', 'Do not answer it. Unless you need money. Then answer it.']],
-      [['caller', 'Can I get a job at your garage?'], ['trond', 'Can you drive?'], ['caller', 'No.'], ['trond', 'You are hired.']],
+      [['artur', 'Caller, you are on the air.'], ['caller', 'Hi Artur. Someone stole my car while I was parking it.'], ['artur', 'While you were IN it?'], ['caller', 'They said they needed it more.'], ['artur', 'Did you try taking the bus?']],
+      [['caller', 'Artur, why are there so many explosions tonight?'], ['artur', 'Fireworks. Old Norwegian tradition. Next caller.']],
+      [['caller', 'Is it true you run this city now?'], ['artur', 'I run a garage. The city just happens to be built around it.']],
+      [['caller', 'My husband parked across four spaces.'], ['artur', 'Four? Amateur. I have seen eleven. On fire.']],
+      [['caller', 'I want to report a crime.'], ['artur', 'This is a talk show. Call the police.'], ['caller', 'The police told me to call you.'], ['artur', 'Smart police.']],
+      [['caller', 'Artur, the cops are chasing a bus down Bank Row!'], ['artur', 'Good. Finally somebody is taking the bus.']],
+      [['caller', 'Hello? Am I on? HELLO?'], ['artur', 'You are on. You were always on. That is the problem.']],
+      [['caller', 'I found a phone box that keeps ringing.'], ['artur', 'Do not answer it. Unless you need money. Then answer it.']],
+      [['caller', 'Can I get a job at your garage?'], ['artur', 'Can you drive?'], ['caller', 'No.'], ['artur', 'You are hired.']],
     ],
     ads: [
       'Ammu-Fjord! Guns for the whole family. Ask about our lutefisk discount!',
@@ -299,7 +299,7 @@
       'The police say crime is up. I say parking is down. We are not the same.',
       'Traffic report: everything near {district} is on fire. Drive around it. Or through it. I am not your mother.',
       'Weather: dark, wet, Norwegian. Tomorrow: the same, but colder.',
-      'People ask me, Trond, why a garage? I say: because cars cannot run away. Usually.',
+      'People ask me, Artur, why a garage? I say: because cars cannot run away. Usually.',
     ],
     news: [
       ['wanted', 'Breaking news: the police are chasing somebody through {district}. If that is you: turn left. Trust me.'],
@@ -307,11 +307,11 @@
       ['money', 'Somebody out there has {money} dollars. Do not spend it on parking.'],
       ['any', 'News: a {colour} car was seen doing something illegal in {district}. So, a normal car.'],
     ],
-    jingle: 'TROND TALK!',
+    jingle: 'ARTUR TALK!',
   };
   const SCAN = [
     'Dispatch to all units: ten-thirty-one in progress, {district}.',
-    'Unit {unit}, noise complaint at the Rusty Pillar. Trond is singing again.',
+    'Unit {unit}, noise complaint at the Rusty Pillar. Artur is singing again.',
     'Be advised: suspect is driving like they stole it. Because they did.',
     'All units: the bus is NOT a getaway vehicle. Repeat: not.',
     'Unit {unit}, your coffee is ready. Repeat: coffee is ready.',
@@ -334,7 +334,7 @@
     const r = Math.random(), base = rand(120, 250);
     if (r < 0.4) for (const l of pick(TALK.calls)) q.push({ kind: 'line', who: l[0], text: l[1], base: l[0] === 'caller' ? base : 0 });
     else if (r < 0.65) q.push({ kind: 'line', who: 'ad', text: pick(TALK.ads), bed: true });
-    else if (r < 0.82) q.push({ kind: 'line', who: 'trond', text: fill(pick(TALK.rants)) });
+    else if (r < 0.82) q.push({ kind: 'line', who: 'artur', text: fill(pick(TALK.rants)) });
     else {
       const ok = TALK.news.filter(n => n[0] === 'any' || (n[0] === 'wanted' && P.wanted > 0) || (n[0] === 'kills' && P.kills > 0) || (n[0] === 'money' && P.money > 0));
       q.push({ kind: 'line', who: 'news', text: fill(pick(ok)[1]) });
@@ -348,7 +348,7 @@
     { id: 'pillar', name: 'Pillar Rock', freq: '96.6 FM', genre: 'Punk rock', tag: 'Loud. Fast. Parked badly.', color: '#ff4a3a', vol: 1, gen: genPillar, step: stepPillar, id3: [52, 59, 64] },
     { id: 'bass', name: 'Bass Station', freq: '88.8 FM', genre: 'Hip-hop', tag: 'Low end for low lifes', color: '#ffd23a', vol: 0.9, gen: genBass, step: stepBass, id3: [48, 55, 58] },
     { id: 'classics', name: 'Parking Classics', freq: '92.1 FM', genre: 'Chiptune classics', tag: 'Grieg, Bach, Beethoven. In 8 bits.', color: '#7dff9a', vol: 2.6, gen: genClassics, step: stepClassics, id3: [72, 76, 79] },
-    { id: 'trond', name: 'Trond Talk', freq: '666 AM', genre: 'Talk radio', tag: 'He talks. You drive.', color: '#ffb02e', talk: true },
+    { id: 'artur', name: 'Artur Talk', freq: '666 AM', genre: 'Talk radio', tag: 'He talks. You drive.', color: '#ffb02e', talk: true },
   ];
   const SCANNER = { id: 'scanner', name: 'Police Scanner', freq: 'CH 9', genre: 'Dispatch', tag: 'Ten-four, good buddy', color: '#5aa9ff', scanner: true };
   const OFF = { id: 'off', name: 'Radio Off', freq: '', genre: 'Silence', tag: 'Just you and the engine', color: '#9da3ab', off: true };
@@ -360,7 +360,7 @@
     if (copCar(c)) return 'scanner';
     const k = c.model.kind, id = c.model.id;
     if (k === 'bus') return 'classics';
-    if (k === 'taxi') return 'trond';
+    if (k === 'taxi') return 'artur';
     if (k === 'sports' || id === 'voltage') return 'fjord';
     if (k === 'van' || id === 'rancher' || k === 'fire') return 'pillar';
     if (id === 'x5' || id === 'regret' || k === 'armored') return 'bass';
@@ -379,7 +379,7 @@
   function tuneIn(r, now) {
     r.sp.length = 0; r.cur = null;
     if (A.bus) A.bus.gain.setTargetAtTime(r.def.vol || 1, now, 0.03);
-    if (r.def.talk || r.def.scanner) { r.nextT = now + 0.3; r.chatT = now + rand(0.6, 1.6); if (r.def.scanner && !r.lcd) r.lcd = 'DISPATCH: ' + fill(pick(SCAN)); if (r.def.talk && !r.lcd) r.lcd = 'TROND TALK · 666 AM'; return; }
+    if (r.def.talk || r.def.scanner) { r.nextT = now + 0.3; r.chatT = now + rand(0.6, 1.6); if (r.def.scanner && !r.lcd) r.lcd = 'DISPATCH: ' + fill(pick(SCAN)); if (r.def.talk && !r.lcd) r.lcd = 'ARTUR TALK · 666 AM'; return; }
     if (!r.song) { newSong(r); r.x0 = X.time - Math.random() * r.song.dur * 0.6; }
     let el = X.time - r.x0, n = 0;
     while (el > r.song.dur + 1.5 && n++ < 6) { r.x0 += r.song.dur + 1.5; el -= r.song.dur + 1.5; newSong(r); }
@@ -420,18 +420,18 @@
       const it = r.q.shift(), t0 = Math.max(now + 0.05, c ? c.end : now + 0.3);
       c = r.cur = { it, t0, end: t0 + 0.6, text: '', sp: null, notes: null, ni: 0 };
       if (it.kind === 'line') {
-        const v = VOICES[it.who] || VOICES.trond;
+        const v = VOICES[it.who] || VOICES.artur;
         c.sp = speech(fill(it.text), v, t0, it.base); c.end = c.sp.end + 0.45; c.text = v.who + ': ' + c.sp.text;
         if (it.bed) { c.notes = []; const sd = 60 / 150 / 2, root = 60 + Math.floor(Math.random() * 5); for (let t = t0, j = 0; t < c.end - 0.2; t += sd, j++) c.notes.push({ t, m: root + [0, 4, 7, 12, 7, 4, 9, 5][j % 8], d: sd * 0.9 }); }
       } else if (it.kind === 'jingle') {
         c.notes = [{ t: t0, m: 72, d: 0.16 }, { t: t0 + 0.12, m: 76, d: 0.16 }, { t: t0 + 0.24, m: 79, d: 0.16 }, { t: t0 + 0.36, m: 84, d: 0.5 }];
-        c.sp = speech(TALK.jingle, VOICES.dj, t0 + 0.55); c.end = c.sp.end + 0.4; c.text = 'TROND TALK · 666 AM · HE TALKS, YOU DRIVE';
+        c.sp = speech(TALK.jingle, VOICES.dj, t0 + 0.55); c.end = c.sp.end + 0.4; c.text = 'ARTUR TALK · 666 AM · HE TALKS, YOU DRIVE';
       } else c.end = t0 + (it.dur || 0.5);
     }
     if (c.sp) speakTick(k, c.sp, now);
     if (c.notes) while (c.ni < c.notes.length && c.notes[c.ni].t < now + LOOK) { const nt = c.notes[c.ni++]; if (nt.t > now - 0.03) note(k, 'square', nt.m, nt.t, nt.d, 0.022, { lp: 2600, dest: A.bus }); }
     if (c.text && now >= c.t0 - 0.05) r.lcd = c.text;
-    R.talking = !!(c.sp && now >= c.sp.t0 && now < c.sp.end && c.it.who === 'trond');
+    R.talking = !!(c.sp && now >= c.sp.t0 && now < c.sp.end && c.it.who === 'artur');
   }
   const SCANQ = [];
   function squelch(k, t) { nz(k, t, 0.07, 0.07, 'bandpass', 2600, { Q: 1.2, dest: A.bus }); tn(k, 'square', 1320, t + 0.02, 0.05, 0.02, { lp: 3500, dest: A.bus }); }
@@ -511,7 +511,7 @@
     if (R.halted) startRadio(k);
     const now = k.ctx.currentTime;
     R.time[R.def.id] = (R.time[R.def.id] || 0) + dt;
-    // ducking: pager, phone calls from Trond, the police radio box (unless this is the scanner)
+    // ducking: pager, phone calls from Artur, the police radio box (unless this is the scanner)
     let duck = 1;
     if (HUD && HUD.pager && !HUD.pager.hidden) duck = 0.3;
     if (X.missions && X.missions.call) duck = Math.min(duck, 0.18);
@@ -536,10 +536,10 @@
   function drawLogo(cv, def, t, talking) {
     const c = cv.getContext('2d'), S = cv.width;
     c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, S, S);
-    if (def.talk && PG.ui && PG.ui.drawTrondFace) {
-      // drawTrondFace ends with the parking game's window pillar; a radio studio has no window
+    if (def.talk && PG.ui && PG.ui.drawArturFace) {
+      // drawArturFace ends with the parking game's window pillar; a radio studio has no window
       if (!c.hudNoPillar) { c.hudNoPillar = true; c.stroke = function () { if (this.strokeStyle === '#6f6a5c') return; CanvasRenderingContext2D.prototype.stroke.call(this); }; }
-      PG.ui.drawTrondFace(cv, 0.25, t, false, talking);
+      PG.ui.drawArturFace(cv, 0.25, t, false, talking);
       c.setTransform(1, 0, 0, 1, 0, 0);
       c.fillStyle = '#d0141e'; c.fillRect(0, S * 0.78, S, S * 0.22);
       txt(c, talking ? 'ON AIR' : '666 AM', S / 2, S * 0.89, S * 0.13, '#fff');
@@ -610,7 +610,7 @@
   });
   // Map / legend icons for places.
   const PLACE_ICON = {
-    hideout: { c: '#c48bff', g: 'house', n: "Trond's Garage" }, apartment: { c: '#7dff9a', g: 'house', n: 'Safehouse' }, bank: { c: '#ffd23a', g: '$', n: 'Bank' },
+    hideout: { c: '#c48bff', g: 'house', n: "Artur's Garage" }, apartment: { c: '#7dff9a', g: 'house', n: 'Safehouse' }, bank: { c: '#ffd23a', g: '$', n: 'Bank' },
     gunshop: { c: '#ff8a3a', g: 'gun', n: 'Ammu-Fjord' }, spray: { c: '#3fe0c5', g: 'spray', n: "Pay 'n' Spray" }, crusher: { c: '#b8ad9c', g: 'cube', n: 'Crusher' },
     hospital: { c: '#ffffff', g: '+', n: 'Hospital' }, police: { c: '#5aa9ff', g: 'badge', n: 'Police' }, bar: { c: '#ff6fb8', g: 'glass', n: 'Bar' },
   };
@@ -1300,7 +1300,7 @@ body.gta.touch #gta-hud .s-pick, body.gta.touch #gta-hud .s-offer { bottom: calc
     const grid = document.createElement('div'); grid.className = 'h-pgrid';
     for (const [k, v, cls] of rows) { const s = document.createElement('span'); s.textContent = k; const b = document.createElement('b'); b.textContent = v; if (cls) b.className = cls; grid.appendChild(s); grid.appendChild(b); }
     H.pstats.appendChild(grid);
-    const q = document.createElement('p'); q.className = 'h-pquip'; q.textContent = 'Trond: ' + quip(); H.pstats.appendChild(q);
+    const q = document.createElement('p'); q.className = 'h-pquip'; q.textContent = 'Artur: ' + quip(); H.pstats.appendChild(q);
     const f = document.createElement('p'); f.className = 'fine'; f.textContent = 'R car radio (Shift+R back) · hold Tab for the map and legend'; H.pstats.appendChild(f);
   }
   function quip() {

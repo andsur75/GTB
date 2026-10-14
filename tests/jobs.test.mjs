@@ -115,7 +115,7 @@ await t.wait(200);
 const lv = await t.eval(() => ({ a: PG.gta.jobs.active, car: !!PG.gta.player.car, end: JT.ev.filter(e => e.ev === 'jobEnd').pop() }));
 ok('getting out ends the job', !lv.a && !lv.car && /left/i.test(lv.end && lv.end.reason), lv);
 
-// ---------- 4. no side jobs while Trond has you on a mission ----------
+// ---------- 4. no side jobs while Artur has you on a mission ----------
 await t.eval(() => JT.seat(JT.fleet('taxi')));
 await until(() => PG.gta.player.car === window.JC, 3000);
 await t.eval(() => { window.realMissions = PG.gta.missions; PG.gta.missions = { active: { id: 'test', title: 'Test' } }; });

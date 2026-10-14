@@ -1,6 +1,6 @@
 // Shops test: Pay 'n' Spray (free first spray, paid auto-random spray, refusals, "they saw you" at 5 stars,
 // car bomb purchase), remote and fused car bombs, export and crusher (pay, removal, bomb in the crusher),
-// Trond's Garage (saved and respawned next game), a second game, pause, fps and screenshots.
+// Artur's Garage (saved and respawned next game), a second game, pause, fps and screenshots.
 // Usage: node tests/shops.test.mjs <built.html> <screenshot dir>
 import { launch } from './harness.mjs';
 
@@ -239,7 +239,7 @@ const r7 = await t.eval(() => ({ wrecked: TC.wrecked, removed: TC.removed, sold:
 ok('a car bomb in the crusher goes off (no sale)', r7.wrecked && !r7.removed && r7.sold === 0 && r7.money < 100 && r7.phase === 'idle', r7);   // damage.js may pay a little mayhem money
 await t.wait(500);
 
-// ---------- Trond's garage ----------
+// ---------- Artur's garage ----------
 await t.eval(() => { TT.car('furia', 'garage', { color: '#e0458f' }); TT.seat(); });
 await until(() => PG.gta.player.car === TC, 2000);
 await t.wait(300);

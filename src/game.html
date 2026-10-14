@@ -127,7 +127,7 @@ body.touch .hud-bot { left: 50%; transform: translateX(-50%); bottom: calc(var(-
 .hint.go { color: var(--ok); border-color: var(--ok); }
 .hint.warn { color: var(--amber); border-color: var(--amber); }
 
-/* Toasts + Trond */
+/* Toasts + Artur */
 #toasts { position: absolute; left: 0; right: 0; top: calc(108px + env(safe-area-inset-top, 0px)); display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none; padding: 0 16px; }
 .toast { max-width: 560px; text-align: center; font-family: var(--hud); font-weight: 800; font-size: clamp(18px, 4.6vw, 24px); line-height: 1.15; padding: 10px 16px; border-radius: 8px; background: rgba(12, 13, 16, 0.92); border: 2px solid var(--line); animation: pop .25s cubic-bezier(.2, 1.6, .4, 1) both; }
 .toast.scrape { border-color: var(--alarm); color: #ffd8d3; transform: rotate(-1.5deg); }
@@ -136,10 +136,10 @@ body.touch .hud-bot { left: 50%; transform: translateX(-50%); bottom: calc(var(-
 .toast.out { animation: fade .4s ease forwards; }
 @keyframes pop { from { transform: scale(0.6); opacity: 0; } }
 @keyframes fade { to { opacity: 0; transform: translateY(-8px); } }
-#trond-watch { position: absolute; right: 12px; top: calc(64px + env(safe-area-inset-top, 0px)); width: 92px; height: 92px; border-radius: 8px; border: 4px solid #6f6a5c; background: #9fc3d9; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5); overflow: hidden; }
-#trond-watch canvas { width: 100%; height: 100%; display: block; }
-#trond-bubble { position: absolute; right: 116px; top: calc(70px + env(safe-area-inset-top, 0px)); max-width: min(60vw, 300px); background: #fff; color: #111; font-family: var(--hud); font-weight: 800; font-size: 19px; line-height: 1.15; padding: 10px 14px; border-radius: 14px; animation: pop .2s ease both; }
-#trond-bubble::after { content: ''; position: absolute; right: -10px; top: 18px; border: 10px solid transparent; border-left-color: #fff; border-right: 0; }
+#artur-watch { position: absolute; right: 12px; top: calc(64px + env(safe-area-inset-top, 0px)); width: 92px; height: 92px; border-radius: 8px; border: 4px solid #6f6a5c; background: #9fc3d9; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5); overflow: hidden; }
+#artur-watch canvas { width: 100%; height: 100%; display: block; }
+#artur-bubble { position: absolute; right: 116px; top: calc(70px + env(safe-area-inset-top, 0px)); max-width: min(60vw, 300px); background: #fff; color: #111; font-family: var(--hud); font-weight: 800; font-size: 19px; line-height: 1.15; padding: 10px 14px; border-radius: 14px; animation: pop .2s ease both; }
+#artur-bubble::after { content: ''; position: absolute; right: -10px; top: 18px; border: 10px solid transparent; border-left-color: #fff; border-right: 0; }
 
 /* Cutscene */
 .cutscene { position: relative; width: min(100%, 720px); display: flex; flex-direction: column; gap: 14px; align-items: center; }
@@ -168,10 +168,10 @@ body.touch .hud-bot { left: 50%; transform: translateX(-50%); bottom: calc(var(-
 .breakdown td { padding: 4px 0; border-bottom: 1px solid var(--slab-2); }
 .breakdown td:last-child { text-align: right; font-weight: 700; }
 .breakdown tr.total td { border-bottom: 0; font-size: 22px; font-weight: 800; color: var(--hazard); }
-.trond-says { display: flex; gap: 12px; align-items: center; }
-.trond-says canvas { width: 72px; height: 72px; flex: none; border-radius: 8px; background: #9fc3d9; }
-.trond-says .speech { font-size: 20px; min-height: 0; text-align: left; }
-.trond-says .speech::before { left: -12px; top: 50%; transform: translateY(-50%); border: 12px solid transparent; border-right-color: #fff; border-left: 0; }
+.artur-says { display: flex; gap: 12px; align-items: center; }
+.artur-says canvas { width: 72px; height: 72px; flex: none; border-radius: 8px; background: #9fc3d9; }
+.artur-says .speech { font-size: 20px; min-height: 0; text-align: left; }
+.artur-says .speech::before { left: -12px; top: 50%; transform: translateY(-50%); border: 12px solid transparent; border-right-color: #fff; border-left: 0; }
 
 /* Leaderboard */
 .pill { font-family: var(--hud); font-weight: 700; font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--slab-2); color: var(--muted); }
@@ -235,6 +235,25 @@ body.drift #toasts { top: calc(172px + env(safe-area-inset-top, 0px)); }
 .badge.ev { background: var(--sign-blue); }
 .tile.dz { background: linear-gradient(135deg, #2a1513, var(--slab)); }
 
+/* Title: Grand Theft Bus with the full controls reference */
+#scr-title { justify-content: flex-start; }
+#scr-title .title-card { margin-block: auto; max-width: 1080px; width: 100%; }
+.title-top { display: flex; align-items: center; gap: 18px; justify-content: center; flex-wrap: wrap; }
+.title-words { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0; }
+#scr-title h1.logo { font-size: clamp(40px, 9vw, 88px); }
+#scr-title .btn.gta { font-size: 26px; padding: 14px 44px; min-height: 58px; }
+.controls { width: 100%; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 400px), 1fr)); gap: 12px; text-align: left; }
+.ctl-group { background: rgba(18, 20, 24, 0.86); border: 2px solid var(--slab-2); border-radius: 10px; padding: 12px 14px; min-width: 0; }
+.ctl-group h3 { font-family: var(--hud); font-weight: 800; text-transform: uppercase; letter-spacing: 0.12em; font-size: 15px; color: var(--hazard); margin: 0 0 8px; }
+.ctl-group h3.tips-head { margin-top: 14px; }
+.ctl-group dl { margin: 0; display: flex; flex-direction: column; gap: 7px; }
+.ctl-group dl > div { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: 12px; align-items: baseline; }
+.ctl-group dt { font-family: var(--hud); font-weight: 700; font-size: 15px; color: var(--line); }
+.ctl-group dd { margin: 0; font-size: 14px; color: var(--muted); line-height: 1.3; }
+.ctl-group kbd { display: inline-block; min-width: 1.6em; padding: 1px 6px; margin: 0 2px 2px 0; border-radius: 5px; border: 1px solid #4a4f57; border-bottom-width: 3px; background: #22262b; color: var(--line); font-family: var(--hud); font-weight: 800; font-size: 13px; text-align: center; line-height: 1.4; }
+.tips { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: 14px; color: var(--muted); line-height: 1.35; }
+@media (max-width: 520px) { .ctl-group dl > div { grid-template-columns: 1fr; gap: 2px; } .title-words { align-items: center; text-align: center; } }
+
 /* GTA mode */
 .btn.gta { background: #1e8a4c; border-color: #1e8a4c; color: #fff; transform: skewX(-12deg); box-shadow: 6px 0 0 rgba(30, 138, 76, 0.35), 12px 0 0 rgba(30, 138, 76, 0.15); }
 .btn.gta > span { display: inline-block; transform: skewX(12deg); }
@@ -261,7 +280,7 @@ body.city .not-city { display: none !important; }
   .cars { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
   .chip .lv { max-width: 38vw; }
   .ibtn { width: 40px; height: 40px; }
-  #trond-bubble { right: 112px; font-size: 17px; }
+  #artur-bubble { right: 112px; font-size: 17px; }
   .dh-combo { font-size: 21px; }
   .tach { width: 60px; }
 }
@@ -293,27 +312,83 @@ body.city .not-city { display: none !important; }
     </div>
     <div id="drift-hud" class="drift-only"><div class="dh-combo" id="dh-combo"><span class="dh-ang" id="dh-ang">0°</span><span class="dh-pts" id="dh-pts">+0</span><span class="dh-mult" id="dh-mult">×1</span></div><div class="dh-bank">STYLE <b id="dh-bank">0</b></div></div>
     <canvas id="minimap" class="city-only" width="280" height="280" aria-label="Map"></canvas>
-    <div id="trond-watch" hidden><canvas id="trond-face" width="184" height="184"></canvas></div>
-    <div id="trond-bubble" hidden></div>
+    <div id="artur-watch" hidden><canvas id="artur-face" width="184" height="184"></canvas></div>
+    <div id="artur-bubble" hidden></div>
   </div>
   <div id="toasts" aria-live="polite"></div>
   <div id="callout" aria-hidden="true"></div>
 
   <section class="screen" id="scr-title" hidden>
     <div class="title-card">
-      <div class="psign" aria-hidden="true">P</div>
-      <h1 class="logo">Take the<br><span>Bus!</span></h1>
-      <p class="sub">A parking simulator for people who should not be allowed to park.</p>
+      <div class="title-top">
+        <div class="psign" aria-hidden="true">P</div>
+        <div class="title-words">
+          <p class="eyebrow">Take the Bus! presents</p>
+          <h1 class="logo">Grand Theft <span>Bus</span></h1>
+        </div>
+      </div>
+      <p class="sub">A whole city nobody planned, at night. Steal anything with wheels, answer the ringing phones for Artur, rob the bank, and stay off the police radio.</p>
       <div class="btns">
-        <button class="btn primary" id="btn-play">Park</button>
-        <button class="btn drift" id="btn-drift"><span>Drift</span></button>
-        <button class="btn city" id="btn-city"><span>City</span></button>
-        <button class="btn gta" id="btn-gta"><span>Grand Theft Bus</span></button>
-        <button class="btn" id="btn-board">Leaderboard</button>
+        <button class="btn gta" id="btn-gta"><span>Play</span></button>
       </div>
       <p class="whoami" id="whoami"><span id="whoami-label">Driving as</span> <b id="whoami-name"></b> <button class="btn link" id="btn-rename">Change name</button></p>
-      <p class="newtag">New: Grand Theft Bus. Steal cars, rob the bank, outrun the police. On foot or behind the wheel.</p>
-      <p class="fine">WASD or arrow keys to drive · Space handbrake · Shift full throttle (City) · T training wheels · P pause · M mute</p>
+      <div class="controls" aria-label="Controls">
+        <section class="ctl-group">
+          <h3>On foot</h3>
+          <dl>
+            <div><dt><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or arrows</dt><dd>Walk (in screen directions)</dd></div>
+            <div><dt><kbd>Shift</kbd></dt><dd>Sprint</dd></div>
+            <div><dt>Mouse</dt><dd>Aim</dd></div>
+            <div><dt>Click, <kbd>Ctrl</kbd>, <kbd>J</kbd> or <kbd>Space</kbd></dt><dd>Shoot or punch</dd></div>
+            <div><dt><kbd>Q</kbd><kbd>E</kbd>, <kbd>1</kbd>-<kbd>9</kbd> or wheel</dt><dd>Switch weapon</dd></div>
+            <div><dt><kbd>F</kbd> or <kbd>Enter</kbd></dt><dd>Get in a car (the driver gets pulled out), go through doors, answer payphones, buy at counters</dd></div>
+            <div><dt>Hold <kbd>F</kbd></dt><dd>Drill the bank vault</dd></div>
+            <div><dt>Aim a gun at a cashier</dt><dd>Rob the till</dd></div>
+          </dl>
+        </section>
+        <section class="ctl-group">
+          <h3>Driving</h3>
+          <dl>
+            <div><dt><kbd>W</kbd></dt><dd>Accelerate</dd></div>
+            <div><dt><kbd>Shift</kbd></dt><dd>Full throttle</dd></div>
+            <div><dt><kbd>S</kbd></dt><dd>Brake, then reverse</dd></div>
+            <div><dt><kbd>A</kbd><kbd>D</kbd></dt><dd>Steer</dd></div>
+            <div><dt><kbd>Space</kbd></dt><dd>Handbrake</dd></div>
+            <div><dt><kbd>F</kbd></dt><dd>Get out (bail out at speed)</dd></div>
+            <div><dt>Click or <kbd>Ctrl</kbd></dt><dd>Drive-by shooting toward the mouse</dd></div>
+            <div><dt><kbd>H</kbd></dt><dd>Horn; siren in police cars, ambulances and fire trucks</dd></div>
+            <div><dt><kbd>R</kbd> / <kbd>Shift</kbd>+<kbd>R</kbd></dt><dd>Next / previous radio station</dd></div>
+            <div><dt><kbd>L</kbd></dt><dd>Headlights</dd></div>
+            <div><dt><kbd>G</kbd></dt><dd>Start or stop a side job in a taxi, bus, ambulance, fire truck or police car</dd></div>
+          </dl>
+        </section>
+        <section class="ctl-group">
+          <h3>Garages</h3>
+          <dl>
+            <div><dt>Pay 'n' Spray</dt><dd>Stop on the pad: a new colour, repairs, and the police lose you</dd></div>
+            <div><dt><kbd>A</kbd><kbd>D</kbd> then <kbd>F</kbd></dt><dd>Pick the colour, confirm</dd></div>
+            <div><dt><kbd>B</kbd></dt><dd>Fit a car bomb ($1000)</dd></div>
+            <div><dt><kbd>G</kbd></dt><dd>Set off your car bomb</dd></div>
+            <div><dt>Crusher &amp; Export</dt><dd>Stop on the pad and get out to sell or scrap the car</dd></div>
+          </dl>
+        </section>
+        <section class="ctl-group">
+          <h3>Anytime</h3>
+          <dl>
+            <div><dt>Hold <kbd>Tab</kbd></dt><dd>Big map</dd></div>
+            <div><dt><kbd>C</kbd></dt><dd>Camera: fixed north or follow the car</dd></div>
+            <div><dt><kbd>P</kbd> or <kbd>Esc</kbd></dt><dd>Pause</dd></div>
+            <div><dt><kbd>M</kbd></dt><dd>Mute</dd></div>
+            <div><dt>Touch screen</dt><dd>On-screen stick and buttons</dd></div>
+          </dl>
+          <h3 class="tips-head">How it works</h3>
+          <ul class="tips">
+            <li>Ringing payphones (green blips) give you Artur's missions. The last ones rob the bank.</li>
+            <li>Stolen cash is carried as loot: drop it at Artur's Garage or the safehouse before the police catch you.</li>
+            <li>Wasted: you wake up at the hospital. Busted: you leave the police station. Either way, your guns are gone.</li>
+          </ul>
+        </section>
+      </div>
     </div>
   </section>
 
@@ -346,12 +421,12 @@ body.city .not-city { display: none !important; }
     </div>
   </section>
 
-  <section class="screen" id="scr-trond" hidden>
+  <section class="screen" id="scr-artur" hidden>
     <div class="cutscene">
-      <p class="speaker">Trond, your boss</p>
-      <canvas id="trond-cut" width="840" height="840" aria-label="Trond hands you his car key"></canvas>
-      <div class="speech" id="trond-line"></div>
-      <div class="btns"><button class="btn primary" id="trond-next">Next</button><button class="btn" id="trond-skip">Skip</button></div>
+      <p class="speaker">Artur, your boss</p>
+      <canvas id="artur-cut" width="840" height="840" aria-label="Artur hands you his car key"></canvas>
+      <div class="speech" id="artur-line"></div>
+      <div class="btns"><button class="btn primary" id="artur-next">Next</button><button class="btn" id="artur-skip">Skip</button></div>
     </div>
   </section>
 
@@ -371,7 +446,7 @@ body.city .not-city { display: none !important; }
       <p class="blurb">Take a breath. The pillar is not going anywhere. That is rather the problem.</p>
       <div class="btns"><button class="btn primary" id="pause-resume">Resume</button><button class="btn" id="pause-restart">Restart</button><button class="btn" id="pause-map">Level map</button></div>
       <p class="fine park-only">W/S or arrows: gas &amp; reverse · A/D: steer · Space: handbrake · T: training wheels · R: restart</p>
-      <p class="fine gta-only">WASD move · F enter or leave a car / use doors · Mouse, Ctrl or Space (on foot) fire · Q/E or 1-9 weapons · Shift sprint or full throttle · Space handbrake · H horn · C camera · Tab map</p>
+      <p class="fine gta-only">On foot: WASD walk · Shift sprint · mouse aim · click, Ctrl, J or Space shoot · Q/E or 1-9 weapons · F cars, doors, phones. Driving: W gas · Shift full throttle · S brake · A/D steer · Space handbrake · F get out · H horn · R radio · L lights · G side job. Anytime: Tab map · C camera · M mute.</p>
       <p class="fine city-only">W gas · Shift full throttle · S brake, then reverse · A/D steer · Space handbrake · T drift assist · R new city</p>
       <p class="fine drift-only not-city">W gas · S brake, then reverse · A/D steer · Space handbrake (with steering above 50 km/h it kicks the rear out) · T drift assist · R restart</p>
     </div>
@@ -424,7 +499,7 @@ body.city .not-city { display: none !important; }
     { id: 'truck', name: 'Box Truck', cls: 'expert', len: 7.5, wid: 2.4, wb: 4.5, turn: 15.5, color: '#e6e1d3', quip: 'You need a licence for this. Do you have one?' },
     { id: 'trailer', name: 'Model Y + Trailer', cls: 'expert', len: 4.75, wid: 1.92, wb: 2.89, turn: 12.1, color: '#3b4049',
       trailer: { hitch: 1.0, axle: 2.5, len: 3.0, wid: 1.8, rear: 0.6 }, quip: 'Why would you do this to yourself?' },
-    { id: 'trond', name: "Trond's Precious", cls: 'boss', len: 4.78, wid: 1.94, wb: 2.89, turn: 11.1, color: '#c3c7cc', locked: true, quip: 'Not yours. Never will be.' },
+    { id: 'artur', name: "Artur's Precious", cls: 'boss', len: 4.78, wid: 1.94, wb: 2.89, turn: 11.1, color: '#c3c7cc', locked: true, quip: 'Not yours. Never will be.' },
     // City mode only: not in any picker class.
     { id: 'x5', name: 'BMW X5', cls: 'city', len: 4.92, wid: 2.0, wb: 2.975, turn: 12.6, color: '#1f4f9c', quip: 'Two and a bit tonnes of German confidence.' },
   ];
@@ -546,7 +621,7 @@ body.city .not-city { display: none !important; }
     f150:    { m: 2150, ff: 0.57, h: 0.70, drive: 'R', type: 'ice', kw: 298, nm: 678, red: 6000, n: 10, v1: 40, vN: 280, cyl: 6, vmax: 170, z100: 6.0, cda: 1.15, shift: 0.12 },
     truck:   { m: 5200, ff: 0.45, h: 1.05, drive: 'R', type: 'ice', kw: 132, nm: 600, red: 3600, n: 6, v1: 22, vN: 115, cyl: 4, vmax: 100, z100: 34, cda: 6.2, shift: 0.45, mu: 0.82 },
     trailer: { m: 1980, ff: 0.50, h: 0.55, drive: 'A', type: 'ev', kw: 300, g0: 0.62, vmax: 100, z100: 7.4, cda: 1.05, extra: 750 },
-    trond:   { m: 2350, ff: 0.51, h: 0.52, drive: 'A', type: 'ev', kw: 420, g0: 0.72, vmax: 180, z100: 4.3, cda: 0.56, rearSteer: true },
+    artur:   { m: 2350, ff: 0.51, h: 0.52, drive: 'A', type: 'ev', kw: 420, g0: 0.72, vmax: 180, z100: 4.3, cda: 0.56, rearSteer: true },
     // X5 xDrive40i, Sport mode: rear-biased torque split so it will hang the tail out.
     x5:      { m: 2135, ff: 0.50, h: 0.60, drive: 'A', split: 0.25, type: 'ice', kw: 280, nm: 540, red: 6500, n: 8, v1: 58, vN: 290, cyl: 6, vmax: 250, z100: 5.5, cda: 0.80, shift: 0.12 },
   };
@@ -653,7 +728,7 @@ body.city .not-city { display: none !important; }
     let delta = veh.steer * c.maxSteer;
     delta += cl(target - delta, -7 * h, 7 * h);
     veh.steer = delta / c.maxSteer;
-    // rear-axle steering (Trond): opposite phase slow, same phase fast
+    // rear-axle steering (Artur): opposite phase slow, same phase fast
     const dR = d.rearSteer ? -delta * 0.22 * cl(1 - speed / 17, -0.45, 1) : 0;
     // ---- loads with longitudinal transfer
     let Fzf = m * G9 * b / L - m * veh.ax * d.h / L, Fzr = m * G9 * a / L + m * veh.ax * d.h / L;
@@ -1025,7 +1100,7 @@ body.city .not-city { display: none !important; }
         b.actor({ type: 'thief', path: b.thiefPath(g.laneY), delay: 6, speed: 2.3 });
         b.actor({ type: 'queue', path: [{ x: -5, y: g.laneY + 0.9 }, { x: g.W + 4, y: g.laneY + 0.9 }], patience: 10, delay: 3 });
       } },
-    { id: 'B1', zone: 5, name: "Trond's Precious", theme: 'garage', par: 45, minGears: 0, boss: true, car: 'trond',
+    { id: 'B1', zone: 5, name: "Artur's Precious", theme: 'garage', par: 45, minGears: 0, boss: true, car: 'artur',
       intro: 'The boss needs his car parked. Brand new. No pressure. Actually, all the pressure.',
       build(b) {
         twoRows(b, { count: 8, w: 2.45, len: 5.0, lane: 6.5, garage: true, target: ['up', 3], reserved: true, pilUp: [3], pilDown: [2, 6], occUp: [0, 1, 4, 6, 7], occDown: [0, 2, 3, 5, 6] });
@@ -1302,7 +1377,7 @@ body.city .not-city { display: none !important; }
       'THE CARAVAN CLUB HAS REVOKED YOUR MEMBERSHIP.',
       'WHY DID YOU BRING A TRAILER? WHAT IS EVEN IN THERE?',
     ],
-    trondIntro: [
+    arturIntro: [
       'Hey! You there. Got a minute?',
       'Could you park my car? It is brand new.',
       'Rear-axle steering. Do you even know what that is?',
@@ -1310,7 +1385,7 @@ body.city .not-city { display: none !important; }
       'Not a scratch. Not one. I will check with a torch.',
       'I will be watching from the window.',
     ],
-    trondNear: [
+    arturNear: [
       'MIND THE PILLAR!',
       'Is that... is that a scratch?!',
       'SLOWER. Slower. Oh no.',
@@ -1328,7 +1403,7 @@ body.city .not-city { display: none !important; }
       'That is a leased vehicle! I mean... mine! It is mine!',
       'The sensors are screaming. I am screaming.',
     ],
-    trondCrash: [
+    arturCrash: [
       "That is coming out of your salary. For the next 40 years.",
       'Clear your desk.',
       "I am not angry. I am just... I am calling HR.",
@@ -1351,7 +1426,7 @@ body.city .not-city { display: none !important; }
       'Tell your family you will be working weekends. All of them.',
       'I am updating your title to "Former".',
     ],
-    trondPark: [
+    arturPark: [
       'Hm. There is a fingerprint on the door handle.',
       'Fine. Do not expect a raise.',
       'Adequate. Barely.',
@@ -1457,8 +1532,8 @@ body.city .not-city { display: none !important; }
         const len = b.v.footLen + 2.6;
         b.bay({ cx: 600, cy: 5.5 + 0.8 + len / 2, ang: -HALF, dir: 'forward', side: 2.2, end: 2.6 });
       } },
-    { id: 'DB', mode: 'drift', name: 'Trond Said Careful', theme: 'garage', boss: true, car: 'trond', styleTarget: 600,
-      intro: 'Trond wants his car parked nose-out in his spot, the way he likes it. He said careful. He did not say slow.',
+    { id: 'DB', mode: 'drift', name: 'Artur Said Careful', theme: 'garage', boss: true, car: 'artur', styleTarget: 600,
+      intro: 'Artur wants his car parked nose-out in his spot, the way he likes it. He said careful. He did not say slow.',
       build(b) {
         const e = b.v.extraLane, yUp = 7, yDown = yUp + 9.5 + e, n = 26;
         b.mu(0.86);
@@ -1509,7 +1584,7 @@ body.city .not-city { display: none !important; }
     driftKiss: ['KISSED IT!', 'THAT CLOSE!', 'PAINT-THIN!', 'MIRROR MARGIN!'],
     driftLost: ['Combo gone. The wall says hi.', 'Contact. Combo deleted.', 'Scraped it. Style points evaporated.', 'That touch cost you everything.'],
     driftCone: ['Cone down.', 'You hit a cone. It had a family.', 'Traffic cone: deceased.', 'Cones are not apexes.'],
-    trondDriftIntro: [
+    arturDriftIntro: [
       'You. The one who drifts in my car park.',
       'Yes, I heard. Everyone heard. The tyre marks are on the drone footage.',
       'Fine. Park my car. Sideways, if you must.',
@@ -1517,7 +1592,7 @@ body.city .not-city { display: none !important; }
       'One scratch and you are walking to Fyri.',
       'I will be watching. With the CFO.',
     ],
-    trondDriftPark: [
+    arturDriftPark: [
       'Was that... sideways? Into MY spot?',
       'I hate that it was impressive.',
       'My tyres are 40 percent lighter. My heart is 90 percent older.',
@@ -2689,7 +2764,7 @@ body.city .not-city { display: none !important; }
     const tg = L.target;
     const up = Math.abs(PG.wrap(tg.ang + Math.PI / 2)) < 0.01 || Math.abs(PG.wrap(tg.ang - Math.PI / 2)) < 0.01;
     if (tg.reserved) {
-      worldText(ctx, view, tg.cx, tg.cy - 0.9, 0, 0.42, 'RESERVED: TROND', '#f4c20d');
+      worldText(ctx, view, tg.cx, tg.cy - 0.9, 0, 0.42, 'RESERVED: ARTUR', '#f4c20d');
       worldText(ctx, view, tg.cx, tg.cy - 0.3, 0, 0.26, 'DO NOT EVEN LOOK', '#f4c20d', "'Barlow Condensed', sans-serif");
     }
     worldText(ctx, view, tg.cx, tg.cy + (tg.reserved ? 0.8 : 0), 0, up ? 1.3 : 1.1, 'P', 'rgba(255,190,70,0.9)');
@@ -2780,7 +2855,7 @@ body.city .not-city { display: none !important; }
 (function (PG) {
   if (typeof document === 'undefined') return;
   const $ = id => document.getElementById(id);
-  const SCREENS = ['title', 'name', 'cars', 'map', 'trond', 'ready', 'pause', 'result', 'board'];
+  const SCREENS = ['title', 'name', 'cars', 'map', 'artur', 'ready', 'pause', 'result', 'board'];
   let state = null, sync = null, screen = null, selClass = 'big', afterName = null, boardBack = 'title', mode = 'park';
   const setMode = m => { mode = m; document.body.classList.toggle('drift', m === 'drift' || m === 'city'); document.body.classList.toggle('city', m === 'city'); document.body.classList.toggle('gta', m === 'gta'); };
   const UI = PG.ui = {};
@@ -2790,7 +2865,7 @@ body.city .not-city { display: none !important; }
   const carName = id => (PG.carById(id) || {}).name || id;
 
   UI.show = function (id) {
-    if (id !== 'trond' && id !== null && id !== 'result') hush();
+    if (id !== 'artur' && id !== null && id !== 'result') hush();
     screen = id;
     SCREENS.forEach(s => { $('scr-' + s).hidden = s !== id; });
     const playing = id === 'ready' || id === 'pause' || id === 'result' || id === null;
@@ -2801,7 +2876,7 @@ body.city .not-city { display: none !important; }
     if (first && !PG.input.touchActive) setTimeout(() => first.focus({ preventScroll: true }), 30);
   };
 
-  // ---------- Trond speaking: gibberish yap + text typed out in sync ----------
+  // ---------- Artur speaking: gibberish yap + text typed out in sync ----------
   let typer = null;
   const reduceMotion = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
   function speak(target, text, opts) {
@@ -2829,10 +2904,10 @@ body.city .not-city { display: none !important; }
   UI.state = () => state;
   UI.save = () => save();
   UI.screen = () => screen;
-  UI.drawTrondFace = (...a) => drawTrondFace(...a);
+  UI.drawArturFace = (...a) => drawArturFace(...a);
   function hush() { if (typer) typer.finish(); PG.audio.yapStop(); }
 
-  // ---------- toasts + Trond bubble ----------
+  // ---------- toasts + Artur bubble ----------
   UI.toast = function (text, kind) {
     const box = $('toasts'), t = el('div', 'toast ' + (kind || ''), text);
     box.appendChild(t);
@@ -2845,15 +2920,15 @@ body.city .not-city { display: none !important; }
   };
   let bubbleTimer = null;
   UI.bubble = function (text, ms, panic) {
-    const b = $('trond-bubble'); b.hidden = false;
+    const b = $('artur-bubble'); b.hidden = false;
     b.style.animation = 'none'; void b.offsetWidth; b.style.animation = '';
     const tk = speak(b, text, { panic: panic == null ? 0.75 : panic });
     clearTimeout(bubbleTimer); bubbleTimer = setTimeout(() => { b.hidden = true; }, Math.max(ms || 2500, tk.plan.total * 1000 + 1400));
   };
 
-  // ---------- Trond drawing ----------
+  // ---------- Artur drawing ----------
   // mood 0 calm .. 1 horrified; dead = crossed-out eyes. Drawn in a 200x200 box centred on the face.
-  function drawTrondHead(c, mood, t, dead, talking) {
+  function drawArturHead(c, mood, t, dead, talking) {
     c.save();
     const jit = mood > 0.7 ? Math.sin(t * 50) * 1.5 : 0;
     c.translate(jit, 0);
@@ -2890,19 +2965,19 @@ body.city .not-city { display: none !important; }
     }
     c.restore();
   }
-  function drawTrondFace(canvas, mood, t, dead, talking) {
+  function drawArturFace(canvas, mood, t, dead, talking) {
     const c = canvas.getContext('2d'), s = canvas.width / 200;
     c.setTransform(1, 0, 0, 1, 0, 0); c.fillStyle = '#9fc3d9'; c.fillRect(0, 0, canvas.width, canvas.height);
     c.fillStyle = 'rgba(255,255,255,0.25)'; c.beginPath(); c.moveTo(0, 0); c.lineTo(70 * s, 0); c.lineTo(0, 70 * s); c.fill();
-    c.setTransform(s, 0, 0, s, 0, 10 * s); drawTrondHead(c, mood, t, dead, talking);
+    c.setTransform(s, 0, 0, s, 0, 10 * s); drawArturHead(c, mood, t, dead, talking);
     c.setTransform(1, 0, 0, 1, 0, 0); c.strokeStyle = '#6f6a5c'; c.lineWidth = 6 * s; c.beginPath(); c.moveTo(canvas.width / 2, 0); c.lineTo(canvas.width / 2, canvas.height); c.stroke();
   }
-  UI.drawTrondFace = drawTrondFace;
+  UI.drawArturFace = drawArturFace;
 
-  // ---------- Trond cutscene ----------
+  // ---------- Artur cutscene ----------
   let cut = null;
   function drawCutscene(t) {
-    const cv = $('trond-cut'), c = cv.getContext('2d'), W = cv.width, s = W / 420;
+    const cv = $('artur-cut'), c = cv.getContext('2d'), W = cv.width, s = W / 420;
     c.setTransform(1, 0, 0, 1, 0, 0);
     c.fillStyle = '#2a2e33'; c.fillRect(0, 0, W, W);
     c.fillStyle = '#1d2024'; c.fillRect(0, W * 0.72, W, W * 0.28);
@@ -2920,7 +2995,7 @@ body.city .not-city { display: none !important; }
     c.setTransform(s * 1.6, 0, 0, s * 1.6, (210 - 160 + (1 - walkIn) * 300) * s, 40 * s);
     // body below the head
     c.fillStyle = '#1f2a44'; c.fillRect(40, 190, 120, 70); c.fillStyle = '#16203a'; c.fillRect(56, 255, 36, 20); c.fillRect(108, 255, 36, 20);
-    drawTrondHead(c, mood, t, false, UI.talking());
+    drawArturHead(c, mood, t, false, UI.talking());
     // arm + key on the last line
     if (step >= n - 1) {
       const tr = Math.sin(t * 45) * 3;
@@ -2931,11 +3006,11 @@ body.city .not-city { display: none !important; }
     c.restore();
   }
   function startCutscene(onDone, lines) {
-    cut = { i: 0, t0: performance.now() / 1000, onDone, lines: lines || PG.LINES.trondIntro };
-    $('trond-next').textContent = 'Next';
-    UI.show('trond');
+    cut = { i: 0, t0: performance.now() / 1000, onDone, lines: lines || PG.LINES.arturIntro };
+    $('artur-next').textContent = 'Next';
+    UI.show('artur');
     PG.audio.whoosh();
-    setTimeout(() => { if (cut) speak($('trond-line'), cut.lines[0], { panic: 0 }); }, 700);
+    setTimeout(() => { if (cut) speak($('artur-line'), cut.lines[0], { panic: 0 }); }, 700);
   }
   function cutNext() {
     if (!cut) return;
@@ -2943,9 +3018,9 @@ body.city .not-city { display: none !important; }
     cut.i++;
     const lines = cut.lines;
     if (cut.i >= lines.length) { const done = cut.onDone; cut = null; hush(); PG.audio.key(); done(); return; }
-    speak($('trond-line'), lines[cut.i], { panic: cut.i / (lines.length - 1) * 0.9 });
+    speak($('artur-line'), lines[cut.i], { panic: cut.i / (lines.length - 1) * 0.9 });
     if (cut.i === 3) PG.audio.boom();
-    if (cut.i === lines.length - 1) { $('trond-next').textContent = 'Take the key'; PG.audio.key(); }
+    if (cut.i === lines.length - 1) { $('artur-next').textContent = 'Take the key'; PG.audio.key(); }
   }
 
   // ---------- car select ----------
@@ -2976,7 +3051,7 @@ body.city .not-city { display: none !important; }
     $('class-blurb').textContent = PG.CLASSES.find(k => k.id === selClass).blurb;
     const grid = $('car-grid'); grid.textContent = '';
     const list = PG.CARS.filter(c => c.cls === selClass);
-    if (selClass === 'big') list.push(PG.carById('trond'));
+    if (selClass === 'big') list.push(PG.carById('artur'));
     list.forEach(car => {
       const locked = car.cls === 'boss';
       const b = el('button', 'car'); b.setAttribute('aria-pressed', String(state.car === car.id)); if (locked) b.disabled = true;
@@ -3019,7 +3094,7 @@ body.city .not-city { display: none !important; }
         const best = state.bests[PG.boardKey(def, car)], st = el('span', 'st');
         for (let i = 0; i < 3; i++) st.appendChild(el('span', best && best.stars > i ? '' : 'off', '★'));
         b.appendChild(st);
-        if (!open) b.appendChild(el('span', 'lock', def.boss ? 'Park D4 to meet Trond again' : 'Locked: park the previous level'));
+        if (!open) b.appendChild(el('span', 'lock', def.boss ? 'Park D4 to meet Artur again' : 'Locked: park the previous level'));
         b.onclick = () => { PG.audio.click(); play(def); };
         tiles.appendChild(b);
       });
@@ -3045,7 +3120,7 @@ body.city .not-city { display: none !important; }
         const st = el('span', 'st');
         for (let i = 0; i < 3; i++) { const s = el('span', best && best.stars > i ? '' : 'off', '★'); st.appendChild(s); }
         b.appendChild(st);
-        if (!open) b.appendChild(el('span', 'lock', def.boss ? 'Finish Zone 2 to meet Trond' : 'Locked: finish the previous level'));
+        if (!open) b.appendChild(el('span', 'lock', def.boss ? 'Finish Zone 2 to meet Artur' : 'Locked: finish the previous level'));
         b.onclick = () => { PG.audio.click(); play(def); };
         tiles.appendChild(b);
       });
@@ -3063,7 +3138,7 @@ body.city .not-city { display: none !important; }
         PG.startLevel(def, null);
         G().status = 'ready';
         $('pause-map').textContent = 'Quit to title';
-        $('trond-watch').hidden = true; $('trond-bubble').hidden = true;
+        $('artur-watch').hidden = true; $('artur-bubble').hidden = true;
         $('ready-zone').textContent = def.zone;
         $('ready-name').textContent = def.name;
         $('ready-intro').textContent = def.intro;
@@ -3080,7 +3155,7 @@ body.city .not-city { display: none !important; }
       setMode(city ? 'city' : drift ? 'drift' : 'park');
       if (PG.input.touchActive) { $('pedal-brake').textContent = drift ? 'E-BRAKE' : 'BRAKE'; $('pedal-rev').textContent = drift ? 'BRAKE' : 'REV'; }
       $('pause-map').textContent = city ? 'Quit to title' : 'Level map';
-      $('trond-watch').hidden = true; $('trond-bubble').hidden = true;
+      $('artur-watch').hidden = true; $('artur-bubble').hidden = true;
       if (city) {
         $('ready-zone').textContent = 'Drift Racing City';
         $('ready-name').textContent = def.name;
@@ -3103,11 +3178,11 @@ body.city .not-city { display: none !important; }
       }
       $('hud-level').textContent = `${def.boss ? 'BOSS' : def.id} · ${def.name}`;
       $('hud-arm').textContent = String(G().L.gate);
-      $('trond-watch').hidden = !def.boss; $('trond-bubble').hidden = true;
+      $('artur-watch').hidden = !def.boss; $('artur-bubble').hidden = true;
       UI.show('ready');
     };
     if (def.mode === 'gta' && def.introLines && !state.gtaIntroSeen) { state.gtaIntroSeen = true; save(); startCutscene(go, def.introLines); }
-    else if (def.boss) startCutscene(go, def.mode === 'drift' ? PG.LINES.trondDriftIntro : PG.LINES.trondIntro); else go();
+    else if (def.boss) startCutscene(go, def.mode === 'drift' ? PG.LINES.arturDriftIntro : PG.LINES.arturIntro); else go();
   }
   function begin() {
     if (G().status !== 'ready') return;
@@ -3121,7 +3196,7 @@ body.city .not-city { display: none !important; }
   function pickLine(r) {
     const g = G(), car = g.car.name, boss = g.def.boss;
     if (r.result === 'crashed') {
-      if (boss) return PG.say(PG.LINES.trondCrash);
+      if (boss) return PG.say(PG.LINES.arturCrash);
       if (r.kind === 'pedestrian') return PG.say(PG.LINES.hitPedestrian, { car });
       if (r.kind === 'jackknife') return PG.say(PG.LINES.jackknife, { car });
       return PG.say(PG.LINES.crash, { car: car.toUpperCase() });
@@ -3129,11 +3204,11 @@ body.city .not-city { display: none !important; }
     if (r.result === 'stolen') return PG.say(PG.LINES.stolen);
     if (g.mode === 'city') return PG.say(g.drift.bank >= 4000 ? PG.LINES.cityGreat : PG.LINES.cityEnd);
     if (g.mode === 'drift') {
-      if (boss) return PG.say(PG.LINES.trondDriftPark);
+      if (boss) return PG.say(PG.LINES.arturDriftPark);
       if (!r.score.hasEntry) return PG.say(PG.LINES.driftBoring);
       return PG.say(r.score.stars === 3 ? PG.LINES.driftPerfect : PG.LINES.driftOk, { car });
     }
-    if (boss) return PG.say(PG.LINES.trondPark);
+    if (boss) return PG.say(PG.LINES.arturPark);
     const s = r.score;
     if (s.stars === 3) return PG.say(PG.LINES.parkedPerfect, { car });
     if (r.ev.headingErr > 4) return PG.say(PG.LINES.parkedCrooked, { car });
@@ -3192,14 +3267,14 @@ body.city .not-city { display: none !important; }
     card.textContent = ''; card.className = 'card ' + (r.result === 'parked' ? 'win' : 'crash');
     const boss = def.boss;
     if (r.result === 'parked') {
-      card.appendChild(el('p', 'tag', boss ? 'Trond inspects his car' : 'Parked'));
+      card.appendChild(el('p', 'tag', boss ? 'Artur inspects his car' : 'Parked'));
       const stars = el('div', 'stars');
       for (let i = 0; i < 3; i++) { const s = el('span', i < r.score.stars ? 'on' : '', '★'); s.style.animationDelay = (0.25 + i * 0.28) + 's'; stars.appendChild(s); if (i < r.score.stars) setTimeout(() => PG.audio.star(i), 250 + i * 280); }
       card.appendChild(stars);
     } else card.appendChild(el('p', 'tag', r.result === 'stolen' ? 'Spot stolen' : boss ? 'You wrecked it' : r.kind === 'pedestrian' ? 'Pedestrian down' : 'Crashed'));
     if (boss) {
-      const row = el('div', 'trond-says'), cv = el('canvas'); cv.width = 144; cv.height = 144;
-      drawTrondFace(cv, r.result === 'parked' ? 0.3 : 1, 0, r.result !== 'parked');
+      const row = el('div', 'artur-says'), cv = el('canvas'); cv.width = 144; cv.height = 144;
+      drawArturFace(cv, r.result === 'parked' ? 0.3 : 1, 0, r.result !== 'parked');
       const sp = el('div', 'speech', line); row.appendChild(cv); row.appendChild(sp); card.appendChild(row);
       setTimeout(() => { if (screen === 'result') speak(sp, line, { panic: r.result === 'parked' ? 0.25 : 1 }); }, r.result === 'parked' ? 1100 : 500);
     } else card.appendChild(el('h2', null, line));
@@ -3223,14 +3298,14 @@ body.city .not-city { display: none !important; }
       card.appendChild(t);
       if (r.prevBest != null && r.prevBest > r.score.total) card.appendChild(el('p', 'sub2', `Your best here: ${r.prevBest}. So, worse than before. Noted.`));
     } else if (r.result === 'crashed') {
-      card.appendChild(el('p', 'sub2', `Impact speed ${r.kmh.toFixed(1)} km/h · Total crashes: ${state.crashes}${boss ? ` · Trond's car wrecked ${state.trondWrecks}×` : ''}`));
+      card.appendChild(el('p', 'sub2', `Impact speed ${r.kmh.toFixed(1)} km/h · Total crashes: ${state.crashes}${boss ? ` · Artur's car wrecked ${state.trondWrecks}×` : ''}`));
     } else card.appendChild(el('p', 'sub2', 'Next time, claim the bay before someone else does.'));
     const btns = el('div', 'btns');
     const LIST = def.mode === 'drift' ? PG.DRIFT_LEVELS : PG.LEVELS, idx = LIST.indexOf(def), next = LIST[idx + 1];
     const add = (label, primary, fn) => { const b = el('button', 'btn' + (primary ? ' primary' : ''), label); b.onclick = () => { PG.audio.click(); fn(); }; btns.appendChild(b); return b; };
     if (r.result === 'parked' && next && !next.boss && !def.boss && isUnlocked(next)) add('Next level', true, () => play(next));
-    if (r.result === 'parked' && def.id === 'L6') add('Meet Trond', false, () => play(PG.levelById('B1')));
-    if (r.result === 'parked' && def.id === 'D4') add('Meet Trond', false, () => play(PG.levelById('DB')));
+    if (r.result === 'parked' && def.id === 'L6') add('Meet Artur', false, () => play(PG.levelById('B1')));
+    if (r.result === 'parked' && def.id === 'D4') add('Meet Artur', false, () => play(PG.levelById('DB')));
     add(r.result === 'parked' ? 'Retry' : 'Try again', r.result !== 'parked', restart);
     add('Level map', false, () => { demo(); renderMap(); UI.show('map'); });
     add('Leaderboard', false, () => openBoard('result', key));
@@ -3250,7 +3325,7 @@ body.city .not-city { display: none !important; }
     if (g.mode === 'city') cityHud(g); else if (g.mode === 'drift') driftHud(g); else parkHud(g);
     if (g.def && g.def.boss) {
       const near = g.nearest == null ? 3 : g.nearest, mood = g.crashed ? 1 : Math.max(0, Math.min(1, 1.25 - near));
-      drawTrondFace($('trond-face'), mood, performance.now() / 1000, g.crashed, UI.talking());
+      drawArturFace($('artur-face'), mood, performance.now() / 1000, g.crashed, UI.talking());
     }
     const tw = String(!!g.training); if (hudCache.tw !== tw) { hudCache.tw = tw; $('btn-training').setAttribute('aria-pressed', tw); }
   };
@@ -3348,7 +3423,7 @@ body.city .not-city { display: none !important; }
     boardBack = back || 'title';
     const lsel = $('board-level'), csel = $('board-class');
     if (!lsel.options.length) {
-      PG.LEVELS.forEach(l => lsel.appendChild(new Option(l.boss ? "Bonus: Trond's Precious" : `${l.id} · ${l.name}`, l.id)));
+      PG.LEVELS.forEach(l => lsel.appendChild(new Option(l.boss ? "Bonus: Artur's Precious" : `${l.id} · ${l.name}`, l.id)));
       PG.DRIFT_LEVELS.forEach(l => lsel.appendChild(new Option(l.boss ? `Drift bonus: ${l.name}` : `Drift ${l.id} · ${l.name}`, l.id)));
       PG.CLASSES.forEach(c => csel.appendChild(new Option(c.label, c.id)));
       lsel.onchange = csel.onchange = renderBoard;
@@ -3376,7 +3451,7 @@ body.city .not-city { display: none !important; }
     const sh = PG.shameRows(players), sb = $('shame-rows'); sb.textContent = '';
     sh.forEach((r, i) => {
       const tr = el('tr'), name = el('td', null, r.nick || 'Anonymous Menace');
-      if (r.trondWrecks > 0) name.appendChild(el('span', 'badge', "Wrecked Trond's car"));
+      if (r.trondWrecks > 0) name.appendChild(el('span', 'badge', "Wrecked Artur's car"));
       tr.append(el('td', null, String(i + 1)), name, el('td', 'n', String(r.crashes))); sb.appendChild(tr);
     });
     $('shame-empty').hidden = sh.length > 0;
@@ -3406,13 +3481,13 @@ body.city .not-city { display: none !important; }
   function demo() {
     if (G().mode === 'gta' && PG.gta && PG.gta.stop) PG.gta.stop();
     document.body.classList.remove('drift', 'city', 'gta');
-    PG.startLevel(PG.levelById('L7'), PG.carById(state.car === 'trond' ? 'modely' : state.car));
+    PG.startLevel(PG.levelById('L7'), PG.carById(state.car === 'artur' ? 'modely' : state.car));
     G().status = 'demo';
   }
 
   UI.boot = function () {
     state = PG.local.load();
-    if (!PG.carById(state.car) || state.car === 'trond') state.car = 'modely';
+    if (!PG.carById(state.car) || state.car === 'artur') state.car = 'modely';
     selClass = PG.carById(state.car).cls;
     G().training = !!state.training;
     G().debug = location.hash === '#debug';
@@ -3431,14 +3506,7 @@ body.city .not-city { display: none !important; }
     ['pointerdown', 'click', 'touchend'].forEach(t => window.addEventListener(t, unlock, { capture: true }));
     window.addEventListener('keydown', unlock, { capture: true });
 
-    $('btn-play').onclick = () => { PG.audio.click(); setMode('park'); document.body.classList.remove('drift'); needName(() => { renderCars(); UI.show('cars'); }); };
-    $('btn-drift').onclick = () => { PG.audio.click(); setMode('drift'); document.body.classList.remove('drift'); needName(() => { renderCars(); UI.show('cars'); }); };
     $('btn-gta').onclick = () => { PG.audio.click(); needName(() => play(PG.GTA_DEF)); };
-    $('btn-city').onclick = () => {
-      PG.audio.click();
-      needName(() => play(PG.CITY_DEF));
-    };
-    $('btn-board').onclick = () => { PG.audio.click(); openBoard('title'); };
     $('btn-rename').onclick = () => rename('title');
     $('board-rename').onclick = () => rename('board');
     $('name-form').addEventListener('submit', e => {
@@ -3450,8 +3518,8 @@ body.city .not-city { display: none !important; }
     $('cars-back').onclick = () => { PG.audio.click(); demo(); UI.show('title'); };
     $('cars-next').onclick = () => { PG.audio.click(); renderMap(); UI.show('map'); };
     $('map-back').onclick = () => { PG.audio.click(); renderCars(); UI.show('cars'); };
-    $('trond-next').onclick = cutNext;
-    $('trond-skip').onclick = () => { if (cut) { const d = cut.onDone; cut = null; hush(); PG.audio.key(); d(); } };
+    $('artur-next').onclick = cutNext;
+    $('artur-skip').onclick = () => { if (cut) { const d = cut.onDone; cut = null; hush(); PG.audio.key(); d(); } };
     $('ready-go').onclick = begin;
     $('scr-ready').addEventListener('pointerdown', e => { if (e.target.closest('.ready')) return; begin(); });
     $('pause-resume').onclick = () => { PG.pause(false); UI.show(null); };
@@ -3474,14 +3542,14 @@ body.city .not-city { display: none !important; }
       if (a === 'blur' && st === 'play') { if (PG.pause(true)) UI.show('pause'); return; }
       if (a === 'pause') { if (st === 'play' && screen === null) { if (PG.pause(true)) UI.show('pause'); } else if (st === 'paused' && screen === 'pause') { PG.pause(false); UI.show(null); } return; }
       if (a === 'restart' && G().mode !== 'gta' && [null, 'pause', 'result'].includes(screen) && ['play', 'paused', 'crashed', 'parked', 'stolen', 'timeup'].includes(st) && current) return restart();
-      if (a === 'enter' && screen === 'trond') return cutNext();
+      if (a === 'enter' && screen === 'artur') return cutNext();
     });
     window.addEventListener('keydown', e => {
       if (screen === 'ready' && ['KeyW', 'ArrowUp', 'KeyS', 'ArrowDown', 'Space', 'Enter'].includes(e.code)) { e.preventDefault(); begin(); }
-      else if (screen === 'trond' && e.code === 'Space') { e.preventDefault(); cutNext(); }
+      else if (screen === 'artur' && e.code === 'Space') { e.preventDefault(); cutNext(); }
     });
-    // Trond cutscene animation runs on its own rAF while visible.
-    (function cutLoop() { if (cut && screen === 'trond') drawCutscene(performance.now() / 1000); requestAnimationFrame(cutLoop); })();
+    // Artur cutscene animation runs on its own rAF while visible.
+    (function cutLoop() { if (cut && screen === 'artur') drawCutscene(performance.now() / 1000); requestAnimationFrame(cutLoop); })();
 
     PG.connectShared().then(s => {
       if (!s) return;
@@ -3595,7 +3663,7 @@ body.city .not-city { display: none !important; }
     const at = contactPoint(polys, hit.poly);
     if (hit.actor && hit.actor.kind === 'pedestrian') {
       if (speed > 0.2) return crash('pedestrian', speed, at);
-    } else if (G.L.zeroTolerance || speed >= CRASH_SPEED) return crash(G.L.zeroTolerance ? 'trond' : 'crash', speed, at);
+    } else if (G.L.zeroTolerance || speed >= CRASH_SPEED) return crash(G.L.zeroTolerance ? 'artur' : 'crash', speed, at);
     // scrape: stop dead, keep steering/gear so the player can back out
     v.v = 0; v.steer = clone.steer; v.dir = clone.dir; v.gearChanges = clone.gearChanges;
     if (!G.inContact && speed > 0.05) {
@@ -3655,7 +3723,7 @@ body.city .not-city { display: none !important; }
         const rx = at.x - cg.x, ry = at.y - cg.y;
         const vcx = v.vx - v.r * ry, vcy = v.vy + v.r * rx;
         const vn = vcx * m.x + vcy * m.y;
-        if (G.L.zeroTolerance || -vn > CRASH_DRIFT) return crash(G.L.zeroTolerance ? 'trond' : 'crash', v.speed, at);
+        if (G.L.zeroTolerance || -vn > CRASH_DRIFT) return crash(G.L.zeroTolerance ? 'artur' : 'crash', v.speed, at);
         v.x += m.x * (m.depth + 0.003); v.y += m.y * (m.depth + 0.003);
         if (vn < 0) {
           const rn = rx * m.y - ry * m.x, k = 1 / d.mTot + rn * rn / d.Iz;
@@ -3908,13 +3976,13 @@ body.city .not-city { display: none !important; }
       } else if (e.type === 'thiefArrives') PG.ui.toast('Uh oh. Someone else wants your spot.', 'warn');
       else if (e.type === 'stolen') { PG.audio.trombone(); return end('stolen'); }
     }
-    // sensors + Trond panic
+    // sensors + Artur panic
     const vp = PG.vehPolys(G.veh);
     let near = Infinity;
     for (const ob of obstaclesNear()) { if (ob.o && ob.o.kind === 'boundary') continue; for (const p of vp) near = Math.min(near, PG.polyDist(p, ob.poly)); }
     G.nearest = near;
     PG.audio.sensor(near < 1.5 ? near : null);
-    if (G.L.zeroTolerance && near < 0.45 && G.bubbleCd <= 0) { PG.ui.bubble(PG.say(PG.LINES.trondNear), 2600); G.bubbleCd = 3.5; }
+    if (G.L.zeroTolerance && near < 0.45 && G.bubbleCd <= 0) { PG.ui.bubble(PG.say(PG.LINES.arturNear), 2600); G.bubbleCd = 3.5; }
     // engine, squeal, skid marks
     const sp = Math.abs(G.veh.v);
     PG.audio.engine(sp / PG.MAX_FWD, G.veh.v < -0.05);

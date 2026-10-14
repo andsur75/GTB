@@ -53,7 +53,7 @@ let r0 = await R();
 await t.wait(1000);
 let r1 = await R();
 check('radio plays on entering a car', r0.on && r0.st && r0.st !== 'scanner' && r1.notes > r0.notes + 2, { st: r0.st, notes: [r0.notes, r1.notes] });
-check('dial has 5 stations + off', r1.dial.length === 6 && r1.dial.includes('off') && ['fjord', 'pillar', 'bass', 'classics', 'trond'].every(s => r1.dial.includes(s)), r1.dial);
+check('dial has 5 stations + off', r1.dial.length === 6 && r1.dial.includes('off') && ['fjord', 'pillar', 'bass', 'classics', 'artur'].every(s => r1.dial.includes(s)), r1.dial);
 const vis = await ev(() => ({ car: document.getElementById('gta-hud').classList.contains('h-car'), card: document.querySelector('#gta-hud .h-card').classList.contains('on'), cardText: document.querySelector('#gta-hud .h-card b').textContent }));
 check('station card + dashboard shown in car', vis.car && vis.card && vis.cardText.length > 2, vis);
 check('LCD shows the station', r1.lcd.length > 5, r1.lcd);
@@ -78,10 +78,10 @@ for (let i = 0; i < 6; i++) {
   if (a.st === 'off') {
     await t.wait(400); const b = await R();
     check('radio off: silent', !b.on && b.notes - a.notes <= 2 && /OFF/.test(b.lcd), { notes: [a.notes, b.notes], lcd: b.lcd });
-  } else if (a.st === 'trond') {
+  } else if (a.st === 'artur') {
     await t.wait(2600); const b = await R();
-    check('Trond Talk speaks (yap lines)', b.lines > a.lines && b.notes > a.notes + 10 && b.lcd.length > 10, { lines: [a.lines, b.lines], lcd: b.lcd });
-    await t.shot('hud-03-trond-talk');
+    check('Artur Talk speaks (yap lines)', b.lines > a.lines && b.notes > a.notes + 10 && b.lcd.length > 10, { lines: [a.lines, b.lines], lcd: b.lcd });
+    await t.shot('hud-03-artur-talk');
   } else {
     await t.wait(1200); const b = await R();
     const ok = b.on && b.notes > a.notes + 1 && b.step > a.step + 3 && !!b.song;
@@ -276,7 +276,7 @@ const layout = p => p.ev(() => {
 const center = sel => ph.ev(s => { const r = document.querySelector(s).getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; }, sel);
 const tst = await ph.ev(() => ({ touch: PG.input.touchActive, ht: getComputedStyle(document.querySelector('#gta-hud .h-touch')).display, base: getComputedStyle(document.getElementById('touch')).display }));
 check('phone: GTA touch controls shown, base wheel/pedals hidden', tst.touch && tst.ht === 'block' && tst.base === 'none', tst);
-await ph.ev(() => { PG.gta.popup('Grand Theft Bus'); PG.gta.pager('Trond: HUD test. The pager must sit clear of the money, the wanted heads and the health bars.', 4000); });
+await ph.ev(() => { PG.gta.popup('Grand Theft Bus'); PG.gta.pager('Artur: HUD test. The pager must sit clear of the money, the wanted heads and the health bars.', 4000); });
 await ph.page.waitForTimeout(400);
 await ph.shot('hud-11-phone-foot');
 const lay0 = await layout(ph);

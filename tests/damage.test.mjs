@@ -137,7 +137,7 @@ check('repair restores full power and clean looks', fixed.kw === fixed.base && !
 check('repaired car accelerates harder', v2 > v1 * 1.08, { v1, v2 });
 
 // ---- 5. your car on fire: HUD warning, bail out and survive ----
-await t.eval(() => { const c = T.slow; c.hp = c.maxHp * 0.1; PG.gta.pager('Trond: That car is smoking. So are you. Get out of it before it gets out of you, and do not bring it to my garage.', 0); });
+await t.eval(() => { const c = T.slow; c.hp = c.maxHp * 0.1; PG.gta.pager('Artur: That car is smoking. So are you. Get out of it before it gets out of you, and do not bring it to my garage.', 0); });
 await t.wait(400);
 const warn = await t.eval(() => {
   const el = document.querySelector('#gta-hud .g-dmgwarn'), pg = document.querySelector('#gta-hud .g-pager');

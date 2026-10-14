@@ -6,7 +6,7 @@
 // beeping heart monitor), Firefighter (car fires across town and a roof-mounted water cannon on the fire
 // button that also bowls people over) and Vigilante (in a police car: a fleeing criminal car to wreck or box
 // in; the level rises, crooks shoot back, and every takedown cleans your record a little). A taxi, a bus,
-// an ambulance and a fire truck wait in painted bays near Trond's Garage at the start, with another
+// an ambulance and a fire truck wait in painted bays near Artur's Garage at the start, with another
 // ambulance at the hospital and a fire truck downtown. Owns X.jobs.
 (function (PG) {
   if (typeof document === 'undefined') return;
@@ -66,7 +66,7 @@
     { id: 'shopper', w: 10, pay: 1, time: 1, temper: 1.1 },
   ];
   const STREETS_H = ['Storgata', 'Kongens gate', 'Fjordgata', 'Bussgata', 'Torggata', 'Brugata', 'Dronningens gate', 'Kirkegata', 'Havnegata', 'Pølsegata', 'Elggata', 'Neongata', 'Smoggata', 'Tollgata'];
-  const STREETS_V = ['Trondveien', 'Parkveien', 'Kioskveien', 'Brunostbakken', 'Fiskeveien', 'Skiveien', 'Lutefisk allé', 'Vaffelveien', 'Rådhusveien', 'Trollstien', 'Fjellveien', 'Bakkeveien', 'Moloveien', 'Kanalveien'];
+  const STREETS_V = ['Arturveien', 'Parkveien', 'Kioskveien', 'Brunostbakken', 'Fiskeveien', 'Skiveien', 'Lutefisk allé', 'Vaffelveien', 'Rådhusveien', 'Trollstien', 'Fjellveien', 'Bakkeveien', 'Moloveien', 'Kanalveien'];
   const STOP_NAMES = ['Pølsebua', 'Kiosken', 'Brunost Bakke', 'Elgkrysset', 'Rådhuset', 'Torget', 'Fjordkanten', 'Smog Hill Øst', 'Parkeringshuset', 'Kirkebakken', 'Vaffelhjørnet', 'Skolen', 'Gamle Brygge', 'Tollboden', 'Bingohallen', 'Svømmehallen', 'Bussby Stasjon', 'Trollbroa', 'Sentrum', 'Kebabsjappa', 'Bakeriet', 'Biblioteket'];
   const streetName = r => (r.h ? STREETS_H : STREETS_V)[r.idx % 14];
   const BAYC = { taxi: '#ffd23a', bus: '#ff8a3a', ambulance: '#ff5a5a', firetruck: '#ff5a2a', police: '#5aa9ff' };
@@ -149,7 +149,7 @@
   // A point on a car in its own frame: u forward, v to the right.
   function carPt(c, u, v) { const fx = Math.cos(c.th), fy = Math.sin(c.th); return { x: c.x + fx * u - fy * v, y: c.y + fy * u + fx * v }; }
 
-  // Spots other modules have painted or claimed: the shops' garage bay, Trond's delivery zone, payphones.
+  // Spots other modules have painted or claimed: the shops' garage bay, Artur's delivery zone, payphones.
   function reserved(x, y, r) {
     const sg = X.shops && X.shops.garage;
     if (sg && sg.c && Math.hypot(sg.c.x - x, sg.c.y - y) < r + 6) return true;
@@ -1091,7 +1091,7 @@
       endJob(J.car.model.name + ' destroyed');
     } else if (J.id === 'vigil' && e.car === J.d.target) takedown(J, e.car);
   });
-  X.on('missionStart', () => { if (X.active && S && S.job) endJob('Trond needs you', { quiet: false }); });
+  X.on('missionStart', () => { if (X.active && S && S.job) endJob('Artur needs you', { quiet: false }); });
   X.on('wasted', () => { if (X.active && S && S.job) endJob('Wasted'); });
   X.on('busted', () => { if (X.active && S && S.job) endJob('Busted'); });
   X.on('exitCar', e => { if (X.active && S && S.job && e.car === S.job.car) endJob('You left the ' + e.car.model.name); });
@@ -1345,7 +1345,7 @@
         if (J.car.removed || J.car.wrecked) endJob(J.car.model.name + ' wrecked');
         else if (P.car !== J.car) endJob('You left the ' + J.car.model.name);
         else if (P.state !== 'play') endJob(P.state === 'busted' ? 'Busted' : 'Wasted');
-        else if (X.missions && X.missions.active) endJob('Trond needs you');
+        else if (X.missions && X.missions.active) endJob('Artur needs you');
         else if (gp) endJob('Clocked off');
         else J.def.tick(J, dt);
       } else if (gp && c && jobOf(c) && canWork()) startJob(jobOf(c), c);

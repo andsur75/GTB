@@ -64,7 +64,7 @@ running, but tests treat any console error as a failure.
 * Roads: `X.roadAt(x,y)`, `X.nearestRoadPoint(x,y)`, `X.nearestNode(x,y)`, `X.route(x0,y0,x1,y1)` →
   waypoints along road centre lines (BFS over junctions), `X.laneAt(x,y,th)`.
 * Sidewalks: `X.blockAt(x,y)`, `X.onSidewalk(x,y)`, `X.randomSidewalkPoint(x, y, rMin, rMax)`.
-* `X.places[id]` for `hideout` (Trond's Garage: start + safehouse), `bank`, `police`, `hospital`,
+* `X.places[id]` for `hideout` (Artur's Garage: start + safehouse), `bank`, `police`, `hospital`,
   `gunshop`, `spray`, `crusher`, `bar`, `apartment` (safehouse): `{id, name, b (building), door: {x, y,
   nx, ny} (on the sidewalk, n points out to the street), color, pad?: {x, y, w, h} (drive-on pad for
   spray/crusher)}`. `X.buildingDoor(b, k)` gives a door for any other building.

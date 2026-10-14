@@ -5,7 +5,7 @@
 // desks blocks feet but not bullets). Fjord Savings Bank (hold up the tellers, guards, cameras, drill the
 // vault, bags of cash), the police station (pay a fine per star), St. Bussby Hospital (patch up, give
 // blood), Ammu-Fjord (walk onto a stand to buy guns and armour), The Rusty Pillar (drinks, jukebox, pool,
-// darts, Trond in his booth), the safehouses (sleep to skip the clock and save), 24/7 stores (rob the
+// darts, Artur in his booth), the safehouses (sleep to skip the clock and save), 24/7 stores (rob the
 // till, buy a pølse), offices (crack the boss's safe), warehouses (crates, barrels), nightclubs (dance
 // floor, lasers, techno) and diners. People inside belong to this module (ai.owner 'interiors'): clerks,
 // customers, guards and cops who wander, flee, cower, put their hands up or fight back. Owns X.interiors.
@@ -27,7 +27,7 @@
   const NAMES = {
     store: ['Fjord Mart 24/7', 'Pølse Stop 24/7', 'Kjøp & Kjør 24/7', 'Late Night Lefse 24/7', 'Bussby Kiosk 24/7'],
     lobby: ['Fjordview Apartments', 'Blokk 12', 'Bussby Terrace', 'Parkview Residences', 'Nordlys Court'],
-    office: ['Trond Holdings AS', 'Parkering Consulting AS', 'Fjord Insurance', 'Regret Motors HQ', 'NorskTek AS', 'Ticket & Clamp AS'],
+    office: ['Artur Holdings AS', 'Parkering Consulting AS', 'Fjord Insurance', 'Regret Motors HQ', 'NorskTek AS', 'Ticket & Clamp AS'],
     warehouse: ['Lager 7', 'Fish & Export', 'Brunost Storage', 'Flatpack Depot', 'Bussby Freight'],
     club: ['Club Nordlys', 'Disco Fjord', 'The Midnight Sun', 'Club Aurora', 'Bass Fjord'],
     diner: ['Vafler & Kaffe', 'The Brown Cheese Diner', 'Kjøttkake Kitchen', "Mamma Hansen's Diner", 'Night Owl Diner'],
@@ -41,10 +41,10 @@
     staff: ['HEY! STAFF ONLY!', 'YOU CAN NOT BE BACK HERE!', 'BACK TO THE LOBBY, PLEASE!'],
     brawl: ['BAR FIGHT!', 'YOU SPILLED MY BEER!', 'COME ON THEN!', 'SKÅL THIS!'],
     drunk: ['I WANT MY LAWYER! *HIC*', 'I ONLY HAD TWO!', 'WHO MOVED THE FJORD?', 'TAKE THE BUS? I TOOK THE BUS!'],
-    trondHit: ['WATCH IT, KID.', 'I AM WEARING A SUIT.', 'THAT WAS RUDE.', 'DO IT AGAIN AND YOU ARE FIRED.'],
+    arturHit: ['WATCH IT, KID.', 'I AM WEARING A SUIT.', 'THAT WAS RUDE.', 'DO IT AGAIN AND YOU ARE FIRED.'],
     cashier: ['WELCOME!', 'PØLSE IS ON SALE!', 'THE SLUSH MACHINE IS BROKEN AGAIN.'],
   };
-  const TROND = [
+  const ARTUR = [
     'The bank on Bank Row. A thermal drill on the vault, seven seconds, and the guards are paid by the hour, not by the bullet.',
     'Ammu-Fjord sells body armour. Buy some. I am not paying for another funeral.',
     'Hot? The police station front desk takes cash. Five hundred a star. Very Norwegian.',
@@ -57,7 +57,7 @@
     'Take the bus. Seriously. Nobody suspects the bus.',
   ];
   const MAIL = [
-    'A parking fine from Trond Parkering AS. Dated four years ago. Ha.',
+    'A parking fine from Artur Parkering AS. Dated four years ago. Ha.',
     'A flyer: "TAKE THE BUS! Now with 20% fewer car chases."',
     'A letter for the neighbour. It smells of brunost.',
     'Your horoscope: "A tall stranger will steal your car."',
@@ -338,7 +338,7 @@
 
   // ================= layouts =================
   // Each takes (scene, builder, seeded random). Roles: teller, cashier, clerk, owner, guard, cop, sergeant,
-  // customer, sitter, patient, doctor, dancer, dj, drinker, bouncer, worker, drunk, trond.
+  // customer, sitter, patient, doctor, dancer, dj, drinker, bouncer, worker, drunk, artur.
   const day = () => hour() >= 7 && hour() < 18;
   const L = {};
   L.bank = (sc, b) => {
@@ -498,8 +498,8 @@
       b.f('bench', 25.4, cy - 1.3, 4.2, 0.75, { solid: 'low', c: '#6b1f24', back: 'n' }); b.f('table', 25.4, cy, 3.4, 1.1, { solid: 'low', c: '#3d2a1d', glasses: 1 }); b.f('bench', 25.4, cy + 1.3, 4.2, 0.75, { solid: 'low', c: '#6b1f24', back: 's' });
       if (i !== 1) { b.ped('sitter', 24.6, cy - 1.25, Math.PI / 2, { chance: 0.7 }); b.ped('sitter', 26.2, cy + 1.25, -Math.PI / 2, { chance: 0.6 }); }
     });
-    b.ped('trond', 25.4, 10.25, Math.PI / 2, { look: 'trond', sit: true });
-    b.act(23.6, 11.5, 1.6, () => 'F: Talk to Trond', () => talkTrond(sc));
+    b.ped('artur', 25.4, 10.25, Math.PI / 2, { look: 'artur', sit: true });
+    b.act(23.6, 11.5, 1.6, () => 'F: Talk to Artur', () => talkArtur(sc));
     sc.st.pool = b.f('pooltable', 9, 12.5, 3.0, 1.6, { solid: 'low' }); b.f('cues', 0.75, 12.5, 0.25, 2.4, { layer: 2 });
     b.act(9, 14.3, 1.7, () => 'F: Play pool ($20 bet)', () => playPool(sc));
     sc.st.juke = b.f('jukebox', 1.05, 8.5, 0.9, 1.3, { solid: 'tall', fragile: true }); b.act(2.3, 8.5, 1.4, () => 'F: Change the song', () => jukebox(sc));
@@ -563,7 +563,7 @@
     b.f('sofa', 25, 22.7, 4.4, 1.1, { solid: 'low', c: '#7a3b2e', back: 's' }); b.f('table', 25, 20.4, 2, 0.8, { solid: 'low', c: '#3d2a1d', mugs: 1 }); b.f('rug', 25, 19.5, 6, 4.5, { c: '#5a4a7a', c2: '#c9a46a', layer: 0 });
     b.f('tv', 25, 12.0, 2.2, 0.5, { solid: 'low', fragile: true, show: 'news' });
     b.f('arcade', 29.0, 15.5, 1.0, 1.2, { solid: 'tall', fragile: true }); b.act(27.8, 15.5, 1.4, () => 'F: Play Take the Bus! Drift', () => arcade());
-    b.f('fridge1', 21.05, 22.9, 0.9, 1.0, { solid: 'tall' }); b.act(21.2, 21.6, 1.2, () => 'F: Grab a beer (+5 hp)', () => snack(5, 'Skål! Trond\'s beer. He will notice.'));
+    b.f('fridge1', 21.05, 22.9, 0.9, 1.0, { solid: 'tall' }); b.act(21.2, 21.6, 1.2, () => 'F: Grab a beer (+5 hp)', () => snack(5, 'Skål! Artur\'s beer. He will notice.'));
     b.act(25, 21.4, 1.5, () => sleepHint('Sleep on the sofa'), () => sleep(sc));
     b.f('poster', 25, 11.3, 2.4, 0.3, { kind: 'bus', layer: 2 });
     for (const q of [[6, 6], [14, 6], [6, 16], [14, 16]]) b.light(q[0], q[1], 8.5, '#e8f0ff', 0.7, { fix: 'tube', flick: q[0] === 14 && q[1] === 16 ? 1 : 0 });
@@ -840,7 +840,7 @@
       case 'mechanic': return A({ outfit: 'overalls', shirt: '#2f5a8a', pants: '#2f5a8a', hat: '#c0392b', hatType: 'cap' });
       case 'cleaner': return A({ shirt: '#5a7a9a', pants: '#5a7a9a', hat: null });
       case 'drunk': return A({ jacket: pick(JACK), acc: 'beer', hat: null });
-      case 'trond': return { skin: '#f1c7a1', hair: '#b9a47a', hairStyle: 'short', shirt: '#1f2a44', pants: '#16203a', tie: '#c0392b', outfit: 'suit', hat: null, scale: 1.14 };
+      case 'artur': return { skin: '#f1c7a1', hair: '#b9a47a', hairStyle: 'short', shirt: '#1f2a44', pants: '#16203a', tie: '#c0392b', outfit: 'suit', hat: null, scale: 1.14 };
       default: if (Math.random() < 0.4) L0.jacket = pick(JACK); return L0;
     }
   }
@@ -848,7 +848,7 @@
   function spawnPed(sc, sp) {
     const role = sp.role, armed = !!sp.weapon && sp.weapon !== 'bat';
     const team = sp.team || (role === 'guard' ? 'guard' : role === 'cop' || role === 'sergeant' ? 'cop' : 'civ');
-    const hp = role === 'trond' ? 5000 : sp.hp || 100;
+    const hp = role === 'artur' ? 5000 : sp.hp || 100;
     const pose = sp.pose || (sp.sit || role === 'sitter' ? 'sit' : null);
     const p = X.makePed({
       x: sp.x, y: sp.y, th: sp.th, team, look: makeLook(sp.look || role), weapon: sp.weapon || null, hp, maxHp: hp, armor: sp.armor || 0,
@@ -861,7 +861,7 @@
     });
     p.pose = pose; p.sitting = !!SIT_POSES[pose];
     if (sp.weapon) { p.holster = true; p.dmgMul = 0.4; p.inaccuracy = 0.1; p.rateMul = 1.5; }
-    if (role === 'trond') { p.noCash = true; p.keep = true; }
+    if (role === 'artur') { p.noCash = true; p.keep = true; }
     sc.peds.push(p);
     return p;
   }
@@ -896,7 +896,7 @@
   function pedTick(sc, p, dt) {
     const a = p.ai;
     if (p.dead || p.removed) return;
-    if (a.role === 'trond' && p.hp < p.maxHp) p.hp = p.maxHp;   // the boss does not die in his own bar
+    if (a.role === 'artur' && p.hp < p.maxHp) p.hp = p.maxHp;   // the boss does not die in his own bar
     a.t -= dt; a.sayT -= dt;
     if (p.knock > 0) { if (p.sitting) { p.sitting = false; p.pose = null; } X.movePed(p, dt, 0, 0); return; }
     switch (a.st) {
@@ -953,7 +953,7 @@
     const near = Math.hypot(P.ped.x - p.x, P.ped.y - p.y) < 6;
     if (a.role === 'drunk') say(p, pick(LINES.drunk), '#ffd8a0');
     else if (a.role === 'cashier' && near && !a.rob.done) say(p, pick(LINES.cashier));
-    else if (a.role === 'trond' && near) say(p, pick(['SIT DOWN. TALK TO ME.', 'YOU AGAIN.', 'THE PHONES ARE RINGING, KID.']), '#ffd23a');
+    else if (a.role === 'artur' && near) say(p, pick(['SIT DOWN. TALK TO ME.', 'YOU AGAIN.', 'THE PHONES ARE RINGING, KID.']), '#ffd23a');
     else if (a.role === 'guard' && near && Math.random() < 0.4) say(p, pick(['NICE DAY FOR BANKING.', 'KEEP MOVING.', 'NO LOITERING.']));
   }
 
@@ -1015,7 +1015,7 @@
   }
   function provoke(sc, p) {
     const a = p.ai;
-    if (!mine(p) || p.dead || a.st === 'fight' || a.role === 'trond') return;
+    if (!mine(p) || p.dead || a.st === 'fight' || a.role === 'artur') return;
     if (a.armed || a.melee || a.role === 'owner') {
       if (p.sitting) standUp(sc, p);
       a.st = 'fight'; a.hostile = true; p.holster = false; p.pose = null; a.fireT = rand(0.3, 0.8); a.losT = 0;
@@ -1024,7 +1024,7 @@
   }
   function panic(sc, p) {
     const a = p.ai;
-    if (!mine(p) || p.dead || a.st === 'fight' || a.st === 'flee' || a.st === 'hands' || a.role === 'trond') return;
+    if (!mine(p) || p.dead || a.st === 'fight' || a.st === 'flee' || a.st === 'hands' || a.role === 'artur') return;
     if (a.role === 'patient') { a.st = 'cower'; a.t = rand(6, 12); if (Math.random() < 0.3) say(p, 'NURSE!'); return; }
     const staff = a.role === 'clerk' || a.role === 'teller' || a.role === 'cashier' || a.role === 'dj';
     if (Math.random() < (staff ? 0.2 : 0.6)) { a.st = 'flee'; a.path = null; if (p.sitting) standUp(sc, p); p.pose = null; }
@@ -1211,14 +1211,14 @@
     sfx('scratch');
     if (win) { X.money(win, 'lottery', P.ped.x, P.ped.y); X.popup('WINNER! $' + win); sfx('cash'); } else X.popup(pick(['Nothing. Again.', 'So close. Not really.', 'Better luck next time.']));
   }
-  function talkTrond(sc) {
-    const tr = sc.peds.find(q => mine(q) && q.ai.role === 'trond'); if (!tr) return;
-    S.trondI = (S.trondI || 0) + 1;
-    const line = TROND[(S.trondI - 1) % TROND.length];
-    X.pager('TROND: ' + line, Math.max(5000, line.length * 70));
+  function talkArtur(sc) {
+    const tr = sc.peds.find(q => mine(q) && q.ai.role === 'artur'); if (!tr) return;
+    S.arturI = (S.arturI || 0) + 1;
+    const line = ARTUR[(S.arturI - 1) % ARTUR.length];
+    X.pager('ARTUR: ' + line, Math.max(5000, line.length * 70));
     say(tr, '...', '#ffd23a');
     if (PG.audio.yap && PG.audio.kit()) { PG.audio.yap(line, { base: 150 }); S.yapping = true; }
-    X.emit('talkTrond', { line, ped: tr });
+    X.emit('talkArtur', { line, ped: tr });
   }
   const SONG_NAMES = { blues: 'Fjord Blues', polka: 'Polka Pils', synth: 'Synth Viking', muzak: 'Lift Music No. 5', techno: 'Nordlys Techno' };
   function jukebox(sc) {
@@ -1258,7 +1258,7 @@
     const bank = X.places.bank, where = bank ? X.districtAt(bank.door.x, bank.door.y) : 'Bank Row';
     X.pager('THE PLAN: 1) Fjord Savings Bank, ' + where + '. 2) Past the counter, through the staff door, to the vault at the back. 3) F on the vault door: the drill needs 7 seconds with you next to it. 4) Grab the cash. 5) Get the loot home to the garage or the apartment.', 14000);
   }
-  function arcade() { sfx('arcade'); X.pager('TAKE THE BUS! DRIFT. HIGH SCORE: TRD 999,999. You play. You lose. Trond keeps the high score.', 5000); }
+  function arcade() { sfx('arcade'); X.pager('TAKE THE BUS! DRIFT. HIGH SCORE: TRD 999,999. You play. You lose. Artur keeps the high score.', 5000); }
   function mail() { if (Math.random() < 0.2) { X.money(20, 'mail', P.ped.x, P.ped.y); X.pager('A birthday card from Grandma. $20 inside!', 4000); } else X.pager(pick(MAIL), 4000); sfx('beep'); }
   function lift() { sfx('beep'); X.pager('OUT OF ORDER. Take the stairs. Or the bus.', 3500); }
   function sleepHint(what) { return (P.wanted || 0) > 0 ? 'F: ' + what + ' (not with the cops after you)' : 'F: ' + what + ' (save)'; }
@@ -1310,7 +1310,7 @@
       if (id && X.giveWeapon(id)) { X.popup('Found a crate of ' + X.WEAPONS[id].name + '!'); S.stats.crates++; return; }
     }
     if (r < 0.75) { const amt = Math.round(rand(60, 220) / 10) * 10; X.addLoot(amt, p.x, p.y); X.popup('Somebody hid cash in the crates: $' + amt); S.stats.crates++; return; }
-    X.popup(pick(['Flatpack furniture. Instructions in Swedish.', 'Forty kilos of brunost.', 'Garden gnomes. Hundreds of them.', 'Traffic cones. Trond would love these.']));
+    X.popup(pick(['Flatpack furniture. Instructions in Swedish.', 'Forty kilos of brunost.', 'Garden gnomes. Hundreds of them.', 'Traffic cones. Artur would love these.']));
     const wk = sc.peds.find(q => mine(q) && !q.dead && q.ai.role === 'worker' && sightClear(sc, q.x, q.y, p.x, p.y));
     if (wk) { say(wk, 'HEY! THAT IS NOT YOURS!', '#ff6b5a'); X.crime('trespass', p.x, p.y); }
   }
@@ -1578,12 +1578,12 @@
     c.restore();
   }
   function wmeasure(c, s, size, weight) { c.save(); c.font = (weight || 700) + ' 20px ' + FONT; const w = c.measureText(s).width * size / 20; c.restore(); return w; }
-  let trondFace = null;
+  let arturFace = null;
   function faceCanvas() {
-    if (trondFace !== null) return trondFace;
-    trondFace = false;
-    try { if (PG.ui && PG.ui.drawTrondFace) { const cv = document.createElement('canvas'); cv.width = cv.height = 96; PG.ui.drawTrondFace(cv, 0.15, 0, false, false); trondFace = cv; } } catch { trondFace = false; }   // no face, a plain disc
-    return trondFace;
+    if (arturFace !== null) return arturFace;
+    arturFace = false;
+    try { if (PG.ui && PG.ui.drawArturFace) { const cv = document.createElement('canvas'); cv.width = cv.height = 96; PG.ui.drawArturFace(cv, 0.15, 0, false, false); arturFace = cv; } } catch { arturFace = false; }   // no face, a plain disc
+    return arturFace;
   }
   const PRODUCTS = ['#c0392b', '#f2c230', '#2f6fb5', '#3e8e5a', '#e07b2a', '#e9e4d8', '#d64a8f', '#6b4a8f', '#3fb6c4', '#8a1f1a', '#b6ff3a', '#ffffff'];
   function prepFurn(f, R) {
@@ -2401,7 +2401,7 @@
   });
   X.on('pedHurt', e => {
     const sc = curScene(), p = e && e.ped; if (!sc || !mine(p) || p.ai.sc !== sc) return;
-    if (p.ai.role === 'trond') { if (X.byPlayer(e.by) && X.time - S.lastHurt > 1) { S.lastHurt = X.time; say(p, pick(LINES.trondHit), '#ffd23a'); } p.hp = p.maxHp; return; }
+    if (p.ai.role === 'artur') { if (X.byPlayer(e.by) && X.time - S.lastHurt > 1) { S.lastHurt = X.time; say(p, pick(LINES.arturHit), '#ffd23a'); } p.hp = p.maxHp; return; }
     if (!X.byPlayer(e.by) || p.dead) return;
     if (e.kind === 'melee' && (sc.type === 'bar' || sc.type === 'club')) { brawl(sc, p); return; }
     provoke(sc, p);

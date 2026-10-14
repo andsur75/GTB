@@ -28,7 +28,7 @@
   const LAMPC = ['#ffb766', '#dfeaff', '#ff9ad8'];   // sodium, LED (Tesla Flats), pink (Neon Mile)
   const WINC = ['#ffd49a', '#d6e4ff', '#8fb6ff'];    // warm home, office white, TV blue
   const SIGNS = ['HOTEL', 'BAR', 'PIZZA', 'KEBAB', 'PØLSE', 'KIOSK', 'VAFLER', 'BRUS', 'SUSHI', 'FISK', 'KARAOKE', 'MOTEL', 'BINGO', 'DISCO', 'PUB',
-    'OPEN 24/7', 'TAKE THE BUS', 'TROND & SØNN', 'LUTEFISK', 'BRUNOST', 'SKÅL', 'TACO FREDAG', 'LOTTO', 'TATTOO', 'PAWN', 'NOODLES', 'DRIFT CLUB', 'NO PARKING'];
+    'OPEN 24/7', 'TAKE THE BUS', 'ARTUR & SØNN', 'LUTEFISK', 'BRUNOST', 'SKÅL', 'TACO FREDAG', 'LOTTO', 'TATTOO', 'PAWN', 'NOODLES', 'DRIFT CLUB', 'NO PARKING'];
 
   // ================= sky =================
   // [minute, darkness 0..1, r, g, b (colour of the dark), warm (dawn/dusk sun glow)]
@@ -709,7 +709,7 @@
       if (!occ && c._lgoff && X.time > c._lgoff) { c.lightsOn = false; c._lgoff = 0; }
     }
   }
-  const DAWN_LINES = ['Sunrise. The night shift goes to bed.', 'Morning. Somewhere, Trond is already angry.', 'Dawn. Every lamp in town clocks off.', 'Day breaks. So does the speed limit.'];
+  const DAWN_LINES = ['Sunrise. The night shift goes to bed.', 'Morning. Somewhere, Artur is already angry.', 'Dawn. Every lamp in town clocks off.', 'Day breaks. So does the speed limit.'];
   const NIGHT_LINES = ['Nightfall. The lamps come on, the cops get bored.', 'Night again. Neon Mile wakes up.', 'Dark out. Headlights on, Take the Bus fans.', 'Night falls over the city nobody planned.'];
   function phases() {
     const ph = sky.clockD > 0.6 ? 'night' : sky.clockD < 0.05 ? 'day' : null;
