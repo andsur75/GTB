@@ -7,7 +7,7 @@
 // PG.carSound.drive): the lab's sliders are the main engine and CARS adds each model's character on top.
 // Adds PG.carSound { P (current params), DEFAULTS, PRESETS, CARS, profileFor, drive, silence, sim, freqOf, step }.
 (function (PG) {
-  const KEY = 'gtb-carsound-v2';
+  const KEY = 'gtb-carsound-v3';
   // [key, label, min, max, step, unit, description]
   const GROUPS = [
     ['Engine', [
@@ -62,7 +62,7 @@
   // Main engine: the default sound every car in the game is built from (see CARS below).
   const DEFAULTS = { cyl: 1, idle: 900, redline: 12000, shift: 87, gears: 6, revUp: 0.75, revDown: 0.4, drop: 24, shiftTime: 0.35,
     pitch: 0.8, saw: 0.49, square: 0.27, sub: 0.28, harm2: 0.06, detune: 8, drive: 0.84, rough: 0.59,
-    cutLo: 500, cutHi: 2030, cutLoad: 690, res: 2.7, sub2: 0, subTri: 0, sub3: 0, halfOrd: 0.29, harm3: 0, harm4: 0, subFollow: 1, animAmp: 1, bassBoost: 18, bassFreq: 115,
+    cutLo: 500, cutHi: 2030, cutLoad: 690, res: 2.7, sub2: 0, subTri: 0, sub3: 0, halfOrd: 0.29, harm3: 0, harm4: 0, subFollow: 1, animAmp: 0.4, bassBoost: 18, bassFreq: 115,
     vol: 1, volIdle: 0.32, volRpm: 1, volLoad: 0.33, noise: 0.57, pops: 0.51, limiter: 0.63 };
   const PRESETS = {
     'Main engine': {},
@@ -74,27 +74,32 @@
     'Test Engine': { cyl: 4, idle: 1150, redline: 9300, shift: 87, gears: 6, revUp: 0.75, revDown: 1, drop: 24, shiftTime: 0.18, pitch: 0.8, saw: 0.63, square: 0.36, sub: 0.5, harm2: 0.89, detune: 17, drive: 0.43, rough: 0.49, cutLo: 500, cutHi: 2030, cutLoad: 690, res: 2.5, vol: 0.7, volIdle: 0.35, volRpm: 1, volLoad: 0.25, noise: 0.15, pops: 0.5, limiter: 0.6 },
     'Superbike': { cyl: 4, idle: 1300, redline: 12000, gears: 6, revUp: 3, revDown: 2.5, drop: 22, shiftTime: 0.06, pitch: 1.2, saw: 0.7, square: 0.3, sub: 0.1, harm2: 0.5, detune: 4, drive: 0.4, rough: 0.1, cutLo: 900, cutHi: 9000, res: 5, pops: 0.7 },
   };
+  // Cylinders by class: heavy trucks and buses 1-2, normal cars 2-4, the best cars 4-10.
   // Per-car character on top of the main engine. Keys ending in 'X' multiply, others add; set: overrides.
   const CARS = {
     main:      { name: 'Main engine (no car tweak)' },
-    bambino:   { name: 'Bambino', pitchX: 1.35, sub: -0.15, bassBoost: -8, driveX: 0.7, volX: 0.75, pops: -0.3, set: { halfOrd: 0.1 } },
-    hatch:     { name: 'Hatchling', pitchX: 1.2, bassBoost: -5, harm2: 0.15, volX: 0.85 },
-    comet:     { name: 'Comet', pitchX: 1.15, rough: -0.3, driveX: 0.6, bassBoost: -6, noise: -0.2, pops: -0.4, volX: 0.8 },
-    taxi:      { name: 'Taxi', pitchX: 1.1, rough: -0.2, driveX: 0.65, bassBoost: -4, pops: -0.4, volX: 0.8, set: { harm3: 0.2 } },
-    fjord:     { name: 'Fjord XC', pitchX: 1.05, rough: -0.35, driveX: 0.55, cutHiX: 0.8, pops: -0.5, volX: 0.75 },
-    rancher:   { name: 'Rancher', pitchX: 0.75, sub: 0.25, set: { sub2: 0.35, sub3: 0.25 }, rough: 0.1, volX: 1.05 },
-    boxvan:    { name: 'Box Van', pitchX: 0.65, sub: 0.3, driveX: 1.1, cutHiX: 0.6, noise: 0.15, pops: -0.5, set: { sub3: 0.3 } },
-    x5:        { name: 'BMW X5', pitchX: 1.0, rough: -0.25, harm2: 0.2, driveX: 0.75, cutHiX: 1.3, set: { harm3: 0.15 } },
-    furia:     { name: 'Furia GT', pitchX: 1.25, cutHiX: 2.2, rough: -0.3, harm2: 0.3, pops: 0.35, limiter: 0.2, volX: 1.1, set: { harm3: 0.35, halfOrd: 0.5 } },
-    bus:       { name: 'City Bus', pitchX: 0.55, sub: 0.4, driveX: 1.1, cutHiX: 0.5, noise: 0.25, pops: -0.51, set: { sub2: 0.4, sub3: 0.35 } },
-    police:    { name: 'Police Cruiser', pitchX: 0.95, sub: 0.15, harm2: 0.15, cutHiX: 1.5, set: { subTri: 0.3, halfOrd: 0.45 } },
-    swat:      { name: 'SWAT Van', pitchX: 0.7, sub: 0.3, cutHiX: 0.8, pops: -0.3, set: { sub2: 0.3, subTri: 0.25 } },
-    ambulance: { name: 'Ambulance', pitchX: 0.85, rough: -0.2, driveX: 0.7, cutHiX: 0.9, pops: -0.4, volX: 0.85 },
-    firetruck: { name: 'Fire Truck', pitchX: 0.5, sub: 0.45, driveX: 1.15, cutHiX: 0.5, noise: 0.25, pops: -0.51, set: { sub2: 0.45, sub3: 0.3 } },
-    securicar: { name: 'Securicar', pitchX: 0.7, sub: 0.3, rough: 0.1, cutHiX: 0.7, pops: -0.4, set: { sub2: 0.3 } },
+    bambino:   { name: 'Bambino', pitchX: 1.35, sub: -0.15, bassBoost: -8, driveX: 0.7, volX: 0.75, pops: -0.3, set: { cyl: 2, halfOrd: 0.1 } },
+    hatch:     { name: 'Hatchling', pitchX: 1.2, bassBoost: -5, harm2: 0.15, volX: 0.85, set: { cyl: 3 } },
+    comet:     { name: 'Comet', pitchX: 1.15, rough: -0.3, driveX: 0.6, bassBoost: -6, noise: -0.2, pops: -0.4, volX: 0.8, set: { cyl: 3 } },
+    taxi:      { name: 'Taxi', pitchX: 1.1, rough: -0.2, driveX: 0.65, bassBoost: -4, pops: -0.4, volX: 0.8, set: { cyl: 3, harm3: 0.2 } },
+    fjord:     { name: 'Fjord XC', pitchX: 1.05, rough: -0.35, driveX: 0.55, cutHiX: 0.8, pops: -0.5, volX: 0.75, set: { cyl: 4 } },
+    rancher:   { name: 'Rancher', pitchX: 0.75, sub: 0.25, set: { cyl: 2, sub2: 0.35, sub3: 0.25 }, rough: 0.1, volX: 1.05 },
+    boxvan:    { name: 'Box Van', pitchX: 0.65, sub: 0.3, driveX: 1.1, cutHiX: 0.6, noise: 0.15, pops: -0.5, set: { cyl: 1, sub3: 0.3 } },
+    x5:        { name: 'BMW X5', pitchX: 1.0, rough: -0.25, harm2: 0.2, driveX: 0.75, cutHiX: 1.3, set: { cyl: 6, harm3: 0.15 } },
+    furia:     { name: 'Furia GT', pitchX: 1.25, cutHiX: 2.2, rough: -0.3, harm2: 0.3, pops: 0.35, limiter: 0.2, volX: 1.1, set: { cyl: 10, harm3: 0.35, halfOrd: 0.5 } },
+    bus:       { name: 'City Bus', pitchX: 0.55, sub: 0.4, driveX: 1.1, cutHiX: 0.5, noise: 0.25, pops: -0.51, set: { cyl: 1, sub2: 0.4, sub3: 0.35 } },
+    police:    { name: 'Police Cruiser', pitchX: 0.95, sub: 0.15, harm2: 0.15, cutHiX: 1.5, set: { cyl: 8, subTri: 0.3, halfOrd: 0.45 } },
+    swat:      { name: 'SWAT Van', pitchX: 0.7, sub: 0.3, cutHiX: 0.8, pops: -0.3, set: { cyl: 2, sub2: 0.3, subTri: 0.25 } },
+    ambulance: { name: 'Ambulance', pitchX: 0.85, rough: -0.2, driveX: 0.7, cutHiX: 0.9, pops: -0.4, volX: 0.85, set: { cyl: 2 } },
+    firetruck: { name: 'Fire Truck', pitchX: 0.5, sub: 0.45, driveX: 1.15, cutHiX: 0.5, noise: 0.25, pops: -0.51, set: { cyl: 1, sub2: 0.45, sub3: 0.3 } },
+    securicar: { name: 'Securicar', pitchX: 0.7, sub: 0.3, rough: 0.1, cutHiX: 0.7, pops: -0.4, set: { cyl: 2, sub2: 0.3 } },
   };
   const P = Object.assign({}, DEFAULTS);
-  try { Object.assign(P, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch (e) { /* storage blocked */ }
+  try {
+    const v3 = localStorage.getItem(KEY);
+    if (v3) Object.assign(P, JSON.parse(v3));
+    else { Object.assign(P, JSON.parse(localStorage.getItem('gtb-carsound-v2') || '{}')); P.animAmp = DEFAULTS.animAmp; } // keep v2 tuning, new amplitude
+  } catch (e) { /* storage blocked */ }
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(P)); } catch (e) { /* storage blocked */ } };
   const cl = (v, a, b) => Math.max(a, Math.min(b, v));
   // Animated sliders: ping-pong between lo and hi, one full cycle per period (s). Drives lab and game alike.
