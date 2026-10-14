@@ -646,7 +646,7 @@ body.city .not-city { display: none !important; }
 
   PG.createDriftVehicle = function (car, x, y, th) {
     return { car, dyn: PG.dynFor(car), x, y, th, tth: th, vx: 0, vy: 0, r: 0, v: 0, steer: 0, thr: 0, brk: 0, gear: 1, shiftT: 0, rpm: 850,
-      ax: 0, beta: 0, speed: 0, spinR: 0, spinF: 0, slipR: 0, slipF: 0, hand: false, handPrev: false, kicked: false, dir: 0, gearChanges: 0, shifted: 0, revLimit: false };
+      ax: 0, beta: 0, speed: 0, spinR: 0, spinF: 0, slipR: 0, slipF: 0, hand: false, dir: 0, gearChanges: 0, shifted: 0, revLimit: false };
   };
 
   function engine(veh, d, u, thr, h) {
@@ -782,9 +782,6 @@ body.city .not-city { display: none !important; }
     let rr = r + tq / d.Iz * h;
     // driving-school assist (training wheels): catches the slide before it becomes a spin
     if (env.assist && speed > 4 && Math.abs(beta) > 0.75) rr += Math.sign(beta) * (Math.abs(beta) - 0.75) * 9 * h;
-    // drift kick: a Scandinavian-flick nudge the moment the handbrake goes on above 50 km/h with steering held
-    if (hand && !veh.handPrev && speed > 13.5 && input) { rr += input * 0.55; veh.kicked = true; }
-    veh.handPrev = hand;
     veh.r = rr;
     veh.ax += ((axc + dragX / d.mTot * cs + dragY / d.mTot * sn) - veh.ax) * Math.min(1, h * 12);
     // standstill: static friction holds the car
