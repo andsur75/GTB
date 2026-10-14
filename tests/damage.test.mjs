@@ -445,6 +445,22 @@ const g2b = await t.eval(() => new Promise(res => {
 }));
 check('second game starts clean and works', g2.props > 0 && g2.fires === 0 && g2.parts === 0 && g2.exp === 0 && g2b.wrecked && g2b.exp >= 1, { g2, g2b });
 
+const setS = (k, v) => t.eval(([k, v]) => { if (PG.setSetting) PG.setSetting(k, v); else (PG.settings = PG.settings || {})[k] = v; }, [k, v]);
+const presetHigh = () => t.eval(() => { if (PG.applyPreset) PG.applyPreset('high'); else Object.assign(PG.settings = PG.settings || {}, { lighting: 'high', particles: 'high', detail: 'high', shadows: true, decals: 'high', pedDensity: 1, policeMax: 8, wheel: 'zoom' }); });
+// ---- PG.settings.particles thins the smoke and flames of a blast ----
+const puff = async lvl => { await setS('particles', lvl); return t.eval(async () => {
+  const X = PG.gta, f = X.focus(), n0 = X.damage.particles(), pp = X.player.ped, hp = pp.hp;
+  pp.hp = 1e6; X.explode(f.x + 11, f.y + 3, { power: 1, noFire: true });
+  const n1 = X.damage.particles();   // the blast emits right away
+  await new Promise(r => setTimeout(r, 120));
+  pp.hp = Math.min(hp, pp.maxHp);
+  return n1 - n0;
+}); };
+const pHigh = await puff('high'); await t.wait(2500);
+const pLow = await puff('low');
+await presetHigh();
+check('particles low: a blast throws much less smoke and fire than on high', pLow < pHigh * 0.65 && pHigh > 10, { high: pHigh, low: pLow });
+
 check('no console errors', t.errors.length === 0, t.errors.slice(0, 5));
 await t.close();
 console.log(fails ? `${fails} check(s) failed` : 'all damage checks passed');

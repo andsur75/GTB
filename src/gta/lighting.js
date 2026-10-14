@@ -11,6 +11,12 @@
 // submit with X.addLight. Roofs are masked so street light stays on the street. L toggles the headlights,
 // or a pocket torch on foot. X.lighting = {darkness(), isNight(), ambient, lightAt(x, y), flash(k), ...};
 // emits 'dayPhase' {phase: 'day'|'night'} when the sun comes up or goes down.
+// Two light-map engines draw the same picture: WebGL (every light one procedural quad in a single batched
+// buffer, additive / cut blending on the GPU, one drawImage onto the scene) and Canvas 2D (pre-baked
+// sprites). PG.settings.lightEngine picks one ('auto' = WebGL when the browser has a hardware context, and
+// it stays fast); PG.settings.lighting is the quality: 'high' (everything), 'medium' (1/3-res map, no
+// window spill), 'low' (1/4-res map: darkness, lamps, headlights and the big lights only), 'off' (no
+// darkness at all; gameplay still knows it is night).
 (function (PG) {
   if (typeof document === 'undefined') return;
   const X = PG.gta;
@@ -20,6 +26,9 @@
   const sstep = (a, b, x) => { const k = cl((x - a) / (b - a), 0, 1); return k * k * (3 - 2 * k); };
   const hash = n => { const s = Math.sin(n * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); };
   const P = X.player;
+  // quality settings (read every frame; the engine part of the game may be absent)
+  const SET = () => PG.settings || {};
+  const levelOf = v => v === 'off' || v === 'low' || v === 'medium' ? v : 'high';
 
   const MAXA = 0.8;      // darkness alpha at full night
   const MAXL = 380;      // light records per frame
@@ -66,7 +75,10 @@
   const api = X.lighting = {
     ambient: 1 - MAXA,
     quality: null,                              // light-map resolution (fraction of CSS pixels); null = automatic
-    stats: { lights: 0, submitted: 0, ms: 0, lamps: 0, cars: 0 },
+    // debugging switches for the canvas engine (A/B timing): native = false scales the 256 px sprites
+    // instead of native-size copies, copyDark = false accumulates light then fills 'source-out'
+    native: true, copyDark: true,
+    stats: { lights: 0, submitted: 0, ms: 0, lamps: 0, cars: 0, engine: '' },   // engine: 'webgl' | 'canvas' | 'off'
     darkness() { updateSky(); return sky.d; },  // 0 = broad daylight, 1 = deepest night
     isNight() { updateSky(); return sky.d > 0.45; },
     sky() { updateSky(); return { darkness: sky.d, color: [Math.round(sky.r), Math.round(sky.g), Math.round(sky.b)], warm: sky.warm, indoor: !!X.scene }; },
@@ -74,6 +86,8 @@
     get torch() { return torch; }, set torch(v) { torch = !!v; },
     toggle() { toggleLights(); },
     lightAt,
+    // which light-map engine draws and why: {engine, pick ('auto' trial result), webgl (context kind or null)}
+    engineInfo() { return { engine: api.stats.engine, pick: TRIAL.pick, trial: TRIAL.phase, ema: TRIAL.ema.map(v => +v.toFixed(1)), slow: !!GE.slow, webgl: GE.gl ? (GE.strict ? 'hardware' : 'any') : null, err: GE.err }; },
     // this frame's lights after culling (for tests and debugging): {x, y, r, ry, cone, dir, cut, glow, color}
     records() { const out = []; for (let k = 0; k < nL; k++) { const r = LP[k]; out.push({ x: r.x, y: r.y, r: r.rx, ry: r.ry, cone: r.sp, dir: r.rot, cut: r.cut, glow: r.glow, color: r.col, roof: k >= nGround }); } return out; },
   };
@@ -251,19 +265,23 @@
 
   // ================= gathering lights =================
   const visB = [], visLamps = [], visCars = [], visNeon = [], visBeacons = [], visSigns = [];
-  let em = 0;
+  let em = 0, LVL = 'high';   // LVL: this frame's quality level
   function gather(view, t) {
     nL = 0; nSub = 0; nGround = 0;
     visB.length = visLamps.length = visCars.length = visNeon.length = visBeacons.length = visSigns.length = 0;
-    const S = X.scene, d = sky.d, gk = 0.3 + 0.7 * d;
+    const S = X.scene, d = sky.d, gk = 0.3 + 0.7 * d, low = LVL === 'low';
     em = sstep(0.08, 0.55, d);
-    // 1. whatever the other modules submitted this frame
+    // 1. whatever the other modules submitted this frame ('low' keeps the big ones: sirens, blasts, flashes, fires)
+    let nBig = 0;
     for (let k = 0; k < X.lights.length; k++) {
       const l = X.lights[k];
       if (!l || !isFinite(l.x) || !isFinite(l.y) || !(l.r > 0) || !isFinite(l.r)) continue;
       const i = l.i == null ? 1 : +l.i; if (!(i > 0)) continue;
+      if (low && (l.r < 3 || ++nBig > 40)) continue;
       // by day only the bright stuff (blasts, muzzle flashes) still shows; signs and phones vanish in the sun
-      const col = l.color || '#ffd9a0', c = i > 1 ? 1 : i, g = Math.min(1, i * 0.55) * (d + (1 - d) * 0.6 * cl((i - 0.6) / 0.6, 0, 1));
+      const col = l.color || '#ffd9a0', c = i > 1 ? 1 : i;
+      let g = Math.min(1, i * 0.55) * (d + (1 - d) * 0.6 * cl((i - 0.6) / 0.6, 0, 1));
+      if (low && l.r < 5) g = 0;
       if (l.cone) cone(l.x, l.y, l.r, +l.cone.dir || 0, l.cone.spread == null ? 0.5 : +l.cone.spread, col, c, g);
       else pt(l.x, l.y, l.r, col, c, g);
     }
@@ -287,12 +305,12 @@
       }
     }
     // 3. objective markers stay readable at night
-    for (const o of X.objectives) pt(o.x, o.y, (o.radius || 2.2) + 2.6, o.color || '#ffd23a', 0.55, 0.3 * em);
+    for (const o of X.objectives) pt(o.x, o.y, (o.radius || 2.2) + 2.6, o.color || '#ffd23a', 0.55, low ? 0 : 0.3 * em);
     // 4. fire and sparks
     const parts = PG.game && PG.game.particles;
     if (parts) {
       let n = 0;
-      for (let k = parts.length - 1; k >= 0 && n < 70; k--) {
+      for (let k = parts.length - 1, nMax = low ? 10 : LVL === 'medium' ? 40 : 70; k >= 0 && n < nMax; k--) {
         const p = parts[k]; if (p.kind !== 'fire') continue;
         const f = p.life / p.max; if (f <= 0.05) continue;
         n++; pt(p.x, p.y, 1.2 + p.size * 4.5, '#ff8a30', 0.35 * f, 0.22 * f * em);
@@ -304,13 +322,13 @@
     for (const c of X.cars) {
       if (c.removed || c.wrecked) continue;
       if (Math.abs(c.x - vcx) > vr + 26 || Math.abs(c.y - vcy) > vr + 26) continue;
-      nc++; visCars.push(c); carLights(c, t, gk);
+      nc++; visCars.push(c); if (low) carLightsLow(c, t, gk); else carLights(c, t, gk);
     }
     api.stats.cars = nc;
     // 6. street lamps
     lampsGather(t);
     // 7. buildings in view: lit windows (ground level), then neon / signs / beacons above the roof mask
-    const C = X.city, B = C.buildings, wl = curve(WINLIT, X.clock, 1), near = vr < 62;
+    const C = X.city, B = C.buildings, wl = curve(WINLIT, X.clock, 1), near = vr < 62 && LVL === 'high';
     for (let i = 0; i < B.length; i++) {
       const b = B[i];
       if (b.x1 < vcx - vr - 8 || b.x0 > vcx + vr + 8 || b.y1 < vcy - vr - 8 || b.y0 > vcy + vr + 8) continue;
@@ -322,6 +340,7 @@
         if (w.tv) k = 0.55 + 0.45 * Math.sin(t * 9 + w.seed * 50) * Math.sin(t * 3.7 + w.seed * 20);
         ell(w.x, w.y, w.rx, w.ry, 0, WINC[w.col], 0.42 * k * em, 0.17 * k * em);
       }
+      if (low) continue;
       if (F.neon.length) visNeon.push(F);
       if (F.beacons.length) visBeacons.push(F);
       if (F.sign) visSigns.push(F.sign);
@@ -390,6 +409,15 @@
       if (!submittedNear(c.x, c.y, 6)) pt(c.x, c.y, 12, on ? '#ff3030' : '#3060ff', 0.45, 0.32 * gk);
     }
   }
+  // 'low': one wide beam per lit car and the siren wash, nothing else
+  function carLightsLow(c, t, gk) {
+    const cs = Math.cos(c.th), sn = Math.sin(c.th), L2 = c.len / 2, kind = c.model && c.model.kind;
+    if (c.lightsOn) {
+      const hk = c.maxHp ? c.hp / c.maxHp : 1, reach = c === P.car ? 23 : kind === 'police' || kind === 'swat' ? 19 : c.len > 7 ? 18 : 16;
+      cone(c.x + cs * (L2 - 2.2), c.y + sn * (L2 - 2.2), reach, c.th, hk < 0.35 ? 0.3 : 0.4, HEAD, hk < 0.35 ? 0.7 : 1, 0);
+    }
+    if (c.siren && !submittedNear(c.x, c.y, 6)) { const on = Math.floor(t * 8) % 2 === 0; pt(c.x, c.y, 12, on ? '#ff3030' : '#3060ff', 0.45, 0.32 * gk); }
+  }
   function lampLevel(f, d, t) {
     let k = sstep(f.th, f.th + 0.07, d);
     if (k <= 0) return 0;
@@ -412,7 +440,7 @@
         f.k = lampLevel(f, d, t); if (f.k <= 0) continue;
         n++; visLamps.push(f);
         const r = pt(f.px, f.py, 10.5, LAMPC[f.col], 0.88 * f.k, 0.4 * f.k * em); if (r) r.gs = 0.72;
-        if (pxm > 7) pt(f.hx, f.hy, 2, LAMPC[f.col], 0, 0.6 * f.k * em);
+        if (pxm > 7 && LVL !== 'low') pt(f.hx, f.hy, 2, LAMPC[f.col], 0, 0.6 * f.k * em);
       }
     }
     api.stats.lamps = n;
@@ -438,6 +466,20 @@
     lm.width = MW = w; lm.height = MH = h; lc = lm.getContext('2d');
   }
   const dirBucket = a => { const k = Math.round(a / TAU * DIRS) % DIRS; return k < 0 ? k + DIRS : k; };
+  // Native-size copies of the round sprites (6 % size steps, fast renderer): an unscaled, unfiltered blit
+  // is the cheapest draw a software-rasterised canvas has; scaling the 256 px original costs about twice that.
+  const NAT = new Map(), NSTEP = Math.log(1.06);
+  let natPx = 0, NATIVE = true;
+  const natSize = d => !NATIVE || d < 3 || d > 512 ? 0 : Math.round(Math.exp(Math.round(Math.log(d) / NSTEP) * NSTEP));
+  function natSprite(key, src, n) {
+    let c = NAT.get(key);
+    if (c) { NAT.delete(key); NAT.set(key, c); return c; }
+    c = document.createElement('canvas'); c.width = c.height = n;
+    const g = c.getContext('2d'); g.imageSmoothingQuality = 'high'; g.drawImage(src, 0, 0, n, n);
+    NAT.set(key, c); natPx += n * n;
+    while (natPx > 4e6 && NAT.size > 1) { const k = NAT.keys().next().value, o = NAT.get(k); NAT.delete(k); natPx -= o.width * o.height; }
+    return c;
+  }
   function drawCut(r) {
     const px = Ma * r.x + Mc * r.y + Me, py = Mb * r.x + Md * r.y + Mf;
     if (r.sp > 0) {
@@ -447,7 +489,8 @@
       lc.globalAlpha = 1; lc.imageSmoothingEnabled = false;
       return;
     }
-    const spr = SPR.levels[Math.min(LV, Math.max(1, Math.round(r.cut * LV)))], rx = r.rx * kpx, ry = r.ry * kpx, rot = r.rx === r.ry ? 0 : r.rot + vrot;
+    const lev = Math.min(LV, Math.max(1, Math.round(r.cut * LV))), spr = SPR.levels[lev], rx = r.rx * kpx, ry = r.ry * kpx, rot = r.rx === r.ry ? 0 : r.rot + vrot;
+    if (!rot && rx === ry) { const n = natSize(2 * rx); if (n) { lc.drawImage(natSprite('c' + lev + '|' + n, spr, n), px - n / 2, py - n / 2); return; } }
     if (rx > 300 || ry > 300) { lc.imageSmoothingEnabled = true; lc.drawImage(spr, px - rx, py - ry, 2 * rx, 2 * ry); lc.imageSmoothingEnabled = false; return; }
     if (!rot) { lc.drawImage(spr, px - rx, py - ry, 2 * rx, 2 * ry); return; }
     const cs = Math.cos(rot), sn = Math.sin(rot);
@@ -469,10 +512,11 @@
         continue;
       }
       const e = tintOf(r.col);
-      let spr = e.pt;
-      if (BAKE.has(r.col)) { const l = Math.round(ga * GL); if (l < 1) continue; spr = glowLevels(e)[l > GL ? GL : l]; lc.globalAlpha = 1; }
+      let spr = e.pt, lev = 0;
+      if (BAKE.has(r.col)) { const l = Math.round(ga * GL); if (l < 1) continue; lev = l > GL ? GL : l; spr = glowLevels(e)[lev]; lc.globalAlpha = 1; }
       else lc.globalAlpha = ga;
       const rx = r.rx * kpx * r.gs, ry = r.ry * kpx * r.gs, rot = r.rx === r.ry ? 0 : r.rot + vrot;
+      if (!rot && rx === ry) { const n = natSize(2 * rx); if (n) { lc.drawImage(natSprite('g' + r.col + '|' + lev + '|' + n, spr, n), px - n / 2, py - n / 2); continue; } }
       if (rx > 150 || ry > 150) { lc.imageSmoothingEnabled = true; lc.drawImage(spr, px - rx, py - ry, 2 * rx, 2 * ry); lc.imageSmoothingEnabled = false; continue; }
       if (!rot) { lc.drawImage(spr, px - rx, py - ry, 2 * rx, 2 * ry); continue; }
       const cs = Math.cos(rot), sn = Math.sin(rot);
@@ -480,48 +524,239 @@
     }
     lc.globalAlpha = 1;
   }
+  // ---------- the WebGL engine ----------
+  // Every record becomes one quad in a single vertex buffer; the falloffs (cut (1-d^2)^2, glow (1-d)^2,
+  // the headlight cone) are computed per pixel, so there are no sprite levels or direction buckets. Six
+  // draw calls with different blend states replay the canvas recipe exactly (source-over accumulation,
+  // source-out darkness, roof reset, destination-out roof cut), and the finished map goes onto the scene
+  // with one drawImage.
+  const STR = 10, MAXQ = 2048;   // floats per vertex: x, y, u, v, r, g, b, a (premultiplied), mode, spread
+  const VS = 'attribute vec2 aPos; attribute vec2 aUV; attribute vec4 aCol; attribute vec2 aP; uniform vec2 uRes;' +
+    'varying vec2 vUV; varying vec4 vCol; varying vec2 vP;' +
+    'void main() { vUV = aUV; vCol = aCol; vP = aP; vec2 c = aPos / uRes * 2.0 - 1.0; gl_Position = vec4(c.x, -c.y, 0.0, 1.0); }';
+  const FS = 'precision mediump float; varying vec2 vUV; varying vec4 vCol; varying vec2 vP;' +
+    'void main() { float d = length(vUV), v;' +
+    ' if (vP.x < 0.5) { float q = max(0.0, 1.0 - d * d); v = q * q; }' +                   // 0: cut
+    ' else if (vP.x < 1.5) { float q = max(0.0, 1.0 - d); v = q * q; }' +                 // 1: glow
+    ' else if (vP.x < 2.5) { if (d >= 1.0 || vUV.x <= 0.0) discard;' +                    // 2: cone
+    '   v = (1.0 - smoothstep(vP.y * 0.55, vP.y, abs(atan(vUV.y, vUV.x)))) * pow(1.0 - d, 1.25) * smoothstep(0.0, 0.1, d); }' +
+    ' else if (vP.x < 3.5) v = 1.0;' +                                                     // 3: flat
+    ' else v = 1.0 - clamp(vUV.x, 0.0, 1.0);' +                                             // 4: linear gradient
+    ' gl_FragColor = vCol * v; }';
+  const GE = { gl: null, cv: null, strict: false, lost: false, tried: { strict: false, loose: false }, vb: null, vbo: null, prog: null, uRes: null, slow: 0, emaMs: 0, n: 0, err: '' };
+  function glCreate(strict) {
+    const cv = document.createElement('canvas'); cv.width = cv.height = 4;
+    const o = { alpha: true, premultipliedAlpha: true, antialias: false, depth: false, stencil: false, preserveDrawingBuffer: false, failIfMajorPerformanceCaveat: strict };
+    let gl = null;
+    try { gl = cv.getContext('webgl', o) || cv.getContext('experimental-webgl', o); } catch (e) { gl = null; }
+    if (!gl) return false;
+    const sh = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); return gl.getShaderParameter(s, gl.COMPILE_STATUS) ? s : null; };
+    const vs = sh(gl.VERTEX_SHADER, VS), fs = sh(gl.FRAGMENT_SHADER, FS);
+    if (!vs || !fs) { GE.err = 'shader'; return false; }
+    const pr = gl.createProgram(); gl.attachShader(pr, vs); gl.attachShader(pr, fs); gl.linkProgram(pr);
+    if (!gl.getProgramParameter(pr, gl.LINK_STATUS)) { GE.err = 'link'; return false; }
+    gl.useProgram(pr);
+    const vbo = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+    gl.bufferData(gl.ARRAY_BUFFER, MAXQ * 4 * STR * 4, gl.DYNAMIC_DRAW);
+    const idx = new Uint16Array(MAXQ * 6);
+    for (let q = 0; q < MAXQ; q++) { const v = q * 4, i = q * 6; idx[i] = v; idx[i + 1] = v + 1; idx[i + 2] = v + 2; idx[i + 3] = v; idx[i + 4] = v + 2; idx[i + 5] = v + 3; }
+    const ibo = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, idx, gl.STATIC_DRAW);
+    const at = (name, n, off) => { const l = gl.getAttribLocation(pr, name); gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, n, gl.FLOAT, false, STR * 4, off * 4); };
+    at('aPos', 2, 0); at('aUV', 2, 2); at('aCol', 4, 4); at('aP', 2, 8);
+    gl.disable(gl.DEPTH_TEST); gl.disable(gl.CULL_FACE); gl.enable(gl.BLEND);
+    cv.addEventListener('webglcontextlost', e => { e.preventDefault(); GE.lost = true; });
+    cv.addEventListener('webglcontextrestored', () => { GE.gl = null; GE.lost = false; GE.tried.strict = GE.tried.loose = false; });
+    GE.gl = gl; GE.cv = cv; GE.strict = strict; GE.prog = pr; GE.uRes = gl.getUniformLocation(pr, 'uRes');
+    if (!GE.vb) GE.vb = new Float32Array(MAXQ * 4 * STR);
+    GE.w = GE.h = 0;
+    return true;
+  }
+  // 'auto' wants a hardware context (failIfMajorPerformanceCaveat) that keeps up; 'webgl' takes any context
+  function glReady(strict) {
+    if (GE.lost) return false;
+    if (GE.gl && (GE.strict || !strict)) return true;
+    const k = strict ? 'strict' : 'loose';
+    if (GE.tried[k]) return false;
+    GE.tried[k] = true;
+    if (GE.gl) { const ext = GE.gl.getExtension('WEBGL_lose_context'); if (ext) ext.loseContext(); GE.gl = null; }
+    return glCreate(strict);
+  }
+  // 'auto' with a hardware context: WebGL unless it turns out slower here. A frame-rate trial decides once
+  // (frames slower than the display -> try the canvas engine for a while, keep whichever ran faster), and a
+  // light pass that stalls the frame (readback into a software-rasterised canvas) gives up straight away.
+  const TRIAL = { pick: null, phase: 'gl', n: 0, ema: [0, 0], last: 0 };
+  function engineOf(pref) {
+    if (pref === 'canvas') return 'canvas';
+    if (pref === 'webgl') return glReady(false) ? 'webgl' : 'canvas';
+    if (GE.slow > 0 || !glReady(true)) return 'canvas';
+    return TRIAL.pick || (TRIAL.phase === 'cv' ? 'canvas' : 'webgl');
+  }
+  function trialFrame(eng, now) {
+    if (TRIAL.pick) return;
+    const dt = now - TRIAL.last; TRIAL.last = now;
+    if (!(dt > 0 && dt < 100)) return;
+    const k = eng === 'webgl' ? 0 : 1;
+    TRIAL.ema[k] = TRIAL.n ? TRIAL.ema[k] * 0.95 + dt * 0.05 : dt; TRIAL.n++;
+    if (TRIAL.n < 120) return;
+    if (k === 0) { if (TRIAL.ema[0] < 17.5) TRIAL.pick = 'webgl'; else { TRIAL.phase = 'cv'; TRIAL.n = 0; } }
+    else TRIAL.pick = TRIAL.ema[0] > TRIAL.ema[1] + 1.5 ? 'canvas' : 'webgl';
+  }
+  // colours -> [r, g, b, a] 0..1 (records carry CSS colours)
+  const RGBA = new Map(); let parseCtx = null;
+  function rgbaOf(col) {
+    let v = RGBA.get(col); if (v) return v;
+    let s = col;
+    if (!/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(s)) { parseCtx = parseCtx || document.createElement('canvas').getContext('2d'); parseCtx.fillStyle = '#000'; parseCtx.fillStyle = col; s = parseCtx.fillStyle; }
+    if (s[0] === '#') { if (s.length === 4) s = '#' + s[1] + s[1] + s[2] + s[2] + s[3] + s[3]; v = [parseInt(s.slice(1, 3), 16) / 255, parseInt(s.slice(3, 5), 16) / 255, parseInt(s.slice(5, 7), 16) / 255, 1]; }
+    else { const m = s.match(/[\d.]+/g) || [0, 0, 0]; v = [m[0] / 255, m[1] / 255, m[2] / 255, m[3] == null ? 1 : +m[3]]; }
+    if (RGBA.size > 400) RGBA.clear();
+    RGBA.set(col, v);
+    return v;
+  }
+  let nq = 0;
+  function vert(o, x, y, u, v, r, g, b, a, mode, sp) { const B = GE.vb; B[o] = x; B[o + 1] = y; B[o + 2] = u; B[o + 3] = v; B[o + 4] = r; B[o + 5] = g; B[o + 6] = b; B[o + 7] = a; B[o + 8] = mode; B[o + 9] = sp; }
+  // a quad spanned by (cx, cy) + (ax, ay) u + (bx, by) v over u0..u1, v0..v1
+  function quad(cx, cy, ax, ay, bx, by, u0, u1, v0, v1, r, g, b, a, mode, sp) {
+    if (nq >= MAXQ) return;
+    const o = nq * 4 * STR; nq++;
+    vert(o, cx + ax * u0 + bx * v0, cy + ay * u0 + by * v0, u0, v0, r, g, b, a, mode, sp);
+    vert(o + STR, cx + ax * u1 + bx * v0, cy + ay * u1 + by * v0, u1, v0, r, g, b, a, mode, sp);
+    vert(o + STR * 2, cx + ax * u1 + bx * v1, cy + ay * u1 + by * v1, u1, v1, r, g, b, a, mode, sp);
+    vert(o + STR * 3, cx + ax * u0 + bx * v1, cy + ay * u0 + by * v1, u0, v1, r, g, b, a, mode, sp);
+  }
+  function recQuad(r, glow) {
+    const px = Ma * r.x + Mc * r.y + Me, py = Mb * r.x + Md * r.y + Mf;
+    if (r.sp > 0) {
+      const R = r.rx * kpx, phi = r.rot + vrot, c = Math.cos(phi) * R, s = Math.sin(phi) * R, h = Math.min(1, Math.sin(r.sp) + 0.02);
+      if (glow) { const k = r.glow > 1 ? 1 : r.glow; quad(px, py, c, s, -s, c, 0, 1, -h, h, k, k, k, k, 2, r.sp); }
+      else { const k = r.cut > 1 ? 1 : r.cut; quad(px, py, c, s, -s, c, 0, 1, -h, h, 0, 0, 0, k, 2, r.sp); }
+      return;
+    }
+    const sc = glow ? kpx * r.gs : kpx, rx = r.rx * sc, ry = r.ry * sc, rot = r.rx === r.ry ? 0 : r.rot + vrot, cs = Math.cos(rot), sn = Math.sin(rot);
+    if (glow) { const k = r.glow > 1 ? 1 : r.glow, C = rgbaOf(r.col), a = k * C[3]; quad(px, py, rx * cs, rx * sn, -ry * sn, ry * cs, -1, 1, -1, 1, C[0] * a, C[1] * a, C[2] * a, a, 1, 0); }
+    else { const k = r.cut > 1 ? 1 : r.cut; quad(px, py, rx * cs, rx * sn, -ry * sn, ry * cs, -1, 1, -1, 1, 0, 0, 0, k, 0, 0); }
+  }
+  function recRange(a, b, glow) {
+    const q0 = nq;
+    for (let k = a; k < b; k++) { const r = LP[k]; if ((glow ? r.glow : r.cut) > 0.004) recQuad(r, glow); }
+    return [q0, nq];
+  }
+  function glDraw(gl, R) { if (R[1] > R[0]) gl.drawElements(gl.TRIANGLES, (R[1] - R[0]) * 6, gl.UNSIGNED_SHORT, R[0] * 12); }
+  function renderGL(ctx, view, dark, A, warm) {
+    const gl = GE.gl, W = Math.max(1, Math.ceil(view.cw * Q)), H = Math.max(1, Math.ceil(view.ch * Q)), S = X.scene;
+    if (GE.w !== W || GE.h !== H) { GE.cv.width = GE.w = W; GE.cv.height = GE.h = H; }
+    nq = 0;
+    const dr = sky.r / 255 * A, dg = sky.g / 255 * A, db = sky.b / 255 * A;
+    const gCut = dark ? recRange(0, nGround, false) : [0, 0];
+    const dq = [nq, nq]; if (dark) { quad(0, 0, W, 0, 0, H, 0, 1, 0, 1, dr, dg, db, A, 3, 0); dq[1] = nq; }
+    const gGlow = recRange(0, nGround, true);
+    const roofs = [nq, nq];
+    if (dark && !S && visB.length) {
+      const k = 0.9;
+      for (const b of visB) { const w = b.x1 - b.x0, h = b.y1 - b.y0; quad(Ma * b.x0 + Mc * b.y0 + Me, Mb * b.x0 + Md * b.y0 + Mf, Ma * w, Mb * w, Mc * h, Md * h, 0, 1, 0, 1, dr * k, dg * k, db * k, A * k, 3, 0); }
+      roofs[1] = nq;
+    }
+    const rCut = dark ? recRange(nGround, nL, false) : [nq, nq];
+    const rGlow = recRange(nGround, nL, true);
+    const sun = [nq, nq];
+    if (warm) {
+      // the same linear gradient as the canvas path, its parameter t carried in u
+      const dawn = X.clock < 720, sg = dawn ? 1 : -1, rot = view.rot || 0, ux = Math.cos(rot) * sg, uy = Math.sin(rot) * sg;
+      const cx = W / 2, cy = H / 2, R = Math.max(W, H) * 0.65, x0 = cx + ux * R, y0 = cy + uy * R, dx = -ux * R * 1.4, dy = -uy * R * 1.4, L2 = dx * dx + dy * dy;
+      const a = dawn ? 0.36 * sky.warm : 0.4 * sky.warm, c = dawn ? [1, 160 / 255, 90 / 255] : [1, 110 / 255, 50 / 255], tq = (x, y) => ((x - x0) * dx + (y - y0) * dy) / L2;
+      if (nq < MAXQ) {
+        const o = nq * 4 * STR; nq++;
+        vert(o, 0, 0, tq(0, 0), 0, c[0] * a, c[1] * a, c[2] * a, a, 4, 0); vert(o + STR, W, 0, tq(W, 0), 0, c[0] * a, c[1] * a, c[2] * a, a, 4, 0);
+        vert(o + STR * 2, W, H, tq(W, H), 0, c[0] * a, c[1] * a, c[2] * a, a, 4, 0); vert(o + STR * 3, 0, H, tq(0, H), 0, c[0] * a, c[1] * a, c[2] * a, a, 4, 0);
+        sun[1] = nq;
+      }
+    }
+    gl.viewport(0, 0, W, H); gl.uniform2f(GE.uRes, W, H);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, GE.vb.subarray(0, nq * 4 * STR));
+    gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.enable(gl.BLEND);
+    const over = () => gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    over(); glDraw(gl, gCut);
+    gl.blendFunc(gl.ONE_MINUS_DST_ALPHA, gl.ZERO); glDraw(gl, dq);              // source-out: the darkness where nothing is lit
+    over(); glDraw(gl, gGlow);
+    if (roofs[1] > roofs[0]) { gl.disable(gl.BLEND); glDraw(gl, roofs); gl.enable(gl.BLEND); }   // roofs: back to a flat dark
+    gl.blendFunc(gl.ZERO, gl.ONE_MINUS_SRC_ALPHA); glDraw(gl, rCut);             // destination-out
+    over(); glDraw(gl, rGlow); glDraw(gl, sun);
+    api.stats.quads = nq;
+    ctx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+    ctx.imageSmoothingEnabled = true; ctx.drawImage(GE.cv, 0, 0, W, H, 0, 0, W / Q, H / Q);
+  }
+
   // profiling (X.lighting.debugFlush = true): rasterise each step of the map before timing the next
   const PH = [0, 0, 0, 0], MP = [0, 0, 0, 0, 0, 0];
-  let dbg = false, tm = 0;
+  let dbg = false, tm = 0, offFrame = false;
   function step(k) { if (!dbg) return; lc.getImageData(0, 0, 1, 1); const n = performance.now(); MP[k] = MP[k] * 0.9 + (n - tm) * 0.1; tm = n; }
   function renderLight(ctx, view, t) {
     if (!X.city) return;
+    const set = SET(), lvl = levelOf(set.lighting);
+    LVL = lvl;
+    updateSky();
+    offFrame = lvl === 'off';
+    if (offFrame) {   // no darkness at all (lightAt falls back to the street lamps)
+      nL = nSub = nGround = 0; em = 0;
+      visB.length = visLamps.length = visCars.length = visNeon.length = visBeacons.length = visSigns.length = 0;
+      api.stats.lights = api.stats.submitted = api.stats.lamps = api.stats.cars = 0; api.stats.engine = 'off'; api.stats.ms *= 0.9;
+      const RS = PG.renderStats; if (RS) { RS.lights = 0; RS.lightEngine = 'off'; }
+      return;
+    }
     dbg = !!api.debugFlush;
     if (dbg) { ctx.getImageData(0, 0, 1, 1); api.stats.mapPhase = MP; }
     const t0 = performance.now();
-    updateSky();
-    sprites();
+    const eng = engineOf(set.lightEngine), webgl = eng === 'webgl';
+    NATIVE = set.fastRender !== false && api.native !== false;
+    api.stats.engine = eng;
+    if (!webgl) sprites();
     // dpr 1 screens may well be rasterised in software: smaller map, nearest-neighbour composite. High-dpi
     // screens have a GPU canvas in practice, where a bigger map and a filtered composite cost nothing.
     const hi = view.dpr > 1;
-    Q = api.quality ? cl(+api.quality, 0.2, 1) : hi ? 0.5 : 0.35;
+    Q = api.quality ? cl(+api.quality, 0.2, 1) : lvl === 'low' ? 0.25 : lvl === 'medium' ? 1 / 3 : webgl || hi ? 0.5 : 0.35;
     const s = view.scale, rot = view.rot || 0, cr = Math.cos(rot), sr = Math.sin(rot);
     vcx = view.cx; vcy = view.cy; vr = view.r; pxm = s * Q; kpx = s * Q; vrot = rot;
     Ma = Q * s * cr; Mb = Q * s * sr; Mc = -Q * s * sr; Md = Q * s * cr;
     Me = Q * (view.ax - s * (cr * view.cx - sr * view.cy)); Mf = Q * (view.ay - s * (sr * view.cx + cr * view.cy));
     gather(view, t);
-    // a frame with huge overdraw (a firefight full of flashes) is drawn at a lower resolution
-    let area = 0;
-    for (let k = 0; k < nL; k++) { const r = LP[k], a = r.sp > 0 ? r.rx * r.rx * 1.2 : 4 * r.rx * r.ry; area += (r.cut > 0.004 ? a : 0) + (r.glow > 0.004 ? a * r.gs * r.gs : 0); }
-    area *= kpx * kpx;
-    const fq = area > BUDGET * MW * MH && MW ? Math.max(0.5, Math.sqrt(BUDGET * MW * MH / area)) : 1;
-    if (fq < 1) { Ma *= fq; Mb *= fq; Mc *= fq; Md *= fq; Me *= fq; Mf *= fq; kpx *= fq; }
+    // a frame with huge overdraw (a firefight full of flashes) is drawn at a lower resolution (canvas only)
+    let fq = 1;
+    if (!webgl) {
+      let area = 0;
+      for (let k = 0; k < nL; k++) { const r = LP[k], a = r.sp > 0 ? r.rx * r.rx * 1.2 : 4 * r.rx * r.ry; area += (r.cut > 0.004 ? a : 0) + (r.glow > 0.004 ? a * r.gs * r.gs : 0); }
+      area *= kpx * kpx;
+      fq = area > BUDGET * MW * MH && MW ? Math.max(0.5, Math.sqrt(BUDGET * MW * MH / area)) : 1;
+      if (fq < 1) { Ma *= fq; Mb *= fq; Mc *= fq; Md *= fq; Me *= fq; Mf *= fq; kpx *= fq; }
+    }
     api.stats.res = fq;
     PH[0] = PH[1] = PH[2] = performance.now();
     api.stats.lights = nL;
     const d = sky.d, A = d * MAXA, S = X.scene, warm = !S && sky.warm > 0.02, dark = A > 0.004;
-    if (dark || nL || warm) {
+    if ((dark || nL || warm) && webgl) {
+      renderGL(ctx, view, dark, A, warm);
+      if (dbg) ctx.getImageData(0, 0, 1, 1);
+      PH[1] = PH[2] = performance.now();
+    } else if (dark || nL || warm) {
       ensureMap(view.cw, view.ch);
       const UW = Math.min(MW, Math.ceil(MW * fq) + 1), UH = Math.min(MH, Math.ceil(MH * fq) + 1);
-      lc.setTransform(1, 0, 0, 1, 0, 0); lc.globalAlpha = 1; lc.globalCompositeOperation = 'source-over'; lc.clearRect(0, 0, UW, UH);
-      lc.imageSmoothingEnabled = false;
+      lc.setTransform(1, 0, 0, 1, 0, 0); lc.globalAlpha = 1; lc.imageSmoothingEnabled = false;
       const dc = `rgba(${sky.r | 0},${sky.g | 0},${sky.b | 0},`;
       if (dbg) { lc.getImageData(0, 0, 1, 1); tm = performance.now(); }
-      if (dark) {
-        cutPass(0, nGround, 'source-over'); step(0);
-        lc.globalCompositeOperation = 'source-out'; lc.fillStyle = dc + A.toFixed(3) + ')'; lc.fillRect(0, 0, UW, UH);
+      if (dark && api.copyDark !== false) {
+        // darkness first, then every light cuts it (destination-out): dark * A * prod(1 - cut), the same map
+        // as accumulating the light and filling 'source-out', in one full-map pass fewer
+        lc.globalCompositeOperation = 'copy'; lc.fillStyle = dc + A.toFixed(3) + ')'; lc.fillRect(0, 0, UW, UH); step(0);
+        cutPass(0, nGround, 'destination-out'); step(1);
         lc.globalCompositeOperation = 'source-over';
-        step(1);
+      } else {
+        lc.globalCompositeOperation = 'source-over'; lc.clearRect(0, 0, UW, UH);
+        if (dark) {
+          cutPass(0, nGround, 'source-over'); step(0);
+          lc.globalCompositeOperation = 'source-out'; lc.fillStyle = dc + A.toFixed(3) + ')'; lc.fillRect(0, 0, UW, UH);
+          lc.globalCompositeOperation = 'source-over';
+          step(1);
+        }
       }
       glowPass(0, nGround); step(2);
       if (dark && !S && visB.length) {
@@ -544,11 +779,16 @@
       if (dbg) ctx.getImageData(0, 0, 1, 1);
       PH[2] = performance.now();
     }
-    if (em > 0.01) emissive(ctx, view, t);
+    if (em > 0.01 && lvl !== 'low') emissive(ctx, view, t);
     ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
     if (dbg) ctx.getImageData(0, 0, 1, 1);
     const now = performance.now(), ms = now - t0;
     api.stats.ms = api.stats.ms * 0.9 + ms * 0.1;
+    const RS = PG.renderStats; if (RS) { RS.lights = nL; RS.lightEngine = eng; }
+    if (set.lightEngine !== 'webgl' && set.lightEngine !== 'canvas' && GE.gl && GE.strict) {
+      if (webgl) { GE.emaMs = GE.n ? GE.emaMs * 0.9 + ms * 0.1 : ms; GE.n++; if (GE.n > 30 && GE.emaMs > 8) GE.slow = 1; }
+      if (PG.game && PG.game.status === 'play') trialFrame(eng, now);
+    }
     // [gather, light map, composite, emissive] (only meaningful with debugFlush)
     const ph = api.stats.phase || (api.stats.phase = [0, 0, 0, 0]);
     ph[0] = ph[0] * 0.9 + (PH[0] - t0) * 0.1; ph[1] = ph[1] * 0.9 + (PH[1] - PH[0]) * 0.1; ph[2] = ph[2] * 0.9 + (PH[2] - PH[1]) * 0.1; ph[3] = ph[3] * 0.9 + (now - PH[2]) * 0.1;
@@ -562,6 +802,36 @@
     g.addColorStop(0, dawn ? `rgba(255,160,90,${(0.36 * sky.warm).toFixed(3)})` : `rgba(255,110,50,${(0.4 * sky.warm).toFixed(3)})`);
     g.addColorStop(1, 'rgba(255,140,80,0)');
     lc.fillStyle = g; lc.fillRect(0, 0, view.cw, view.ch);
+  }
+  // world transform M (a DOMMatrix) * translate(x, y) * rotate(th), without a save/restore
+  function place(ctx, M, x, y, th) {
+    const cs = Math.cos(th), sn = Math.sin(th);
+    ctx.setTransform(M.a * cs + M.c * sn, M.b * cs + M.d * sn, M.c * cs - M.a * sn, M.d * cs - M.b * sn, M.a * x + M.c * y + M.e, M.b * x + M.d * y + M.f);
+  }
+  // rooftop signs are pre-rendered (text is slow to draw every frame): one sprite per sign, look (painted by
+  // day / glowing at night) and power-of-two pixel density, so a zoom change rarely re-renders anything
+  const SIGNSPR = new Map();
+  const ppmOf = view => Math.min(32, Math.max(2, Math.pow(2, Math.ceil(Math.log2(Math.max(1, view.scale * view.dpr))))));
+  function signSprite(sg, glow, ppm) {
+    const key = sg.text + '|' + sg.col + '|' + sg.fs.toFixed(2) + '|' + sg.w.toFixed(1) + '|' + ppm + (glow ? '|g' : '|d') + (document.fonts ? document.fonts.status : '');
+    let c = SIGNSPR.get(key);
+    if (c) { SIGNSPR.delete(key); SIGNSPR.set(key, c); return c; }   // most recently used last
+    if (SIGNSPR.size >= 40) SIGNSPR.delete(SIGNSPR.keys().next().value);
+    const W = sg.w + 0.4, H = sg.fs * 1.2;
+    c = document.createElement('canvas'); c.width = Math.max(1, Math.ceil(W * ppm)); c.height = Math.max(1, Math.ceil(H * ppm));
+    const g = c.getContext('2d');
+    g.setTransform(ppm, 0, 0, ppm, c.width / 2, c.height / 2);
+    g.font = `900 ${sg.fs.toFixed(2)}px "Barlow Condensed", Impact, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
+    if (!glow) { g.globalAlpha = 0.55; g.lineWidth = 0.16; g.strokeStyle = 'rgba(0,0,0,0.6)'; g.strokeText(sg.text, 0, 0, sg.w); }
+    g.fillStyle = sg.col; g.fillText(sg.text, 0, 0, sg.w);
+    c.mw = W; c.mh = H;
+    SIGNSPR.set(key, c);
+    return c;
+  }
+  function drawSign(ctx, M, sg, glow, ppm) {
+    const spr = signSprite(sg, glow, ppm);
+    place(ctx, M, sg.x, sg.y, sg.rot || 0);
+    ctx.drawImage(spr, -spr.mw / 2, -spr.mh / 2, spr.mw, spr.mh);
   }
   // light sources themselves, crisp and bright on top of the dark
   function emissive(ctx, view, t) {
@@ -590,22 +860,23 @@
       ctx.globalAlpha = em * n.k; ctx.lineWidth = 0.34; ctx.stroke();
     }
     ctx.lineCap = 'butt';
-    if (fine) for (const sg of visSigns) {
-      if (!(sg.k > 0.2)) continue;
-      ctx.save(); ctx.translate(sg.x, sg.y); if (sg.rot) ctx.rotate(sg.rot);
-      ctx.font = `900 ${sg.fs.toFixed(2)}px "Barlow Condensed", Impact, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillStyle = sg.col; ctx.globalAlpha = em * sg.k; ctx.fillText(sg.text, 0, 0, sg.w);
-      ctx.restore();
+    const M = ctx.getTransform();
+    if (fine && visSigns.length) {
+      const ppm = ppmOf(view);
+      for (const sg of visSigns) { if (!(sg.k > 0.2)) continue; ctx.globalAlpha = em * sg.k; drawSign(ctx, M, sg, true, ppm); }
+      ctx.setTransform(M);
     }
-    ctx.fillStyle = '#ff3a2a';
-    for (const F of visBeacons) for (const bc of F.beacons) if (bc.on) { ctx.globalAlpha = em; ctx.beginPath(); ctx.arc(bc.x, bc.y, 0.28, 0, TAU); ctx.fill(); }
-    if (fine) for (const c of visCars) carLenses(ctx, c, t);
+    ctx.fillStyle = '#ff3a2a'; ctx.globalAlpha = em; ctx.beginPath(); let nb = 0;
+    for (const F of visBeacons) for (const bc of F.beacons) if (bc.on) { nb++; ctx.moveTo(bc.x + 0.28, bc.y); ctx.arc(bc.x, bc.y, 0.28, 0, TAU); }
+    if (nb) ctx.fill();
+    if (fine) { for (const c of visCars) carLenses(ctx, M, c, t); ctx.setTransform(M); }
     ctx.globalAlpha = 1;
   }
-  function carLenses(ctx, c, t) {
+  function carLenses(ctx, M, c, t) {
     if (!X.inView(c.x, c.y, c.len)) return;
     const L = c.len, W = c.wid, kind = c.model && c.model.kind, hk = c.maxHp ? c.hp / c.maxHp : 1;
-    ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(c.th);
+    if (!c.lightsOn && !c.braking && !c.siren) return;
+    place(ctx, M, c.x, c.y, c.th);
     if (c.lightsOn) {
       ctx.fillStyle = HEAD; ctx.globalAlpha = em;
       if (hk >= 0.35) ctx.fillRect(L / 2 - 0.13, -W / 2 + 0.12, 0.12, 0.38);
@@ -622,25 +893,27 @@
       else { ctx.fillStyle = on ? '#ff3030' : '#3a6cff'; ctx.fillRect(L * (fast ? 0.22 : 0.25), -0.6, 0.25, 1.2); }
     }
     if (kind === 'taxi' && c.lightsOn) { ctx.fillStyle = '#ffe680'; ctx.globalAlpha = em * 0.7; ctx.fillRect(-0.2, -0.38, 0.26, 0.76); }
-    ctx.restore();
   }
   // extra neon tubes (Neon Mile) and the rooftop signs, unlit by day; the night pass makes them glow
   function renderBuildings(ctx, view) {
     if (X.scene || !X.city) return;
     ctx.lineWidth = 0.4;
-    for (const n of neonExtra) {
-      if (!X.inView(n.cx, n.cy, n.len / 2 + 2)) continue;
-      ctx.strokeStyle = n.col; ctx.beginPath(); ctx.moveTo(n.x0, n.y0); ctx.lineTo(n.x1, n.y1); ctx.stroke();
+    for (const col of NEON) {   // one path per colour
+      let any = false;
+      for (const n of neonExtra) {
+        if (n.col !== col || !X.inView(n.cx, n.cy, n.len / 2 + 2)) continue;
+        if (!any) { any = true; ctx.beginPath(); }
+        ctx.moveTo(n.x0, n.y0); ctx.lineTo(n.x1, n.y1);
+      }
+      if (any) { ctx.strokeStyle = col; ctx.stroke(); }
     }
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    const M = ctx.getTransform(), ppm = ppmOf(view);
+    let any = false;
     for (const sg of signs) {
       if (!X.inView(sg.x, sg.y, sg.w)) continue;
-      ctx.save(); ctx.translate(sg.x, sg.y); if (sg.rot) ctx.rotate(sg.rot);
-      ctx.font = `900 ${sg.fs.toFixed(2)}px "Barlow Condensed", Impact, sans-serif`;
-      ctx.globalAlpha = 0.55; ctx.lineWidth = 0.16; ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.strokeText(sg.text, 0, 0, sg.w);
-      ctx.fillStyle = sg.col; ctx.fillText(sg.text, 0, 0, sg.w);
-      ctx.restore();
+      any = true; drawSign(ctx, M, sg, false, ppm);
     }
+    if (any) ctx.setTransform(M);
     ctx.globalAlpha = 1;
   }
 
@@ -662,7 +935,7 @@
     updateSky();
     if (sky.d < 0.01) return 1;
     let keep = 1;
-    if (X.lastView && X.inView(x, y, 0)) { for (let k = 0; k < nL; k++) { const f = recCut(LP[k], x, y); if (f > 0) keep *= 1 - Math.min(1, f); } }
+    if (X.lastView && X.inView(x, y, 0) && !offFrame) { for (let k = 0; k < nL; k++) { const f = recCut(LP[k], x, y); if (f > 0) keep *= 1 - Math.min(1, f); } }
     else if (lampGrid && !X.scene) {
       const i0 = cl(Math.floor((x - 12 + CELL) / CELL), 0, GX - 1), i1 = cl(Math.floor((x + 12 + CELL) / CELL), 0, GX - 1);
       const j0 = cl(Math.floor((y - 12 + CELL) / CELL), 0, GY - 1), j1 = cl(Math.floor((y + 12 + CELL) / CELL), 0, GY - 1);

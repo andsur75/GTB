@@ -609,6 +609,21 @@ const rs = await t.eval(async () => {
 check('a second game starts clean', rs.inv.join() === 'fists' && rs.w === 'fists' && rs.pk >= 15 && !rs.proj && !rs.fires && !rs.frenzy && !rs.pow, rs);
 await t.shot('w16-restart');
 
+const setS = (k, v) => t.eval(([k, v]) => { if (PG.setSetting) PG.setSetting(k, v); else (PG.settings = PG.settings || {})[k] = v; }, [k, v]);
+const presetHigh = () => t.eval(() => { if (PG.applyPreset) PG.applyPreset('high'); else Object.assign(PG.settings = PG.settings || {}, { lighting: 'high', particles: 'high', detail: 'high', shadows: true, decals: 'high', pedDensity: 1, policeMax: 8, wheel: 'zoom' }); });
+// ---- the mouse wheel: zoom by default; PG.settings.wheel 'weapon' switches weapons ----
+const wheel = async mode => { await setS('wheel', mode); return t.eval(async () => {
+  const X = PG.gta, P = X.player; if (!P.inv.pistol) X.giveWeapon('pistol', 30); if (!P.inv.uzi) X.giveWeapon('uzi', 60);
+  if (P.car) X.exitCar(); P.weapon = 'pistol'; if (P.ped) P.ped.weapon = 'pistol';
+  await new Promise(r => setTimeout(r, 150));
+  window.dispatchEvent(new WheelEvent('wheel', { deltaY: 120 }));
+  await new Promise(r => setTimeout(r, 150));
+  return P.weapon;
+}); };
+const wz = await wheel('zoom'), ww = await wheel('weapon');
+await presetHigh();
+check('mouse wheel: no weapon change in zoom mode, the next weapon in weapon mode', wz === 'pistol' && ww !== 'pistol', { zoom: wz, weapon: ww });
+
 check('no console errors', !t.errors.length, t.errors.slice(0, 5).join(' | '));
 console.log(failed ? `${failed} check(s) failed` : 'all weapons checks passed');
 await t.close();

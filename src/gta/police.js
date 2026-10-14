@@ -907,6 +907,9 @@
     radio(say(LINES.heli), 1);
     return S.heli;
   }
+  // PG.settings.policeMax: how many police vehicles may be out at once (TUNE.maxCars is the hard ceiling)
+  const SET = () => PG.settings || {};
+  function carCap() { const m = +SET().policeMax; return m > 0 ? Math.min(TUNE.maxCars, Math.round(m)) : TUNE.maxCars; }
   function despawnCar(c) {
     X.removeCar(c);
     if (c.pol) for (const p of c.pol.out) if (p.ai && p.ai.car === c) p.ai.car = null;
@@ -944,6 +947,7 @@
     if (!X.city || P.state !== 'play') return;
 
     const st = X.places && X.places.police, stD = st ? Math.hypot(st.door.x - S.fx, st.door.y - S.fy) : 1e9;
+    const capCars = carCap();
     let patrolCars = 0, pursuit = 0, cars = 0, footPatrol = 0;
     for (const c of S.cars) {
       if (c.wrecked) continue;
@@ -955,7 +959,7 @@
     if (!X.scene) {
       if (stD < 150) { S.guardT -= 0.5; if (S.guardT <= 0) { S.guardT = 8; stationGuards(); } }
       if (stD > 200) { S.restockT -= 0.5; if (S.restockT <= 0 && st && !X.inView(st.door.x, st.door.y, 8)) { S.restockT = 30; stationCars(); } }
-      if (!lvl && patrolCars < TUNE.patrolCars + (stD < 250 ? 1 : 0) && cars < TUNE.maxCars) spawnPatrolCar();
+      if (!lvl && patrolCars < TUNE.patrolCars + (stD < 250 ? 1 : 0) && cars < capCars) spawnPatrolCar();
       if (footPatrol < TUNE.patrolFoot && S.cops.length < TUNE.maxCops) spawnFootPatrol();
       if (!lvl && patrolCars > TUNE.patrolCars + 2) {   // trim the patrol back down after a chase
         for (const c of S.cars) if (c.pol.role === 'patrol' && patrolCars > TUNE.patrolCars + 1 && Math.hypot(c.x - S.fx, c.y - S.fy) > 140 && !X.inView(c.x, c.y, 8)) { despawnCar(c); patrolCars--; }
@@ -967,12 +971,17 @@
       if (c.removed || c.wrecked || !c.npcDriver) continue;
       if (c.pol.role === 'patrol' && Math.hypot(c.x - S.fx, c.y - S.fy) < 280) { toPursuit(c); pursuit++; whoop(c); }
     }
-    if (pursuit < PURSUIT[lvl] && S.spawnT <= 0 && cars < TUNE.maxCars) { if (spawnPursuitCar()) S.spawnT = lvl >= 4 ? 2 : 3.2; else S.spawnT = 0.5; }
+    if (pursuit < PURSUIT[lvl] && S.spawnT <= 0 && cars < capCars) { if (spawnPursuitCar()) S.spawnT = lvl >= 4 ? 2 : 3.2; else S.spawnT = 0.5; }
+    if (cars > capCars) {   // the police cap went down: the farthest pursuer out of sight goes home
+      let far = null, fd = 0;
+      for (const c of S.cars) { if (c.removed || c.wrecked || c.pol.role !== 'pursuit' || c.pol.forced || X.inView(c.x, c.y, c.len + 4)) continue; const d = Math.hypot(c.x - S.fx, c.y - S.fy); if (d > fd) { fd = d; far = c; } }
+      if (far) despawnCar(far);
+    }
     if (X.scene) {
       if (lvl >= 4 && !S.raided && S.entry && S.inT > TUNE.raidAfter && S.cops.length < TUNE.maxCops) raid();
       return;
     }
-    if (lvl >= 3 && P.car && P.car.speed > 7 && S.blockT <= 0 && S.blocks.length < (lvl >= 5 ? 2 : 1)) S.blockT = spawnRoadblock(false) ? rand(16, 24) : 2;
+    if (lvl >= 3 && P.car && P.car.speed > 7 && S.blockT <= 0 && S.blocks.length < (lvl >= 5 ? 2 : 1) && cars + 2 <= capCars) S.blockT = spawnRoadblock(false) ? rand(16, 24) : 2;
     if (lvl >= 5 && !S.heli && S.heliT <= 0) spawnHeli();
   }
   function raid() {
@@ -1414,16 +1423,39 @@
 
   // ================= drawing =================
   let SPR = null;
+  const GLOWRGB = { red: '255,40,40', blue: '60,110,255', spot: '235,242,255' };
+  function paintGlow(g, rgb, n) {
+    const h = n / 2, gr = g.createRadialGradient(h, h, 0, h, h, h);
+    gr.addColorStop(0, `rgba(${rgb},0.9)`); gr.addColorStop(0.35, `rgba(${rgb},0.35)`); gr.addColorStop(1, `rgba(${rgb},0)`);
+    g.fillStyle = gr; g.fillRect(0, 0, n, n);
+  }
   function sprites() {
     if (SPR) return SPR;
-    const mk = rgb => {
-      const cv = document.createElement('canvas'); cv.width = cv.height = 64;
-      const g = cv.getContext('2d'), gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
-      gr.addColorStop(0, `rgba(${rgb},0.9)`); gr.addColorStop(0.35, `rgba(${rgb},0.35)`); gr.addColorStop(1, `rgba(${rgb},0)`);
-      g.fillStyle = gr; g.fillRect(0, 0, 64, 64); return cv;
-    };
-    SPR = { red: mk('255,40,40'), blue: mk('60,110,255'), spot: mk('235,242,255') };
+    const mk = rgb => { const cv = document.createElement('canvas'); cv.width = cv.height = 64; paintGlow(cv.getContext('2d'), rgb, 64); return cv; };
+    SPR = { red: mk(GLOWRGB.red), blue: mk(GLOWRGB.blue), spot: mk(GLOWRGB.spot) };
     return SPR;
+  }
+  // Glows are cached at their on-screen pixel size (6 % steps) and blitted in device space without
+  // filtering (about 3x cheaper than scaling a small sprite on a software-rasterised canvas).
+  const GSTEP = Math.log(1.06);
+  let gM = null, gPpm = 0;
+  function glowBegin(ctx) {
+    gM = null;
+    if (SET().fastRender === false || !PG.sprites) return;
+    gM = ctx.getTransform(); gPpm = Math.hypot(gM.a, gM.b);
+    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.imageSmoothingEnabled = false;
+  }
+  function glowEnd(ctx) { if (gM) { ctx.setTransform(gM); ctx.imageSmoothingEnabled = true; gM = null; } }
+  function glow(ctx, kind, x, y, r) {
+    const M = gM, px = 2 * r * gPpm;
+    if (!M || px > 320) { if (M) { ctx.setTransform(M); ctx.imageSmoothingEnabled = true; } ctx.drawImage(sprites()[kind], x - r, y - r, 2 * r, 2 * r); if (M) { ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.imageSmoothingEnabled = false; } return; }
+    if (px < 1.5) return;
+    const n = Math.max(2, Math.round(Math.exp(Math.round(Math.log(px) / GSTEP) * GSTEP)));
+    ctx.drawImage(PG.sprites.get('pglow|' + kind + '|' + n, n, n, g => paintGlow(g, GLOWRGB[kind], n)), M.a * x + M.c * y + M.e - n / 2, M.b * x + M.d * y + M.f - n / 2);
+  }
+  function place(ctx, M, x, y, th) {
+    const cs = Math.cos(th), sn = Math.sin(th);
+    ctx.setTransform(M.a * cs + M.c * sn, M.b * cs + M.d * sn, M.c * cs - M.a * sn, M.d * cs - M.b * sn, M.a * x + M.c * y + M.e, M.b * x + M.d * y + M.f);
   }
   // POLITI livery (Battenburg checks and bonnet lettering), army canvas, open doors when the crew is out.
   const baseDrawCar = X.drawCar;
@@ -1433,20 +1465,10 @@
     if (c.wrecked || !c.model) return;
     const L = c.len, W = c.wid, k = c.model.kind;
     if (k !== 'police' && !c.polArmy && !(c.pol && c.pol.role === 'empty' && c.pol.out.length)) return;
-    ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(c.th);
-    if (k === 'police') {
-      const n = 8, s = L * 0.56 / n, x0 = -L * 0.3;
-      for (let i = 0; i < n; i++) { ctx.fillStyle = i % 2 ? '#f2cf1d' : '#1d4fb8'; ctx.fillRect(x0 + i * s, -W / 2 + 0.03, s, 0.2); ctx.fillRect(x0 + i * s, W / 2 - 0.23, s, 0.2); }
-      ctx.save(); ctx.translate(L / 2 - 0.62, 0); ctx.rotate(Math.PI / 2);
-      ctx.fillStyle = '#f4f4f4'; ctx.font = '800 0.34px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('POLITI', 0, 0);
-      ctx.restore();
-    } else if (c.polArmy) {
-      ctx.fillStyle = '#4a5634'; PG.rr(ctx, -L / 2 + 0.05, -W / 2 + 0.05, L * 0.7, W - 0.1, 0.18); ctx.fill();
-      ctx.strokeStyle = '#323b22'; ctx.lineWidth = 0.09;
-      for (let i = 1; i < 6; i++) { const x = -L / 2 + 0.05 + i * L * 0.7 / 6; ctx.beginPath(); ctx.moveTo(x, -W / 2 + 0.1); ctx.lineTo(x, W / 2 - 0.1); ctx.stroke(); }
-      ctx.fillStyle = c.color; ctx.fillRect(L * 0.21, -W / 2 + 0.12, L * 0.11, W - 0.24);
-      ctx.fillStyle = '#e8ead8'; star(ctx, -L * 0.15, 0, 0.55);
-    }
+    const M = ctx.getTransform();
+    place(ctx, M, c.x, c.y, c.th);
+    // (a cached livery sprite was measured slower than these two batched fills and the lettering)
+    if (k === 'police' || c.polArmy) livery(ctx, c, k);
     if (c.pol && c.pol.role === 'empty' && c.pol.out.length && X.time - c.pol.doorT < 40) {   // doors flung open
       ctx.fillStyle = c.color; ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.lineWidth = 0.05;
       for (const sd of [-1, 1]) {
@@ -1455,12 +1477,35 @@
         ctx.restore();
       }
     }
-    ctx.restore();
+    ctx.setTransform(M);
   };
+  // POLITI Battenburg checks and bonnet lettering, or army canvas, in the car's own frame
+  function livery(ctx, c, k) {
+    const L = c.len, W = c.wid;
+    if (k === 'police') {
+      const n = 8, s = L * 0.56 / n, x0 = -L * 0.3;
+      ctx.fillStyle = '#1d4fb8'; ctx.beginPath();
+      for (let i = 0; i < n; i += 2) { ctx.rect(x0 + i * s, -W / 2 + 0.03, s, 0.2); ctx.rect(x0 + i * s, W / 2 - 0.23, s, 0.2); }
+      ctx.fill();
+      ctx.fillStyle = '#f2cf1d'; ctx.beginPath();
+      for (let i = 1; i < n; i += 2) { ctx.rect(x0 + i * s, -W / 2 + 0.03, s, 0.2); ctx.rect(x0 + i * s, W / 2 - 0.23, s, 0.2); }
+      ctx.fill();
+      ctx.save(); ctx.translate(L / 2 - 0.62, 0); ctx.rotate(Math.PI / 2);
+      ctx.fillStyle = '#f4f4f4'; ctx.font = '800 0.34px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('POLITI', 0, 0);
+      ctx.restore();
+    } else {
+      ctx.fillStyle = '#4a5634'; PG.rr(ctx, -L / 2 + 0.05, -W / 2 + 0.05, L * 0.7, W - 0.1, 0.18); ctx.fill();
+      ctx.strokeStyle = '#323b22'; ctx.lineWidth = 0.09; ctx.beginPath();
+      for (let i = 1; i < 6; i++) { const x = -L / 2 + 0.05 + i * L * 0.7 / 6; ctx.moveTo(x, -W / 2 + 0.1); ctx.lineTo(x, W / 2 - 0.1); }
+      ctx.stroke();
+      ctx.fillStyle = c.color; ctx.fillRect(L * 0.21, -W / 2 + 0.12, L * 0.11, W - 0.24);
+      ctx.fillStyle = '#e8ead8'; star(ctx, -L * 0.15, 0, 0.55);
+    }
+  }
   function drawTank(ctx, c, t) {
     const L = c.len, W = c.wid, wr = c.wrecked, tw = 0.8, ph = ((c.treadPh || 0) % 0.55 + 0.55) % 0.55;
     ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(c.th);
-    ctx.fillStyle = 'rgba(0,0,0,0.38)'; ctx.fillRect(-L / 2 + 0.3, -W / 2 + 0.35, L, W);
+    if (SET().shadows !== false) { ctx.fillStyle = 'rgba(0,0,0,0.38)'; ctx.fillRect(-L / 2 + 0.3, -W / 2 + 0.35, L, W); }
     ctx.fillStyle = '#1c1d19'; ctx.fillRect(-L / 2, -W / 2, L, tw); ctx.fillRect(-L / 2, W / 2 - tw, L, tw);   // tracks
     if (!wr) { ctx.fillStyle = '#4a4c42'; for (let x = -L / 2 + ph; x < L / 2 - 0.15; x += 0.55) { ctx.fillRect(x, -W / 2 + 0.06, 0.2, tw - 0.12); ctx.fillRect(x, W / 2 - tw + 0.06, 0.2, tw - 0.12); } }
     ctx.fillStyle = wr ? '#1b1b1b' : c.color; PG.rr(ctx, -L / 2 + 0.25, -W / 2 + tw - 0.15, L - 0.5, W - 2 * tw + 0.3, 0.3); ctx.fill();
@@ -1486,54 +1531,60 @@
     ctx.closePath(); ctx.fill();
   }
   function drawGround(ctx) {
-    if (X.scene) return;
+    if (X.scene || !S.blocks.length) return;
+    const M = ctx.getTransform(), sh = SET().shadows !== false;
     for (const b of S.blocks) {
       const s = b.strip; if (!s || !X.inView(s.x, s.y, s.len)) continue;
-      ctx.save(); ctx.translate(s.x, s.y); if (s.horiz) ctx.rotate(Math.PI / 2);   // local x runs across the road
+      place(ctx, M, s.x, s.y, s.horiz ? Math.PI / 2 : 0);   // local x runs across the road
       const L = s.len;
-      ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(-L / 2 + 0.08, -0.2, L, 0.46);
+      if (sh) { ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(-L / 2 + 0.08, -0.2, L, 0.46); }
       ctx.fillStyle = '#2b2d31'; ctx.fillRect(-L / 2, -0.22, L, 0.44);
-      ctx.fillStyle = '#c9ccd1';
-      for (let x = -L / 2 + 0.15; x < L / 2 - 0.1; x += 0.32) { ctx.beginPath(); ctx.moveTo(x, -0.2); ctx.lineTo(x + 0.11, -0.42); ctx.lineTo(x + 0.22, -0.2); ctx.moveTo(x, 0.2); ctx.lineTo(x + 0.11, 0.42); ctx.lineTo(x + 0.22, 0.2); ctx.fill(); }
+      ctx.fillStyle = '#c9ccd1'; ctx.beginPath();
+      for (let x = -L / 2 + 0.15; x < L / 2 - 0.1; x += 0.32) { ctx.moveTo(x, -0.2); ctx.lineTo(x + 0.11, -0.42); ctx.lineTo(x + 0.22, -0.2); ctx.moveTo(x, 0.2); ctx.lineTo(x + 0.11, 0.42); ctx.lineTo(x + 0.22, 0.2); }
+      ctx.fill();
       ctx.fillStyle = '#f2cf1d'; ctx.fillRect(L / 2 - 0.05, -0.15, 0.5, 0.3);
-      ctx.restore();
     }
+    ctx.setTransform(M);
   }
   function drawProps(ctx) {
-    if (X.scene) return;
+    if (X.scene || !S.blocks.length) return;
+    const M = ctx.getTransform(), sh = SET().shadows !== false;
     for (const b of S.blocks) for (const br of b.bars) {
       if (!X.inView(br.x, br.y, 3)) continue;
-      ctx.save(); ctx.translate(br.x, br.y); ctx.rotate(br.th);
-      ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(-1.2 + 0.1, -0.12 + 0.12, 2.4, 0.3);
+      place(ctx, M, br.x, br.y, br.th);
+      if (sh) { ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(-1.2 + 0.1, -0.12 + 0.12, 2.4, 0.3); }
       ctx.fillStyle = '#3a3a3a'; ctx.fillRect(-1.0, -0.32, 0.12, 0.64); ctx.fillRect(0.88, -0.32, 0.12, 0.64);
-      for (let i = 0; i < 6; i++) { ctx.fillStyle = i % 2 ? '#f4f4f4' : '#d42a2a'; ctx.fillRect(-1.2 + i * 0.4, -0.13, 0.4, 0.26); }
-      ctx.restore();
+      ctx.fillStyle = '#d42a2a'; ctx.fillRect(-1.2, -0.13, 2.4, 0.26);
+      ctx.fillStyle = '#f4f4f4'; ctx.beginPath(); for (let i = 1; i < 6; i += 2) ctx.rect(-1.2 + i * 0.4, -0.13, 0.4, 0.26); ctx.fill();
     }
+    ctx.setTransform(M);
   }
   // Light bars: a coloured pool on the tarmac under the car, and a small flare on the bar itself.
   function drawGlowPools(ctx, view, t) {
-    if (X.scene) return;
-    const sp = sprites(), on = Math.floor(t * 8) % 2 === 0;
-    ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.5;
+    if (X.scene || SET().detail === 'low') return;
+    const on = Math.floor(t * 8) % 2 === 0;
+    let any = false;
     for (const c of X.cars) {
       if (!c.siren || c.removed || c.wrecked || !X.inView(c.x, c.y, 8)) continue;
+      if (!any) { any = true; glowBegin(ctx); ctx.globalCompositeOperation = 'lighter'; }
       const r = 4.6, fx = Math.cos(c.th), fy = Math.sin(c.th);
-      ctx.drawImage(sp.red, c.x - fy * 1.3 - r, c.y + fx * 1.3 - r, r * 2, r * 2);   // red on one side,
-      ctx.globalAlpha = on ? 0.2 : 0.5;
-      ctx.drawImage(sp.blue, c.x + fy * 1.3 - r, c.y - fx * 1.3 - r, r * 2, r * 2);  // blue on the other
-      ctx.globalAlpha = on ? 0.5 : 0.2;
+      ctx.globalAlpha = on ? 0.5 : 0.2; glow(ctx, 'red', c.x - fy * 1.3, c.y + fx * 1.3, r);   // red on one side,
+      ctx.globalAlpha = on ? 0.2 : 0.5; glow(ctx, 'blue', c.x + fy * 1.3, c.y - fx * 1.3, r);  // blue on the other
     }
+    if (any) glowEnd(ctx);
     ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
   }
   function drawCarsFx(ctx, view, t) {
     if (X.scene) return;
-    const sp = sprites(), on = Math.floor(t * 8) % 2 === 0;
-    ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.85;
+    const on = Math.floor(t * 8) % 2 === 0;
+    let any = false;
     for (const c of X.cars) {
       if (!c.siren || c.removed || c.wrecked || !X.inView(c.x, c.y, 8)) continue;
+      if (!any) { any = true; glowBegin(ctx); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.85; }
       const fx = Math.cos(c.th), fy = Math.sin(c.th), bx = c.model.kind === 'police' ? 0 : c.len * 0.25 + 0.12, side = on ? -0.38 : 0.38;
-      ctx.drawImage(on ? sp.red : sp.blue, c.x + fx * bx - fy * side - 0.8, c.y + fy * bx + fx * side - 0.8, 1.6, 1.6);
+      glow(ctx, on ? 'red' : 'blue', c.x + fx * bx - fy * side, c.y + fy * bx + fx * side, 0.8);
     }
+    if (any) glowEnd(ctx);
     ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
   }
   function drawHeli(ctx, h, t) {
@@ -1544,14 +1595,15 @@
       const a = Math.atan2(h.sy - h.y, h.sx - h.x), nx = -Math.sin(a), ny = Math.cos(a), w = 4.6;
       ctx.fillStyle = 'rgba(205,220,255,0.07)';
       ctx.beginPath(); ctx.moveTo(h.x + nx * 0.4, h.y + ny * 0.4); ctx.lineTo(h.sx + nx * w, h.sy + ny * w); ctx.lineTo(h.sx - nx * w, h.sy - ny * w); ctx.lineTo(h.x - nx * 0.4, h.y - ny * 0.4); ctx.closePath(); ctx.fill();
-      ctx.globalAlpha = 0.5; ctx.drawImage(sprites().spot, h.sx - 7, h.sy - 7, 14, 14);
+      ctx.globalAlpha = 0.5; glowBegin(ctx); glow(ctx, 'spot', h.sx, h.sy, 7); glowEnd(ctx);
       ctx.restore();
     }
-    // shadow on the ground
-    ctx.save(); ctx.translate(h.x + h.z * 0.3, h.y + h.z * 0.45); ctx.rotate(h.th);
-    ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.ellipse(0, 0, 2.4, 1.1, 0, 0, TAU); ctx.fill(); ctx.fillRect(-5.3, -0.25, 3.4, 0.5);
-    ctx.beginPath(); ctx.arc(0, 0, 5.2, 0, TAU); ctx.fillStyle = 'rgba(0,0,0,0.08)'; ctx.fill();
-    ctx.restore();
+    if (SET().shadows !== false) {   // shadow on the ground
+      ctx.save(); ctx.translate(h.x + h.z * 0.3, h.y + h.z * 0.45); ctx.rotate(h.th);
+      ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.ellipse(0, 0, 2.4, 1.1, 0, 0, TAU); ctx.fill(); ctx.fillRect(-5.3, -0.25, 3.4, 0.5);
+      ctx.beginPath(); ctx.arc(0, 0, 5.2, 0, TAU); ctx.fillStyle = 'rgba(0,0,0,0.08)'; ctx.fill();
+      ctx.restore();
+    }
     ctx.save(); ctx.translate(h.x, h.y); ctx.rotate(h.th); ctx.scale(s, s);
     ctx.fillStyle = '#20232a'; ctx.fillRect(-1.6, -1.18, 3.4, 0.14); ctx.fillRect(-1.6, 1.04, 3.4, 0.14);   // skids
     ctx.fillStyle = '#1a2f6e'; ctx.fillRect(-5.2, -0.22, 3.6, 0.44);                                        // tail boom
@@ -1569,7 +1621,12 @@
     if (blink) { ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(-5.5, 0, 0.16, 0, TAU); ctx.fill(); }
     ctx.fillStyle = 'rgba(25,27,32,0.16)'; ctx.beginPath(); ctx.arc(0.1, 0, 5.4, 0, TAU); ctx.fill();          // rotor disc
     ctx.fillStyle = 'rgba(22,24,28,0.85)';
-    for (let i = 0; i < 4; i++) { ctx.save(); ctx.rotate(h.rot + i * Math.PI / 2); ctx.fillRect(0, -0.12, 5.4, 0.24); ctx.restore(); }
+    ctx.beginPath();
+    for (let i = 0; i < 4; i++) {   // four blades, one path
+      const a = h.rot + i * Math.PI / 2, c = Math.cos(a), n = Math.sin(a);
+      ctx.moveTo(0.12 * n, -0.12 * c); ctx.lineTo(5.4 * c + 0.12 * n, 5.4 * n - 0.12 * c); ctx.lineTo(5.4 * c - 0.12 * n, 5.4 * n + 0.12 * c); ctx.lineTo(-0.12 * n, 0.12 * c); ctx.closePath();
+    }
+    ctx.fill();
     ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(0, 0, 0.32, 0, TAU); ctx.fill();
     ctx.restore();
   }
@@ -1620,7 +1677,7 @@
     for (const p of S.cops) if (!p.dead && !p.removed && !p.ai.indoor) X.blip(p.x, p.y, '#8fb6ff', { size: 1.8 });
     if (S.heli) X.blip(S.heli.x, S.heli.y, '#ffffff', { size: 4.2, ring: fl });
     // sirens close by wash the edges of the screen red and blue
-    if (S.sirenD < 32 && P.wanted && !X.scene && G().status === 'play') {
+    if (S.sirenD < 32 && P.wanted && !X.scene && G().status === 'play' && SET().screenFx !== false) {
       const a = 0.13 * (1 - S.sirenD / 32), on = Math.floor(t * 8) % 2 === 0, w = Math.max(10, view.cw * 0.012);
       ctx.fillStyle = on ? `rgba(255,30,30,${a})` : `rgba(40,80,255,${a})`; ctx.fillRect(0, 0, w, view.ch);
       ctx.fillStyle = on ? `rgba(40,80,255,${a})` : `rgba(255,30,30,${a})`; ctx.fillRect(view.cw - w, 0, w, view.ch);
@@ -1645,6 +1702,7 @@
       const sp = x != null ? { x, y, th: th || 0 } : roadSpawnPoint(60, 140, false);
       if (!sp) return null;
       const c = makeCopCar(kind === 'tank' ? 'tank' : kind === 'cop' ? 'police' : 'swat', sp.x, sp.y, sp.th, role || 'pursuit', kind === 'tank' ? 'army' : kind);
+      c.pol.forced = true;   // asked for by name: the policeMax trim leaves it alone
       if (c.pol.role === 'pursuit') toPursuit(c);
       return c;
     },

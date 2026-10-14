@@ -287,6 +287,40 @@ body.city .not-city { display: none !important; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition: none !important; }
 }
+
+/* Settings */
+#scr-settings .panel { width: min(100%, 760px); gap: 14px; }
+.set-sec { background: rgba(18, 20, 24, 0.9); border: 2px solid var(--slab-2); border-radius: 10px; padding: 10px 14px 4px; display: flex; flex-direction: column; }
+.set-sec h3 { font-family: var(--hud); font-weight: 800; text-transform: uppercase; letter-spacing: 0.12em; font-size: 15px; color: var(--hazard); margin: 2px 0 2px; }
+.set-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 16px; align-items: center; padding: 10px 0; border-top: 1px solid var(--slab-2); }
+.set-sec h3 + .set-row { border-top: 0; }
+.set-txt { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.set-name { font-family: var(--hud); font-weight: 700; font-size: 18px; line-height: 1.15; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.set-val { font-weight: 700; font-size: 14px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--amber); font-variant-numeric: tabular-nums; }
+.set-desc { margin: 0; font-size: 14px; color: var(--muted); line-height: 1.3; }
+.set-ctl { display: flex; align-items: center; justify-content: flex-end; min-width: 0; }
+.seg { display: inline-flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }
+.seg button { font-family: var(--hud); font-weight: 700; font-size: 15px; letter-spacing: 0.05em; text-transform: uppercase; min-height: 40px; min-width: 46px; padding: 6px 11px; border-radius: 6px; border: 2px solid var(--slab-2); background: var(--slab); color: var(--muted); }
+.seg button:hover { border-color: #3a3f46; color: var(--line); }
+.seg button[aria-pressed="true"] { background: var(--line); color: #111; border-color: var(--line); }
+.seg.big button { font-size: 17px; min-height: 46px; padding: 8px 14px; }
+.seg.big button[aria-pressed="true"] { background: var(--hazard); border-color: var(--hazard); }
+.tgl { position: relative; width: 60px; height: 34px; flex: none; border-radius: 999px; border: 2px solid #3a3f46; background: var(--slab); padding: 0; }
+.tgl::after { content: ''; position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: 50%; background: var(--muted); transition: transform .15s ease, background .15s ease; }
+.tgl[aria-checked="true"] { background: #1f3a26; border-color: var(--ok); }
+.tgl[aria-checked="true"]::after { transform: translateX(26px); background: var(--ok); }
+.set-range { width: min(240px, 46vw); height: 34px; accent-color: var(--hazard); margin: 0; }
+.set-foot { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.set-sec .set-row:has(.tgl) { grid-template-columns: minmax(0, 1fr) auto; }
+@media (max-width: 560px) { .set-row { grid-template-columns: minmax(0, 1fr); } .set-row .set-ctl { justify-content: flex-start; } .seg { justify-content: flex-start; } .set-range { width: 100%; } .set-sec .set-row:has(.tgl) .set-ctl { justify-content: flex-end; } }
+
+/* FPS counter */
+#fps { position: absolute; left: 8px; top: calc(6px + env(safe-area-inset-top, 0px)); z-index: 40; pointer-events: none; display: flex; align-items: center; gap: 8px; padding: 3px 8px; border-radius: 6px; background: rgba(10, 11, 14, 0.74); border: 1px solid #2f3339; font: 700 13px/1.2 var(--hud); color: var(--muted); font-variant-numeric: tabular-nums; letter-spacing: 0.03em; white-space: nowrap; }
+#fps b { color: var(--ok); font-size: 15px; }
+#fps b.warn { color: var(--amber); } #fps b.bad { color: var(--alarm); }
+#fps canvas { width: 60px; height: 16px; display: block; }
+body.fps-on .hud-top > .chip { margin-top: 28px; }
+body.fps-on .screen:not(.clear) { padding-top: max(44px, env(safe-area-inset-top, 0px)); }
 </style>
 
 <div id="stage">
@@ -330,6 +364,7 @@ body.city .not-city { display: none !important; }
       <p class="sub">A whole city nobody planned, at night. Steal anything with wheels, answer the ringing phones for Artur, rob the bank, and stay off the police radio.</p>
       <div class="btns">
         <button class="btn gta" id="btn-gta"><span>Play</span></button>
+        <button class="btn" id="btn-settings">Settings</button>
       </div>
       <p class="whoami" id="whoami"><span id="whoami-label">Driving as</span> <b id="whoami-name"></b> <button class="btn link" id="btn-rename">Change name</button></p>
       <div class="controls" aria-label="Controls">
@@ -376,10 +411,12 @@ body.city .not-city { display: none !important; }
           <h3>Anytime</h3>
           <dl>
             <div><dt>Hold <kbd>Tab</kbd></dt><dd>Big map</dd></div>
-            <div><dt>Mouse wheel</dt><dd>Zoom in and out</dd></div>
+            <div><dt>Mouse wheel</dt><dd>Zoom in and out (or switch weapons, in Settings)</dd></div>
             <div><dt><kbd>C</kbd></dt><dd>In a car: camera follows the car or stays north up (follows by default)</dd></div>
             <div><dt><kbd>P</kbd> or <kbd>Esc</kbd></dt><dd>Pause</dd></div>
             <div><dt><kbd>M</kbd></dt><dd>Mute</dd></div>
+            <div><dt><kbd>O</kbd></dt><dd>Settings: graphics quality, effects, traffic, controls</dd></div>
+            <div><dt><kbd>`</kbd></dt><dd>FPS counter on or off</dd></div>
             <div><dt>Touch screen</dt><dd>On-screen stick and buttons</dd></div>
           </dl>
           <h3 class="tips-head">How it works</h3>
@@ -445,11 +482,19 @@ body.city .not-city { display: none !important; }
     <div class="panel" style="max-width:460px;text-align:center;align-items:center">
       <h2 class="head">Paused</h2>
       <p class="blurb">Take a breath. The pillar is not going anywhere. That is rather the problem.</p>
-      <div class="btns"><button class="btn primary" id="pause-resume">Resume</button><button class="btn" id="pause-restart">Restart</button><button class="btn" id="pause-map">Level map</button></div>
+      <div class="btns"><button class="btn primary" id="pause-resume">Resume</button><button class="btn" id="pause-settings">Settings</button><button class="btn" id="pause-restart">Restart</button><button class="btn" id="pause-map">Level map</button></div>
       <p class="fine park-only">W/S or arrows: gas &amp; reverse · A/D: steer · Space: handbrake · T: training wheels · R: restart</p>
-      <p class="fine gta-only">On foot: WASD walk · Shift sprint · mouse aim · click, Ctrl, J or Space shoot · Q/E or 1-9 weapons · F cars, doors, phones. Driving: W gas · Shift full throttle · S brake · A/D steer · Space handbrake · F get out · H horn · R radio · L lights · G side job. Anytime: Tab map · C camera · M mute.</p>
+      <p class="fine gta-only">On foot: WASD walk · Shift sprint · mouse aim · click, Ctrl, J or Space shoot · Q/E or 1-9 weapons · F cars, doors, phones. Driving: W gas · Shift full throttle · S brake · A/D steer · Space handbrake · F get out · H horn · R radio · L lights · G side job. Anytime: Tab map · C camera · M mute · O settings · ` FPS counter.</p>
       <p class="fine city-only">W gas · Shift full throttle · S brake, then reverse · A/D steer · Space handbrake · T drift assist · R new city</p>
       <p class="fine drift-only not-city">W gas · S brake, then reverse · A/D steer · Space handbrake (with steering above 50 km/h it kicks the rear out) · T drift assist · R restart</p>
+    </div>
+  </section>
+
+  <section class="screen scroll" id="scr-settings" hidden aria-labelledby="set-head">
+    <div class="panel">
+      <div class="row-head"><div><p class="eyebrow">Options</p><h2 class="head" id="set-head">Settings</h2></div><button class="btn small" id="set-back">Back</button></div>
+      <div id="set-body"></div>
+      <div class="set-foot"><p class="fine">Changes apply at once and are saved on this device. O or Esc closes this screen.</p><button class="btn primary" id="set-done">Done</button></div>
     </div>
   </section>
 
@@ -476,6 +521,7 @@ body.city .not-city { display: none !important; }
   </section>
 
   <div id="touch" hidden></div>
+  <div id="fps" hidden aria-hidden="true"><span><b id="fps-v">--</b> FPS</span><span id="fps-t"></span><canvas id="fps-spark" width="120" height="32"></canvas></div>
 </div>
 <script>
 // ---- cars.js ----
@@ -1969,6 +2015,88 @@ body.city .not-city { display: none !important; }
   };
 })(typeof window !== 'undefined' ? (window.PG = window.PG || {}) : (globalThis.PG = globalThis.PG || {}));
 
+// ---- settings.js ----
+// Graphics, effects, world, controls and audio options. PG.settings holds the current values: modules
+// read it every frame (never cache across frames). Quality presets fill in the keys that trade looks for
+// speed; changing one of those by hand switches the preset to 'custom'. Saved in the player's state.
+(function (PG) {
+  const PRESET_KEYS = ['renderScale', 'maxDpr', 'adaptive', 'fastRender', 'lighting', 'shadows', 'particles', 'decals', 'skidMarks', 'weather', 'ambientLife', 'detail', 'screenFx', 'traffic', 'pedDensity', 'policeMax'];
+  const P = (...v) => { const o = {}; PRESET_KEYS.forEach((k, i) => { o[k] = v[i]; }); return o; };
+  PG.QUALITY_PRESETS = {
+    low: P(0.6, 1, true, true, 'low', false, 'low', 'low', false, false, false, 'low', false, 0.6, 0.5, 4),
+    medium: P(0.8, 1, true, true, 'medium', true, 'medium', 'high', true, true, false, 'high', true, 0.8, 0.75, 6),
+    high: P(1, 1.5, true, true, 'high', true, 'high', 'high', true, true, true, 'high', true, 1, 1, 8),
+    ultra: P(1, 2, false, true, 'high', true, 'high', 'high', true, true, true, 'high', true, 1.25, 1.25, 10),
+  };
+  PG.PRESET_KEYS = PRESET_KEYS;
+  // key: [type, allowed values | [min, max, step]]
+  const SPEC = PG.SETTINGS_SPEC = {
+    quality: ['enum', ['low', 'medium', 'high', 'ultra', 'custom']],
+    renderScale: ['num', [0.5, 1, 0.05]], maxDpr: ['enum', [1, 1.5, 2]], adaptive: ['bool'], fpsCap: ['enum', [0, 30, 60]], showFps: ['bool'], fastRender: ['bool'],
+    lighting: ['enum', ['off', 'low', 'medium', 'high']], lightEngine: ['enum', ['auto', 'webgl', 'canvas']], shadows: ['bool'],
+    particles: ['enum', ['low', 'medium', 'high']], decals: ['enum', ['low', 'high']], skidMarks: ['bool'], weather: ['bool'], ambientLife: ['bool'],
+    detail: ['enum', ['low', 'high']], screenFx: ['bool'], cameraShake: ['bool'],
+    traffic: ['num', [0.5, 1.25, 0.05]], pedDensity: ['num', [0.5, 1.25, 0.05]], policeMax: ['num', [3, 10, 1]],
+    wheel: ['enum', ['zoom', 'weapon']], radio: ['bool'],
+  };
+  PG.SETTINGS_DEFAULTS = Object.assign({ quality: 'high' }, PG.QUALITY_PRESETS.high, { showFps: true, fpsCap: 0, wheel: 'zoom', radio: true, cameraShake: true, lightEngine: 'auto' });
+  // Particle and ground-decal caps per setting.
+  PG.PARTICLE_CAP = { low: 80, medium: 250, high: 600 };
+  PG.DECAL_CAP = { low: 80, high: 400 };
+  function clean(k, v) {
+    const s = SPEC[k]; if (!s) return undefined;
+    if (s[0] === 'bool') return typeof v === 'boolean' ? v : v === 'true' ? true : v === 'false' ? false : undefined;
+    if (s[0] === 'enum') return s[1].find(a => a === v || String(a) === String(v));
+    const n = Number(v); if (!Number.isFinite(n) || typeof v === 'boolean') return undefined;
+    const [lo, hi, st] = s[1];
+    return +(Math.round(Math.min(hi, Math.max(lo, n)) / st) * st).toFixed(2);
+  }
+  const S = PG.settings = Object.assign({}, PG.SETTINGS_DEFAULTS);
+  const fns = [];
+  PG.onSettings = fn => { fns.push(fn); return () => { const i = fns.indexOf(fn); if (i >= 0) fns.splice(i, 1); }; };
+  function persist() {
+    try { const st = PG.ui && PG.ui.state && PG.ui.state(); if (st) { st.settings = S; PG.local.save(st); } } catch (e) { /* storage blocked: settings last for this visit */ }
+  }
+  function changed(keys) {
+    if (!keys.length) return;
+    persist();
+    for (const fn of fns.slice()) { try { fn(S, keys); } catch (e) { console.error('[settings] listener failed:', e); } }
+  }
+  PG.setSetting = function (key, value) {
+    if (key === 'quality') return PG.applyPreset(value);
+    const v = clean(key, value); if (v === undefined) return false;
+    const keys = [];
+    if (S[key] !== v) { S[key] = v; keys.push(key); }
+    if (keys.length && PRESET_KEYS.includes(key) && S.quality !== 'custom') { S.quality = 'custom'; keys.push('quality'); }
+    changed(keys);
+    return true;
+  };
+  PG.applyPreset = function (name) {
+    const p = PG.QUALITY_PRESETS[name];
+    if (!p && name !== 'custom') return false;
+    const keys = [];
+    if (p) for (const k of PRESET_KEYS) if (S[k] !== p[k]) { S[k] = p[k]; keys.push(k); }
+    if (S.quality !== name) { S.quality = name; keys.push('quality'); }
+    changed(keys);
+    return true;
+  };
+  // Saved values (from the player's state) on top of the defaults; unknown or out-of-range values are dropped.
+  PG.loadSettings = function (saved) {
+    const keys = [];
+    if (saved && typeof saved === 'object') for (const k in SPEC) {
+      if (!(k in saved)) continue;
+      const v = clean(k, saved[k]); if (v !== undefined && S[k] !== v) { S[k] = v; keys.push(k); }
+    }
+    // A save naming a preset means that preset's current values (presets may be retuned after the save was
+    // made); a partial save without a quality that departs from the preset in use is Custom.
+    const p = PG.QUALITY_PRESETS[S.quality];
+    if (p && saved && typeof saved === 'object' && 'quality' in saved) { for (const k of PRESET_KEYS) if (S[k] !== p[k]) { S[k] = p[k]; if (!keys.includes(k)) keys.push(k); } }
+    else if (p && PRESET_KEYS.some(k => S[k] !== p[k])) { S.quality = 'custom'; keys.push('quality'); }
+    for (const fn of fns.slice()) { try { if (keys.length) fn(S, keys); } catch (e) { console.error('[settings] listener failed:', e); } }
+    return S;
+  };
+})(typeof window !== 'undefined' ? (window.PG = window.PG || {}) : (globalThis.PG = globalThis.PG || {}));
+
 // ---- audio.js ----
 (function (PG) {
   // Every sound is synthesised live with Web Audio. Nothing plays until unlock() runs from a user gesture.
@@ -2313,13 +2441,113 @@ body.city .not-city { display: none !important; }
   }
   function poly(ctx, p) { ctx.beginPath(); ctx.moveTo(p[0].x, p[0].y); for (let i = 1; i < p.length; i++) ctx.lineTo(p[i].x, p[i].y); ctx.closePath(); }
 
-  // Top-down car in world units (metres), centred on (x, y), facing th.
+  // ---------- sprite caches (the fast renderer) ----------
+  // PG.sprites.get(key, w, h, draw(g, w, h)): an offscreen canvas drawn once and reused; the least recently
+  // used ones are dropped past a pixel budget. glow(color, size) / disc(color, size): soft radial sprites to
+  // blit with drawImage + globalAlpha instead of building gradients or arcs every frame.
+  const SPR = PG.sprites = (function () {
+    const cache = new Map(), BUDGET = 12e6, MAXN = 1500;
+    let px = 0;
+    const stats = { n: 0, px: 0, hits: 0, misses: 0, evicted: 0 };
+    function get(key, w, h, draw) {
+      const e = cache.get(key);
+      if (e) { cache.delete(key); cache.set(key, e); stats.hits++; return e; }
+      if (typeof document === 'undefined') return null;
+      w = Math.max(1, Math.min(2048, Math.ceil(w))); h = Math.max(1, Math.min(2048, Math.ceil(h)));
+      const c = document.createElement('canvas'); c.width = w; c.height = h;
+      try { draw(c.getContext('2d'), w, h); } catch (err) { console.error('[sprites] ' + key + ' failed:', err); }
+      cache.set(key, c); px += w * h; stats.misses++;
+      while ((px > BUDGET || cache.size > MAXN) && cache.size > 1) {
+        const k = cache.keys().next().value, o = cache.get(k);
+        cache.delete(k); px -= o.width * o.height; stats.evicted++;
+      }
+      stats.n = cache.size; stats.px = px;
+      return c;
+    }
+    // white radial ramp, then tinted: works for any CSS colour
+    function radial(kind, n, stops, color) {
+      return get(kind + '|' + color + '|' + n, n, n, g => {
+        const r = n / 2, gr = g.createRadialGradient(r, r, 0, r, r, r);
+        for (const s of stops) gr.addColorStop(s[0], 'rgba(255,255,255,' + s[1] + ')');
+        g.fillStyle = gr; g.fillRect(0, 0, n, n);
+        g.globalCompositeOperation = 'source-in'; g.fillStyle = color; g.fillRect(0, 0, n, n); g.globalCompositeOperation = 'source-over';
+      });
+    }
+    const GLOW = [[0, 1], [0.2, 0.7], [0.45, 0.3], [0.7, 0.09], [1, 0]];
+    const DISC = [[0, 1], [0.8, 1], [0.92, 0.5], [1, 0]];
+    return {
+      get,
+      glow: (color, size) => radial('glow', size || 64, GLOW, color),
+      disc: (color, size) => radial('disc', size || 64, DISC, color),
+      clear() { cache.clear(); px = 0; stats.n = 0; stats.px = 0; },
+      stats,
+    };
+  })();
+  // Sprites with lettering may have been drawn before the web fonts arrived: start over once they have.
+  if (typeof document !== 'undefined' && document.fonts && document.fonts.addEventListener) document.fonts.addEventListener('loadingdone', () => SPR.clear());
+  // Pixels-per-metre levels for cached drawings, in half-octave steps (2 .. 128): a cached drawing is never
+  // shown more than ~1.4x smaller than it was drawn, and only a hair larger.
+  PG.spriteLevel = function (ppm) {
+    if (!(ppm > 0)) return 0;
+    return Math.pow(2, Math.max(2, Math.min(14, Math.ceil(Math.log2(ppm) * 2 - 0.12))) / 2);
+  };
+  // Set by the main loop every frame: the main canvas context and its world pixels per metre.
+  PG.mainCtx = null; PG.renderPpm = 0;
+  // What the fast renderer may cache. A GPU-rasterised canvas blits images for next to nothing, so there it
+  // caches everything (ground tiles, cars, trees, smoke, decals, the minimap). A software-rasterised canvas
+  // (no GPU, or a software GL such as SwiftShader or llvmpipe) pays per pixel for every scaled or turned
+  // image: measured in headless Chromium, 40 turned car sprites cost ~10 ms against ~1.7 ms for the same cars
+  // as vector paths, and only unscaled, unturned blits are cheap. There the fast renderer keeps vector
+  // drawing and only cuts calls (batched paths, cached colour strings, one matrix per decal).
+  const caps = PG.renderCaps = { gpu: null, renderer: '', tiles: false, cars: false, trees: false, particles: false, decals: false, minimap: false, detect: null };
+  caps.detect = function () {
+    let r = '';
+    try {
+      const c = document.createElement('canvas'), gl = c.getContext('webgl') || c.getContext('experimental-webgl');
+      if (gl) {
+        const e = gl.getExtension('WEBGL_debug_renderer_info');
+        r = String(e ? gl.getParameter(e.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER) || '');
+        const lose = gl.getExtension('WEBGL_lose_context'); if (lose) lose.loseContext();
+      }
+    } catch (e) { /* no WebGL: treat as software */ }
+    const soft = !r || /swiftshader|llvmpipe|softpipe|software|basic render/i.test(r);
+    caps.gpu = !soft; caps.renderer = r;
+    caps.tiles = caps.cars = caps.trees = caps.particles = caps.decals = caps.minimap = !soft;
+    return caps;
+  };
+
+  // Top-down car in world units (metres), centred on (x, y), facing th. o.overlay(ctx) draws extra
+  // markings in the car's own frame (x forward); o.overlayKey must change whenever they look different.
+  // With the fast renderer, cars on the main canvas are blitted from cached sprites.
+  const CAR_M = 0.75;
   PG.drawCar = function (ctx, o) {
+    const S = PG.settings || {}, ppm = PG.renderPpm;
+    if (S.fastRender && PG.renderCaps.cars && ctx === PG.mainCtx && ppm > 0 && !o.vector) {
+      const lv = PG.spriteLevel(ppm);
+      if (ppm < lv * 1.25 && (o.len + 2 * CAR_M) * lv <= 2048) return drawCarSprite(ctx, o, lv, S);
+    }
+    drawCarVector(ctx, o, S);
+  };
+  function drawCarSprite(ctx, o, lv, S) {
+    const hi = S.detail !== 'low', w = o.wheels && hi ? o.wheels : null;
+    const aq = w ? Math.round(w[0].a / 0.06) : 0;
+    const key = 'car|' + o.len + '|' + o.wid + '|' + o.color + '|' + (o.truck ? 1 : 0) + (o.lights ? 1 : 0) + (o.brake ? 1 : 0) + (o.reverse ? 1 : 0) + (o.charred ? 1 : 0) + (o.player ? 1 : 0) + (S.shadows === false ? 0 : 1) +
+      '|' + (w ? w[0].lx.toFixed(2) + ',' + w[2].lx.toFixed(2) + ',' + w[0].ly.toFixed(2) + ',' + aq : '-') + '|' + (o.overlayKey || '') + '|' + lv;
+    const hl = o.len / 2 + CAR_M, hw = o.wid / 2 + CAR_M;
+    const spr = SPR.get(key, 2 * hl * lv, 2 * hw * lv, g => {
+      g.setTransform(lv, 0, 0, lv, hl * lv, hw * lv);
+      drawCarVector(g, Object.assign({}, o, { x: 0, y: 0, th: 0, wheels: w ? w.map((q, i) => ({ lx: q.lx, ly: q.ly, a: i < 2 ? aq * 0.06 : q.a })) : null }), S);
+    });
+    ctx.save(); ctx.translate(o.x, o.y); if (o.th) ctx.rotate(o.th);
+    ctx.drawImage(spr, -hl, -hw, spr.width / lv, spr.height / lv);
+    ctx.restore();
+  }
+  function drawCarVector(ctx, o, S) {
     const L = o.len, W = o.wid;
     ctx.save(); ctx.translate(o.x, o.y); ctx.rotate(o.th);
     if (o.player) { ctx.fillStyle = 'rgba(255,214,120,0.16)'; rr(ctx, -L / 2 - 0.35, -W / 2 - 0.35, L + 0.7, W + 0.7, 0.8); ctx.fill(); }
-    ctx.fillStyle = 'rgba(0,0,0,0.35)'; rr(ctx, -L / 2 + 0.12, -W / 2 + 0.16, L, W, 0.4); ctx.fill();
-    if (o.wheels) {
+    if (S.shadows !== false) { ctx.fillStyle = 'rgba(0,0,0,0.35)'; rr(ctx, -L / 2 + 0.12, -W / 2 + 0.16, L, W, 0.4); ctx.fill(); }
+    if (o.wheels && S.detail !== 'low') {
       ctx.fillStyle = '#111';
       for (const w of o.wheels) { ctx.save(); ctx.translate(w.lx, w.ly); ctx.rotate(w.a); rr(ctx, -0.34, -0.13, 0.68, 0.26, 0.08); ctx.fill(); ctx.restore(); }
     }
@@ -2346,8 +2574,9 @@ body.city .not-city { display: none !important; }
     ctx.fillRect(-L / 2 + 0.02, -W / 2 + 0.12, 0.09, 0.36); ctx.fillRect(-L / 2 + 0.02, W / 2 - 0.48, 0.09, 0.36);
     if (o.reverse) { ctx.fillStyle = '#ffffff'; ctx.fillRect(-L / 2 + 0.02, -W / 2 + 0.5, 0.08, 0.16); ctx.fillRect(-L / 2 + 0.02, W / 2 - 0.66, 0.08, 0.16); }
     if (o.brake) { ctx.fillStyle = 'rgba(255,40,20,0.25)'; ctx.beginPath(); ctx.arc(-L / 2 - 0.2, -W / 2 + 0.3, 0.45, 0, 7); ctx.arc(-L / 2 - 0.2, W / 2 - 0.3, 0.45, 0, 7); ctx.fill(); }
+    if (o.overlay) o.overlay(ctx);
     ctx.restore();
-  };
+  }
 
   function drawPlayer(ctx, g) {
     const v = g.veh, c = v.car, mid = (c.wb + c.fo - c.ro) / 2;
@@ -2448,7 +2677,7 @@ body.city .not-city { display: none !important; }
     const cx = L.W + 2 <= 2 * halfW ? L.W / 2 : Math.max(halfW - 1, Math.min(L.W + 1 - halfW, cam.x));
     const cy = L.H + 2 <= 2 * halfH ? L.H / 2 : Math.max(halfH - 1, Math.min(L.H + 1 - halfH, cam.y));
     let sx = 0, sy = 0;
-    if (g.shake > 0 && !reduceMotion) { const q = g.shake * 14; sx = (Math.random() - 0.5) * q; sy = (Math.random() - 0.5) * q; }
+    if (g.shake > 0 && !reduceMotion && (PG.settings || {}).cameraShake !== false) { const q = g.shake * 14; sx = (Math.random() - 0.5) * q; sy = (Math.random() - 0.5) * q; }
     return { scale, dpr, cw, ch, ox: cw / 2 - cx * scale + sx, oy: vh / 2 - cy * scale + sy };
   };
   function drawCone(ctx, c) {
@@ -2473,7 +2702,7 @@ body.city .not-city { display: none !important; }
     cx = L.W + 2 <= 2 * halfW ? L.W / 2 : Math.max(halfW - 1, Math.min(L.W + 1 - halfW, cx));
     cy = L.H + 2 <= 2 * halfH ? L.H / 2 : Math.max(halfH - 1, Math.min(L.H + 1 - halfH, cy));
     let sx = 0, sy = 0;
-    if (g.shake > 0 && !reduceMotion) { const k = g.shake * 14; sx = (Math.random() - 0.5) * k; sy = (Math.random() - 0.5) * k; }
+    if (g.shake > 0 && !reduceMotion && (PG.settings || {}).cameraShake !== false) { const k = g.shake * 14; sx = (Math.random() - 0.5) * k; sy = (Math.random() - 0.5) * k; }
     return { scale, dpr, cw, ch, ox: cw / 2 - cx * scale + sx, oy: vh / 2 - cy * scale + sy };
   };
 
@@ -2496,7 +2725,7 @@ body.city .not-city { display: none !important; }
     cam.x += (px - cam.x) * kp; cam.y += (py - cam.y) * kp;
     const scale = Math.min(cw, vh) / cam.span;
     let sx = 0, sy = 0;
-    if (g.shake > 0 && !reduceMotion) { const q = g.shake * 14; sx = (Math.random() - 0.5) * q; sy = (Math.random() - 0.5) * q; }
+    if (g.shake > 0 && !reduceMotion && (PG.settings || {}).cameraShake !== false) { const q = g.shake * 14; sx = (Math.random() - 0.5) * q; sy = (Math.random() - 0.5) * q; }
     return { scale, dpr, cw, ch, cx: cam.x, cy: cam.y, rot: -cam.yaw - Math.PI / 2, ax: cw / 2 + sx, ay: vh * 0.64 + sy, r: Math.hypot(cw, ch) / scale * 0.8 };
   };
   const FACADE = ['#5d6168', '#6b655c', '#525b66', '#675f5a', '#5a6168', '#77736b', '#474d56', '#605854'];
@@ -2505,18 +2734,37 @@ body.city .not-city { display: none !important; }
   // City drawing in pieces, so City mode and GTA mode share them. view: {scale, dpr, cw, ch, cx, cy, rot, ax, ay, r}.
   const CD = PG.cityDraw = {};
   const visOf = view => { const X = view.cx, Y = view.cy, R = view.r; return (x0, y0, x1, y1) => x1 > X - R && x0 < X + R && y1 > Y - R && y0 < Y + R; };
+  const fastOn = () => !!(PG.settings && PG.settings.fastRender) && typeof document !== 'undefined';
+  const capOn = k => fastOn() && !!PG.renderCaps[k];
+  let curBg = '#0e1013';
   // Clear the screen and set the world transform for a city-style view.
   CD.begin = function (ctx, view, bg) {
+    curBg = bg || '#0e1013';
     ctx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);
-    ctx.fillStyle = bg || '#0e1013'; ctx.fillRect(0, 0, view.cw, view.ch);
+    ctx.fillStyle = curBg; ctx.fillRect(0, 0, view.cw, view.ch);
     CD.worldTransform(ctx, view);
   };
-  CD.worldTransform = function (ctx, view) {
-    ctx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);
-    ctx.translate(view.ax, view.ay); ctx.rotate(view.rot || 0); ctx.scale(view.scale, view.scale); ctx.translate(-view.cx, -view.cy);
+  // World -> device pixels as one matrix [a, b, c, d, e, f] (dpr, screen anchor, camera turn, zoom, centre).
+  CD.worldMatrix = function (view) {
+    const d = view.dpr, s = view.scale, r = view.rot || 0, cs = Math.cos(r) * d * s, sn = Math.sin(r) * d * s;
+    return [cs, sn, -sn, cs, d * view.ax - (cs * view.cx - sn * view.cy), d * view.ay - (sn * view.cx + cs * view.cy)];
   };
-  // Road surface, blocks (kerb, sidewalk, park, plaza) and road paint.
-  CD.ground = function (ctx, C, view) {
+  CD.worldTransform = function (ctx, view) {
+    const m = CD.worldMatrix(view);
+    ctx.setTransform(m[0], m[1], m[2], m[3], m[4], m[5]);
+  };
+  // World-space bounding box of everything on screen.
+  CD.viewBounds = function (view) {
+    const r = view.rot || 0, c = Math.cos(-r), s = Math.sin(-r), k = 1 / view.scale;
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const [sx, sy] of [[0, 0], [view.cw, 0], [0, view.ch], [view.cw, view.ch]]) {
+      const dx = sx - view.ax, dy = sy - view.ay, x = (dx * c - dy * s) * k + view.cx, y = (dx * s + dy * c) * k + view.cy;
+      if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+    }
+    return { x0, y0, x1, y1 };
+  };
+  // Road surface, blocks (kerb, sidewalk, park, plaza) and road paint. The fast renderer blits it from tiles.
+  function groundRaw(ctx, C, view) {
     const vis = visOf(view), X = view.cx, Y = view.cy, R = view.r;
     ctx.fillStyle = '#26282d'; ctx.fillRect(-9, -9, C.W + 18, C.H + 18);
     for (const b of C.blocks) {
@@ -2550,9 +2798,97 @@ body.city .not-city { display: none !important; }
     };
     for (let j = 0; j < C.ys.length; j++) for (let i = 0; i < C.xs.length - 1; i++) paint(true, C.ys[j], C.wy[j], C.xs[i] + C.wx[i] / 2, C.xs[i + 1] - C.wx[i + 1] / 2);
     for (let i = 0; i < C.xs.length; i++) for (let j = 0; j < C.ys.length - 1; j++) paint(false, C.xs[i], C.wx[i], C.ys[j] + C.wy[j] / 2, C.ys[j + 1] - C.wy[j + 1] / 2);
+  }
+  CD.groundRaw = groundRaw;
+
+  // ---------- fast renderer: the ground cached in tiles ----------
+  // 512 px tiles at a half-octave pixels-per-metre level picked from the zoom (with hysteresis). Each tile
+  // carries a 2 px gutter of its neighbours' content, so filtering never reads past its edge, and is blitted
+  // 1 px larger than its slot: tiles are opaque, so the overlap hides the anti-aliased edges a rotated
+  // drawImage leaves (no seams with the turning camera). Missing tiles are built a few per frame, nearest
+  // first; until then their patch is drawn the classic way. Buildings are not cached (they stay above the
+  // decals and props drawn after the ground); they are drawn as a handful of batched paths instead.
+  const TPX = 512, TG = 2;
+  const TC = { city: null, bg: '', sig: '', lv: 0, map: new Map(), max: 40, built: 0, drawn: 0, missing: 0, buildMs: 0, frameBuilds: 0 };
+  const tileSig = C => C.xs.length + ',' + C.ys.length + ',' + C.blocks.length + ',' + C.W + ',' + C.H + ',' + C.wx.join('') + C.wy.join('');
+  const dropTile = (k, e) => { TC.map.delete(k); e.cv.width = e.cv.height = 0; };
+  // Throw away cached tiles over a world rectangle (all of them without arguments).
+  CD.invalidate = function (x0, y0, x1, y1) {
+    for (const [k, e] of TC.map) if (x0 == null || (e.x1 > x0 && e.x0 < x1 && e.y1 > y0 && e.y0 < y1)) dropTile(k, e);
   };
+  CD.tileStats = () => ({ tiles: TC.map.size, level: +TC.lv.toFixed(2), built: TC.built, drawn: TC.drawn, missing: TC.missing, buildMs: +TC.buildMs.toFixed(2) });
+  function buildTile(C, lv, tx, ty) {
+    const T = TPX / lv, x0 = tx * T, y0 = ty * T, n = TPX + 2 * TG;
+    const cv = document.createElement('canvas'); cv.width = cv.height = n;
+    const g = cv.getContext('2d', { alpha: false });
+    g.fillStyle = TC.bg; g.fillRect(0, 0, n, n);
+    g.setTransform(lv, 0, 0, lv, TG - x0 * lv, TG - y0 * lv);
+    groundRaw(g, C, { cx: x0 + T / 2, cy: y0 + T / 2, r: T / 2 + 2 * TG / lv + 0.6 });
+    return { cv, x0, y0, x1: x0 + T, y1: y0 + T };
+  }
+  function groundTiled(ctx, C, view) {
+    const sig = tileSig(C);
+    if (TC.city !== C || TC.bg !== curBg || TC.sig !== sig) { CD.invalidate(); TC.city = C; TC.bg = curBg; TC.sig = sig; TC.lv = 0; }
+    // level: step up as soon as tiles would be magnified, down only once they are 1.6x too sharp
+    const ppm = view.scale * view.dpr, want = PG.spriteLevel(ppm);
+    if (!TC.lv || want > TC.lv || ppm * 1.6 < TC.lv) TC.lv = want;
+    const lv = TC.lv, T = TPX / lv, b = CD.viewBounds(view);
+    const x0 = Math.max(b.x0, -10), y0 = Math.max(b.y0, -10), x1 = Math.min(b.x1, C.W + 10), y1 = Math.min(b.y1, C.H + 10);
+    TC.drawn = 0; TC.missing = 0; TC.frameBuilds = 0;
+    if (x1 <= x0 || y1 <= y0) return;
+    const tx0 = Math.floor(x0 / T), tx1 = Math.floor(x1 / T), ty0 = Math.floor(y0 / T), ty1 = Math.floor(y1 / T);
+    const need = (tx1 - tx0 + 1) * (ty1 - ty0 + 1);
+    if (need > 160) return groundRaw(ctx, C, view);   // absurd zoom: not worth caching
+    const missing = [], o = 1 / lv, src = TPX + 2, D = T + 2 * o;
+    for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) {
+      const k = lv + '|' + tx + '|' + ty, e = TC.map.get(k);
+      if (!e) { missing.push([tx, ty, k]); continue; }
+      TC.map.delete(k); TC.map.set(k, e);   // most recently used last
+      ctx.drawImage(e.cv, TG - 1, TG - 1, src, src, e.x0 - o, e.y0 - o, D, D);
+      TC.drawn++;
+    }
+    if (missing.length) {
+      const mx = (b.x0 + b.x1) / 2 / T - 0.5, my = (b.y0 + b.y1) / 2 / T - 0.5;
+      missing.sort((p, q) => (p[0] - mx) ** 2 + (p[1] - my) ** 2 - (q[0] - mx) ** 2 - (q[1] - my) ** 2);
+      const t0 = performance.now(), left = [];
+      for (const m of missing) {
+        if (TC.frameBuilds >= 1 && (TC.frameBuilds >= 4 || performance.now() - t0 > 3)) { left.push(m); continue; }
+        const e = buildTile(C, lv, m[0], m[1]);
+        TC.map.set(m[2], e); TC.built++; TC.frameBuilds++;
+        ctx.drawImage(e.cv, TG - 1, TG - 1, src, src, e.x0 - o, e.y0 - o, D, D);
+        TC.drawn++;
+      }
+      if (TC.frameBuilds) TC.buildMs = (performance.now() - t0) / TC.frameBuilds;
+      TC.missing = left.length;
+      if (left.length) {   // not built yet: the classic drawing, clipped to those patches (a hair wider)
+        const e = 1.5 / lv;
+        ctx.save(); ctx.beginPath();
+        for (const m of left) ctx.rect(m[0] * T - e, m[1] * T - e, T + 2 * e, T + 2 * e);
+        ctx.clip(); groundRaw(ctx, C, view); ctx.restore();
+      }
+    }
+    const max = Math.max(TC.max, need + 12);
+    while (TC.map.size > max) { const k = TC.map.keys().next().value; dropTile(k, TC.map.get(k)); }
+  }
+  CD.ground = function (ctx, C, view) {
+    if (capOn('tiles')) return groundTiled(ctx, C, view);
+    if (TC.map.size) CD.invalidate();   // tiles switched off (or a software canvas): free them
+    groundRaw(ctx, C, view);
+  };
+  // A structural solid added to or removed from the city (a building, a wall: anything but the small props
+  // modules scatter about) may change what is drawn there: drop those tiles.
+  const basePut = PG.cityPut, baseRemove = PG.cityRemove, PROPS = new Set(['prop', 'street', 'phone', 'tree']);
+  const touched = o => {
+    if (!o || PROPS.has(o.kind)) return;
+    let b = o.bb;
+    if (!b && o.poly && o.poly.length) { b = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity }; for (const p of o.poly) { b.x0 = Math.min(b.x0, p.x); b.y0 = Math.min(b.y0, p.y); b.x1 = Math.max(b.x1, p.x); b.y1 = Math.max(b.y1, p.y); } }
+    if (b && isFinite(b.x0)) CD.invalidate(b.x0 - 1, b.y0 - 1, b.x1 + 1, b.y1 + 1);
+  };
+  PG.cityPut = function (C, o) { const r = basePut.apply(this, arguments); if (C === TC.city) touched(o); return r; };
+  PG.cityRemove = function (C, o) { const r = baseRemove.apply(this, arguments); if (C === TC.city) touched(o); return r; };
+
   CD.skids = function (ctx, sk, view) {
-    if (!sk || !sk.n) return;
+    if (!sk || !sk.n || (PG.settings && PG.settings.skidMarks === false)) return;
     const X = view.cx, Y = view.cy, R = view.r;
     ctx.strokeStyle = 'rgba(10,10,10,0.38)'; ctx.lineWidth = 0.24; ctx.lineCap = 'round'; ctx.beginPath();
     for (let k = 0, m = Math.min(sk.n, sk.N); k < m; k++) {
@@ -2563,16 +2899,22 @@ body.city .not-city { display: none !important; }
     ctx.stroke(); ctx.lineCap = 'butt';
   };
   CD.lampPools = function (ctx, C, view) {
-    const X = view.cx, Y = view.cy, R = view.r;
+    const X = view.cx, Y = view.cy, R = view.r, fast = fastOn();
     ctx.fillStyle = 'rgba(255,200,120,0.05)';
-    for (const l of C.lamps) if (Math.abs(l.x - X) < R && Math.abs(l.y - Y) < R) { ctx.beginPath(); ctx.arc(l.x + l.nx * 2.5, l.y + l.ny * 2.5, 4, 0, 7); ctx.fill(); }
+    if (fast) ctx.beginPath();
+    for (const l of C.lamps) if (Math.abs(l.x - X) < R && Math.abs(l.y - Y) < R) {
+      const x = l.x + l.nx * 2.5, y = l.y + l.ny * 2.5;
+      if (fast) { ctx.moveTo(x + 4, y); ctx.arc(x, y, 4, 0, 7); } else { ctx.beginPath(); ctx.arc(x, y, 4, 0, 7); ctx.fill(); }
+    }
+    if (fast) ctx.fill();
   };
   // Buildings (shadow longer for taller ones, body, roof detail, neon edge), city walls, fountains.
   CD.buildings = function (ctx, C, view, t) {
-    const vis = visOf(view);
+    if (fastOn()) return buildingsBatched(ctx, C, view, t);
+    const vis = visOf(view), shadows = !(PG.settings && PG.settings.shadows === false);
     const bs = C.buildings.filter(b => vis(b.x0 - 6, b.y0 - 6, b.x1 + 6, b.y1 + 6));
     ctx.fillStyle = 'rgba(0,0,0,0.38)';
-    for (const b of bs) { const o = Math.min(5, 0.6 + b.h * 0.05); ctx.fillRect(b.x0 + o, b.y0 + o, b.x1 - b.x0, b.y1 - b.y0); }
+    if (shadows) for (const b of bs) { const o = Math.min(5, 0.6 + b.h * 0.05); ctx.fillRect(b.x0 + o, b.y0 + o, b.x1 - b.x0, b.y1 - b.y0); }
     for (const b of bs) {
       const w = b.x1 - b.x0, d = b.y1 - b.y0;
       ctx.fillStyle = b.color || FACADE[b.tint]; ctx.fillRect(b.x0, b.y0, w, d);
@@ -2586,27 +2928,88 @@ body.city .not-city { display: none !important; }
       }
     }
     for (const w of C.walls) { if (!vis(w.x0, w.y0, w.x1, w.y1)) continue; ctx.fillStyle = '#6a6d74'; ctx.fillRect(w.x0, w.y0, w.x1 - w.x0, w.y1 - w.y0); ctx.strokeStyle = '#d9a92a'; ctx.lineWidth = 0.2; ctx.strokeRect(w.x0, w.y0, w.x1 - w.x0, w.y1 - w.y0); }
+    fountains(ctx, C, vis, t);
+  };
+  function fountains(ctx, C, vis, t) {
     for (const f of C.fountains) {
       if (!vis(f.x - f.r, f.y - f.r, f.x + f.r, f.y + f.r)) continue;
       ctx.fillStyle = '#7d7a74'; ctx.beginPath(); for (let k = 0; k < 8; k++) ctx.lineTo(f.x + Math.cos(k * Math.PI / 4) * f.r, f.y + Math.sin(k * Math.PI / 4) * f.r); ctx.closePath(); ctx.fill();
       ctx.fillStyle = '#2b7fa6'; ctx.beginPath(); ctx.arc(f.x, f.y, f.r * 0.75, 0, 7); ctx.fill();
       ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.beginPath(); ctx.arc(f.x, f.y, f.r * 0.2 + 0.15 * Math.sin(t * 4), 0, 7); ctx.fill();
     }
-  };
+  }
+  // The same picture in a few paths: one per fill colour, instead of five or six calls per building.
+  const NEON_SIDE = b => [[b.x0, b.y1, b.x1, b.y1], [b.x0, b.y0, b.x1, b.y0], [b.x0, b.y0, b.x0, b.y1], [b.x1, b.y0, b.x1, b.y1]][b.nside];
+  const bsBuf = [], byCol = new Map();
+  function buildingsBatched(ctx, C, view, t) {
+    const X = view.cx, Y = view.cy, R = view.r + 6, vis = visOf(view);
+    bsBuf.length = 0;
+    for (const b of C.buildings) if (b.x1 > X - R && b.x0 < X + R && b.y1 > Y - R && b.y0 < Y + R) bsBuf.push(b);
+    const bs = bsBuf;
+    if (!(PG.settings && PG.settings.shadows === false)) {
+      ctx.fillStyle = 'rgba(0,0,0,0.38)'; ctx.beginPath();
+      for (const b of bs) { const o = Math.min(5, 0.6 + b.h * 0.05); ctx.rect(b.x0 + o, b.y0 + o, b.x1 - b.x0, b.y1 - b.y0); }
+      ctx.fill();
+    }
+    for (const a of byCol.values()) a.length = 0;
+    for (const b of bs) { const col = b.color || FACADE[b.tint]; let a = byCol.get(col); if (!a) byCol.set(col, a = []); a.push(b); }
+    for (const [col, a] of byCol) { if (!a.length) continue; ctx.fillStyle = col; ctx.beginPath(); for (const b of a) ctx.rect(b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0); ctx.fill(); }
+    ctx.fillStyle = 'rgba(255,255,255,0.06)'; ctx.beginPath();
+    for (const b of bs) ctx.rect(b.x0 + 0.8, b.y0 + 0.8, b.x1 - b.x0 - 1.6, b.y1 - b.y0 - 1.6);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.beginPath();
+    for (const b of bs) if (b.top) { const w = b.x1 - b.x0, d = b.y1 - b.y0; ctx.rect(b.x0 + w * 0.3, b.y0 + d * 0.3, w * 0.4, d * 0.4); }
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 0.15; ctx.beginPath();
+    for (const b of bs) ctx.rect(b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0);
+    ctx.stroke();
+    ctx.lineWidth = 0.4;
+    for (let n = 0; n < NEON.length; n++) {
+      let any = false;
+      for (const b of bs) if (b.neon === n && b.h > 14) { if (!any) { any = true; ctx.beginPath(); } const e = NEON_SIDE(b); ctx.moveTo(e[0], e[1]); ctx.lineTo(e[2], e[3]); }
+      if (any) { ctx.strokeStyle = NEON[n]; ctx.stroke(); }
+    }
+    let walls = false;
+    for (const w of C.walls) if (vis(w.x0, w.y0, w.x1, w.y1)) { if (!walls) { walls = true; ctx.beginPath(); } ctx.rect(w.x0, w.y0, w.x1 - w.x0, w.y1 - w.y0); }
+    if (walls) { ctx.fillStyle = '#6a6d74'; ctx.fill(); ctx.strokeStyle = '#d9a92a'; ctx.lineWidth = 0.2; ctx.stroke(); }
+    fountains(ctx, C, vis, t);
+  }
   CD.trafficColor = i => TRAFFIC[i % TRAFFIC.length];
-  // Tree canopies and lamp heads: drawn above cars.
+  // Tree canopies and lamp heads: drawn above cars. Fast renderer: one cached sprite per tree size, lamp
+  // heads in a single path.
   CD.canopies = function (ctx, C, view) {
     const X = view.cx, Y = view.cy, R = view.r;
+    const fast = fastOn() && PG.mainCtx === ctx && view.scale * view.dpr > 0, sprites = fast && PG.renderCaps.trees;
+    const shadows = !(PG.settings && PG.settings.shadows === false);
+    const lv = sprites ? PG.spriteLevel(view.scale * view.dpr) : 0;
     for (const tr of C.trees) {
       if (tr.gone || Math.abs(tr.x - X) > R || Math.abs(tr.y - Y) > R) continue;
       const r = 1.7 * tr.s;
-      ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.arc(tr.x + 0.6, tr.y + 0.6, r, 0, 7); ctx.fill();
-      ctx.fillStyle = tr.burnt ? '#2a2622' : '#25472d'; ctx.beginPath(); ctx.arc(tr.x, tr.y, r, 0, 7); ctx.fill();
-      ctx.fillStyle = 'rgba(255,255,255,0.07)'; ctx.beginPath(); ctx.arc(tr.x - r * 0.3, tr.y - r * 0.3, r * 0.55, 0, 7); ctx.fill();
+      if (sprites && r * lv < 300) {
+        const q = Math.round(tr.s * 20) / 20, rq = 1.7 * q, e = rq + 0.75, burnt = tr.burnt ? 1 : 0;
+        const spr = SPR.get('tree|' + q + '|' + burnt + (shadows ? 1 : 0) + '|' + lv, (2 * e + 0.6) * lv, (2 * e + 0.6) * lv, g => {
+          g.setTransform(lv, 0, 0, lv, e * lv, e * lv);
+          canopy(g, 0, 0, rq, burnt, shadows);
+        });
+        const k = r / rq;
+        ctx.drawImage(spr, tr.x - e * k, tr.y - e * k, spr.width / lv * k, spr.height / lv * k);
+        continue;
+      }
+      canopy(ctx, tr.x, tr.y, r, tr.burnt, shadows);
     }
     ctx.fillStyle = '#ffe6b0';
-    for (const l of C.lamps) if (!l.broken && Math.abs(l.x - X) < R && Math.abs(l.y - Y) < R) { ctx.beginPath(); ctx.arc(l.x + l.nx * 1.2, l.y + l.ny * 1.2, 0.3, 0, 7); ctx.fill(); }
+    if (fast) ctx.beginPath();
+    for (const l of C.lamps) if (!l.broken && Math.abs(l.x - X) < R && Math.abs(l.y - Y) < R) {
+      const x = l.x + l.nx * 1.2, y = l.y + l.ny * 1.2;
+      if (fast) { ctx.moveTo(x + 0.3, y); ctx.arc(x, y, 0.3, 0, 7); } else { ctx.beginPath(); ctx.arc(x, y, 0.3, 0, 7); ctx.fill(); }
+    }
+    if (fast) ctx.fill();
   };
+  function canopy(ctx, x, y, r, burnt, shadows) {
+    if (shadows) { ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.arc(x + 0.6, y + 0.6, r, 0, 7); ctx.fill(); }
+    ctx.fillStyle = burnt ? '#2a2622' : '#25472d'; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.07)'; ctx.beginPath(); ctx.arc(x - r * 0.3, y - r * 0.3, r * 0.55, 0, 7); ctx.fill();
+  }
   function renderCity(ctx, g, view, t) {
     const C = g.city, X = view.cx, Y = view.cy, R = view.r;
     CD.begin(ctx, view);
@@ -2623,8 +3026,11 @@ body.city .not-city { display: none !important; }
     drawParticles(ctx, g);
   }
 
+  // Particles. Fast renderer: smoke and fire are blits of cached soft discs (no per-particle colour strings
+  // or arcs), sparks and debris are batched into a few paths by colour.
   PG.drawParticles = (ctx, g) => drawParticles(ctx, g);
   function drawParticles(ctx, g) {
+    if (fastOn() && g.particles.length) return PG.renderCaps.particles ? drawParticlesFast(ctx, g) : drawParticlesLean(ctx, g);
     for (const p of g.particles) {
       const k = p.life / p.max;
       if (p.kind === 'spark') { ctx.strokeStyle = `rgba(255,${180 + 60 * k | 0},80,${k})`; ctx.lineWidth = 0.05; ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x - p.vx * 0.03, p.y - p.vy * 0.03); ctx.stroke(); }
@@ -2633,6 +3039,75 @@ body.city .not-city { display: none !important; }
       else if (p.kind === 'fire') { ctx.fillStyle = `rgba(255,${120 + 100 * k | 0},30,${k})`; ctx.beginPath(); ctx.arc(p.x, p.y, p.size * (1.6 - k), 0, 7); ctx.fill(); }
       else { ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot || 0); ctx.fillStyle = p.color; ctx.globalAlpha = Math.min(1, k * 2); ctx.fillRect(-p.size / 2, -p.size / 4, p.size, p.size / 2); ctx.restore(); }
     }
+  }
+  // Colour strings by alpha in 1/40 steps, made once (no string building or parsing of new strings per particle).
+  const RGBA = new Map();
+  PG.rgbaStep = function (rgb, a) {
+    let arr = RGBA.get(rgb);
+    if (!arr) { arr = []; for (let i = 0; i <= 40; i++) arr.push('rgba(' + rgb + ',' + (i / 40).toFixed(3) + ')'); RGBA.set(rgb, arr); }
+    return arr[a <= 0 ? 0 : a >= 1 ? 40 : Math.round(a * 40)];
+  };
+  const FIRE_RGB = [0, 1, 2, 3, 4, 5].map(q => `255,${120 + q * 20},30`);
+  // Software canvas: the same circles as the classic drawing (each one still darkens what is under it), with
+  // cached colour strings; sparks and debris batched like the GPU path.
+  function drawParticlesLean(ctx, g) {
+    for (const b of sparkB) b.length = 0;
+    for (const a of rectG.values()) a.length = 0;
+    const circle = (style, x, y, r) => { if (!(r > 0)) return; ctx.fillStyle = style; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill(); };
+    for (const p of g.particles) {
+      const k = p.life / p.max;
+      if (p.kind === 'spark') sparkB[k >= 1 ? 3 : k <= 0 ? 0 : k * 4 | 0].push(p);
+      else if (p.kind === 'smoke') { if (k > 0.01) circle(PG.rgbaStep('60,60,64', 0.5 * k), p.x, p.y, p.size * (2 - k)); }
+      else if (p.kind === 'tsmoke') { if (k > 0.02) circle(PG.rgbaStep('214,216,222', 0.24 * k), p.x, p.y, p.size * (1 + (1 - k) * 3.2)); }
+      else if (p.kind === 'fire') { if (k > 0.005) circle(PG.rgbaStep(FIRE_RGB[Math.max(0, Math.min(5, Math.round(k * 5)))], k), p.x, p.y, p.size * (1.6 - k)); }
+      else { const a = Math.min(1, k * 2), key = (p.color || '#888') + '|' + Math.max(1, Math.ceil(a * 4)); let arr = rectG.get(key); if (!arr) rectG.set(key, arr = []); arr.push(p); }
+    }
+    batchedBits(ctx);
+  }
+  const FIRE_G = [0, 1, 2, 3, 4, 5].map(q => `rgb(255,${120 + q * 20},30)`);
+  const SPARK_C = [0, 1, 2, 3].map(q => { const k = (q + 0.5) / 4; return `rgba(255,${180 + 60 * k | 0},80,${k.toFixed(3)})`; });
+  const DISC_K = 1.04;   // the sprite's soft rim sits a little inside its square
+  const sparkB = [[], [], [], []], rectG = new Map();
+  function drawParticlesFast(ctx, g) {
+    const smoke = SPR.disc('rgb(60,60,64)'), ts = SPR.disc('rgb(214,216,222)');
+    for (const b of sparkB) b.length = 0;
+    for (const a of rectG.values()) a.length = 0;
+    const blit = (spr, x, y, r, a) => { if (a <= 0.004 || !(r > 0)) return; ctx.globalAlpha = a > 1 ? 1 : a; r *= DISC_K; ctx.drawImage(spr, x - r, y - r, 2 * r, 2 * r); };
+    for (const p of g.particles) {
+      const k = p.life / p.max;
+      if (p.kind === 'spark') sparkB[k >= 1 ? 3 : k <= 0 ? 0 : k * 4 | 0].push(p);
+      else if (p.kind === 'smoke') blit(smoke, p.x, p.y, p.size * (2 - k), 0.5 * k);
+      else if (p.kind === 'tsmoke') blit(ts, p.x, p.y, p.size * (1 + (1 - k) * 3.2), 0.24 * k);
+      else if (p.kind === 'fire') blit(SPR.disc(FIRE_G[Math.max(0, Math.min(5, Math.round(k * 5)))]), p.x, p.y, p.size * (1.6 - k), k);
+      else {
+        const a = Math.min(1, k * 2), key = (p.color || '#888') + '|' + Math.max(1, Math.ceil(a * 4));
+        let arr = rectG.get(key); if (!arr) rectG.set(key, arr = []); arr.push(p);
+      }
+    }
+    batchedBits(ctx);
+  }
+  function batchedBits(ctx) {
+    if (rectG.size > 300) rectG.clear();
+    ctx.globalAlpha = 1;
+    ctx.lineWidth = 0.05;
+    for (let q = 0; q < 4; q++) {
+      const arr = sparkB[q]; if (!arr.length) continue;
+      ctx.strokeStyle = SPARK_C[q]; ctx.beginPath();
+      for (const p of arr) { ctx.moveTo(p.x, p.y); ctx.lineTo(p.x - p.vx * 0.03, p.y - p.vy * 0.03); }
+      ctx.stroke();
+    }
+    for (const [key, arr] of rectG) {
+      if (!arr.length) continue;
+      const bar = key.lastIndexOf('|');
+      ctx.fillStyle = key.slice(0, bar); ctx.globalAlpha = +key.slice(bar + 1) / 4; ctx.beginPath();
+      for (const p of arr) {
+        const r = p.rot || 0, c = Math.cos(r), s = Math.sin(r), hw = p.size / 2, hh = p.size / 4;
+        const ax = c * hw, ay = s * hw, bx = -s * hh, by = c * hh;
+        ctx.moveTo(p.x - ax - bx, p.y - ay - by); ctx.lineTo(p.x + ax - bx, p.y + ay - by); ctx.lineTo(p.x + ax + bx, p.y + ay + by); ctx.lineTo(p.x - ax + bx, p.y - ay + by); ctx.closePath();
+      }
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
   }
 
   PG.render = function (ctx, g, view, t) {
@@ -2796,7 +3271,7 @@ body.city .not-city { display: none !important; }
   const actions = [];
   let els = null;
   const KEYMAP = { KeyW: 'fwd', ArrowUp: 'fwd', KeyS: 'rev', ArrowDown: 'rev', KeyA: 'left', ArrowLeft: 'left', KeyD: 'right', ArrowRight: 'right', Space: 'hand', ShiftLeft: 'boost', ShiftRight: 'boost' };
-  const ACTIONS = { KeyP: 'pause', Escape: 'pause', KeyT: 'training', KeyM: 'mute', KeyR: 'restart', Enter: 'enter' };
+  const ACTIONS = { KeyP: 'pause', Escape: 'pause', KeyT: 'training', KeyM: 'mute', KeyR: 'restart', Enter: 'enter', KeyO: 'settings', Backquote: 'fps' };
   const I = PG.input = { touchActive: false };
   I.onAction = fn => actions.push(fn);
   const fire = a => actions.forEach(fn => fn(a));
@@ -2848,7 +3323,9 @@ body.city .not-city { display: none !important; }
     const typing = e => e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA');
     window.addEventListener('keydown', e => {
       if (typing(e)) return;
-      if (KEYMAP[e.code]) { keys.add(e.code); e.preventDefault(); }
+      // menus with focusable controls keep Space and the arrows for them
+      const menu = PG.ui && PG.ui.screen && PG.ui.screen() === 'settings' && e.target && e.target.tagName === 'BUTTON';
+      if (KEYMAP[e.code]) { keys.add(e.code); if (!menu) e.preventDefault(); }
       if (ACTIONS[e.code] && !e.repeat) fire(ACTIONS[e.code]);
     });
     window.addEventListener('keyup', e => { keys.delete(e.code); });
@@ -2864,7 +3341,7 @@ body.city .not-city { display: none !important; }
 (function (PG) {
   if (typeof document === 'undefined') return;
   const $ = id => document.getElementById(id);
-  const SCREENS = ['title', 'name', 'cars', 'map', 'artur', 'ready', 'pause', 'result', 'board'];
+  const SCREENS = ['title', 'name', 'cars', 'map', 'artur', 'ready', 'pause', 'result', 'board', 'settings'];
   let state = null, sync = null, screen = null, selClass = 'big', afterName = null, boardBack = 'title', mode = 'park';
   const setMode = m => { mode = m; document.body.classList.toggle('drift', m === 'drift' || m === 'city'); document.body.classList.toggle('city', m === 'city'); document.body.classList.toggle('gta', m === 'gta'); };
   const UI = PG.ui = {};
@@ -3472,6 +3949,142 @@ body.city .not-city { display: none !important; }
     $('board-levels').hidden = shame; $('board-shame').hidden = !shame;
   }
 
+  // ---------- settings ----------
+  const pct = v => Math.round(v * 100) + '%';
+  const SET_UI = [
+    { title: 'Graphics', rows: [
+      { key: 'quality', name: 'Quality preset', desc: 'Sets every option that trades looks for speed in one go. Changing one of those yourself switches to Custom.', type: 'seg', big: true,
+        opts: [['low', 'Low'], ['medium', 'Medium'], ['high', 'High'], ['ultra', 'Ultra'], ['custom', 'Custom']] },
+      { key: 'fastRender', name: 'Fast renderer', desc: 'Keeps the streets, cars, trees and smoke as ready-drawn images instead of redrawing them every frame.', type: 'bool' },
+      { key: 'renderScale', name: 'Resolution scale', desc: 'Draws the world at fewer pixels and stretches it to fill the screen.', type: 'range', min: 0.5, max: 1, step: 0.05, fmt: pct },
+      { key: 'maxDpr', name: 'Pixel density cap', desc: 'How sharp high-density (retina) screens may get. Each step up draws many more pixels.', type: 'seg', opts: [[1, '1×'], [1.5, '1.5×'], [2, '2×']] },
+      { key: 'adaptive', name: 'Adaptive resolution', desc: 'Lowers the resolution by itself when the frame rate drops, and raises it again when there is room.', type: 'bool' },
+      { key: 'fpsCap', name: 'Frame rate cap', desc: 'Draw fewer frames for a steadier pace and a cooler, longer-lasting battery.', type: 'seg', opts: [[0, 'Display'], [60, '60'], [30, '30']] },
+      { key: 'showFps', name: 'FPS counter', desc: 'Frames per second, frame time and resolution in the top corner. The ` key toggles it too.', type: 'bool' },
+    ] },
+    { title: 'Effects', rows: [
+      { key: 'lighting', name: 'Night lighting', desc: 'Street lights, headlights and the dark between them. Off shows the city flat and fully lit.', type: 'seg', opts: [['off', 'Off'], ['low', 'Low'], ['medium', 'Medium'], ['high', 'High']] },
+      { key: 'lightEngine', name: 'Lighting engine', desc: 'Auto uses the graphics card (WebGL) when the browser offers one, and plain canvas drawing otherwise.', type: 'seg', opts: [['auto', 'Auto'], ['webgl', 'WebGL'], ['canvas', 'Canvas']] },
+      { key: 'shadows', name: 'Shadows', desc: 'Drop shadows under buildings, trees, cars and people.', type: 'bool' },
+      { key: 'particles', name: 'Particles', desc: 'Smoke, sparks, fire and flying debris: at most 80, 250 or 600 at once.', type: 'seg', opts: [['low', 'Low'], ['medium', 'Medium'], ['high', 'High']] },
+      { key: 'decals', name: 'Ground marks', desc: 'Blood, scorch marks, oil and broken glass left on the ground: the last 80 or 400.', type: 'seg', opts: [['low', 'Low'], ['high', 'High']] },
+      { key: 'skidMarks', name: 'Skid marks', desc: 'Tyre marks left behind by sliding cars.', type: 'bool' },
+      { key: 'weather', name: 'Weather', desc: 'Rain showers and fog.', type: 'bool' },
+      { key: 'ambientLife', name: 'Ambient life', desc: 'Pigeons, litter, steam, the train and other scenery that only moves for show.', type: 'bool' },
+      { key: 'detail', name: 'Detail', desc: 'Low draws simpler cars and people (no wheels, hands or faces), fewer effect particles and no motion trails.', type: 'seg', opts: [['low', 'Low'], ['high', 'High']] },
+      { key: 'screenFx', name: 'Screen effects', desc: 'Vignettes, flashes, the rain on the lens and the red tint when you are hurt.', type: 'bool' },
+      { key: 'cameraShake', name: 'Camera shake', desc: 'The view shakes on crashes, explosions and gunfire.', type: 'bool' },
+    ] },
+    { title: 'World', rows: [
+      { key: 'traffic', name: 'Traffic', desc: 'How many moving and parked cars fill the streets.', type: 'range', min: 0.5, max: 1.25, step: 0.05, fmt: pct },
+      { key: 'pedDensity', name: 'Pedestrians', desc: 'How many people walk the sidewalks.', type: 'range', min: 0.5, max: 1.25, step: 0.05, fmt: pct },
+      { key: 'policeMax', name: 'Police cars', desc: 'The most police vehicles after you at once.', type: 'range', min: 3, max: 10, step: 1, fmt: v => String(v) },
+    ] },
+    { title: 'Controls', rows: [
+      { key: 'wheel', name: 'Mouse wheel', desc: 'Zoom the view in and out, or switch weapons.', type: 'seg', opts: [['zoom', 'Zoom'], ['weapon', 'Weapon']] },
+    ] },
+    { title: 'Audio', rows: [
+      { key: 'radio', name: 'Car radio', desc: 'Music stations while you drive. R changes station.', type: 'bool' },
+      { key: 'muted', name: 'Mute all sound', desc: 'Every sound in the game. M does the same.', type: 'mute' },
+    ] },
+  ];
+  let setFrom = null, setRows = null;
+  function settingRow(r) {
+    const row = el('div', 'set-row'), txt = el('div', 'set-txt'), name = el('div', 'set-name'), id = 'set-' + r.key;
+    const lab = el('span', null, r.name); lab.id = id + '-l';
+    const val = el('b', 'set-val'); val.setAttribute('aria-hidden', 'true');
+    name.append(lab, val);
+    if (PG.PRESET_KEYS && PG.PRESET_KEYS.includes(r.key)) name.title = 'Part of the quality preset';
+    txt.append(name, el('p', 'set-desc', r.desc));
+    const ctl = el('div', 'set-ctl'), it = { r, val, btns: [], input: null };
+    if (r.type === 'seg') {
+      const seg = el('div', 'seg' + (r.big ? ' big' : '')); seg.setAttribute('role', 'group'); seg.setAttribute('aria-labelledby', lab.id);
+      for (const [v, label] of r.opts) {
+        const b = el('button', null, label); b.type = 'button'; b.dataset.v = String(v);
+        b.onclick = () => { PG.audio.click(); PG.setSetting(r.key, v); };
+        seg.appendChild(b); it.btns.push(b);
+      }
+      ctl.appendChild(seg);
+    } else if (r.type === 'bool' || r.type === 'mute') {
+      const b = el('button', 'tgl'); b.type = 'button'; b.setAttribute('role', 'switch'); b.setAttribute('aria-labelledby', lab.id); b.id = id;
+      b.onclick = () => { PG.audio.click(); if (r.type === 'mute') UI.setMuted(!state.muted); else PG.setSetting(r.key, !PG.settings[r.key]); };
+      ctl.appendChild(b); it.btns.push(b);
+    } else {
+      const inp = el('input', 'set-range'); inp.type = 'range'; inp.min = r.min; inp.max = r.max; inp.step = r.step; inp.id = id; inp.setAttribute('aria-labelledby', lab.id);
+      inp.addEventListener('input', () => PG.setSetting(r.key, +inp.value));
+      ctl.appendChild(inp); it.input = inp;
+    }
+    row.append(txt, ctl);
+    return [row, it];
+  }
+  function renderSettings() {
+    const body = $('set-body'); body.textContent = '';
+    setRows = [];
+    for (const sec of SET_UI) {
+      const box = el('section', 'set-sec'); box.appendChild(el('h3', null, sec.title));
+      for (const r of sec.rows) { const [row, it] = settingRow(r); box.appendChild(row); setRows.push(it); }
+      body.appendChild(box);
+    }
+    refreshSettings();
+  }
+  function refreshSettings() {
+    if (!setRows) return;
+    const S = PG.settings;
+    for (const it of setRows) {
+      const r = it.r, v = r.type === 'mute' ? !!state.muted : S[r.key];
+      if (r.type === 'seg') {
+        for (const b of it.btns) b.setAttribute('aria-pressed', String(b.dataset.v === String(v)));
+        const o = r.opts.find(o => String(o[0]) === String(v)); it.val.textContent = o ? o[1] : String(v);
+      } else if (r.type === 'bool' || r.type === 'mute') {
+        it.btns[0].setAttribute('aria-checked', String(!!v)); it.val.textContent = v ? 'On' : 'Off';
+      } else {
+        if (document.activeElement !== it.input) it.input.value = String(v);
+        it.val.textContent = r.fmt(v); it.input.setAttribute('aria-valuetext', r.fmt(v));
+      }
+    }
+  }
+  // from: 'title' | 'pause' | 'play' (O while playing: the game pauses underneath)
+  function openSettings(from) {
+    if (from === 'play' && !PG.pause(true)) return;
+    setFrom = from;
+    renderSettings();
+    UI.show('settings');
+    const sc = $('scr-settings'); sc.scrollTop = 0;
+    if (!PG.input.touchActive) setTimeout(() => { const b = sc.querySelector('.seg.big [aria-pressed="true"]') || $('set-back'); b.focus({ preventScroll: true }); }, 40);
+  }
+  function closeSettings() {
+    const f = setFrom; setFrom = null;
+    PG.audio.click();
+    if (f === 'pause') UI.show('pause');
+    else if (f === 'play') { PG.pause(false); UI.show(null); }
+    else UI.show('title');
+  }
+  UI.openSettings = from => openSettings(from || (screen === 'pause' ? 'pause' : screen === null && G().status === 'play' ? 'play' : 'title'));
+  UI.closeSettings = () => { if (screen === 'settings') closeSettings(); };
+
+  // ---------- FPS counter ----------
+  // Reads PG.renderStats (kept by the main loop) four times a second: text plus a frame-time sparkline.
+  let fpsTimer = null;
+  function fpsVisible() {
+    const on = !!PG.settings.showFps;
+    $('fps').hidden = !on; document.body.classList.toggle('fps-on', on);
+    clearInterval(fpsTimer); fpsTimer = null;
+    if (on) { fpsTimer = setInterval(drawFps, 250); drawFps(); }
+  }
+  function drawFps() {
+    const R = PG.renderStats; if (!R) return;
+    const v = $('fps-v'), fps = Math.round(R.fps || 0);
+    v.textContent = R.fps ? String(fps) : '--'; v.className = !R.fps || fps >= 50 ? '' : fps >= 30 ? 'warn' : 'bad';
+    $('fps-t').textContent = `${(R.frameMs || 0).toFixed(1)} ms · JS ${(R.jsMs || 0).toFixed(1)} · ${Math.round((R.scale || 1) * 100)}%`;
+    const cv = $('fps-spark'), c = cv.getContext('2d'), W = cv.width, H = cv.height, h = R.hist, n = h ? h.length : 0;
+    c.clearRect(0, 0, W, H);
+    c.fillStyle = 'rgba(236,232,220,0.16)'; c.fillRect(0, H - Math.round(16.7 / 50 * H), W, 1); c.fillRect(0, H - Math.round(33.3 / 50 * H), W, 1);
+    if (!n) return;
+    c.strokeStyle = fps >= 50 ? '#4fbf6a' : fps >= 30 ? '#ffb02e' : '#e8402f'; c.lineWidth = 2; c.beginPath();
+    for (let i = 0; i < n; i++) { const ms = h[(R.hi + i) % n] || 0, x = i / (n - 1) * W, y = H - Math.min(50, ms) / 50 * (H - 2) - 1; if (i) c.lineTo(x, y); else c.moveTo(x, y); }
+    c.stroke();
+  }
+
   // ---------- boot ----------
   function refreshTitle() {
     const has = !!state.nick;
@@ -3496,6 +4109,7 @@ body.city .not-city { display: none !important; }
 
   UI.boot = function () {
     state = PG.local.load();
+    PG.loadSettings(state.settings); state.settings = PG.settings;
     if (!PG.carById(state.car) || state.car === 'artur') state.car = 'modely';
     selClass = PG.carById(state.car).cls;
     G().training = !!state.training;
@@ -3516,6 +4130,12 @@ body.city .not-city { display: none !important; }
     window.addEventListener('keydown', unlock, { capture: true });
 
     $('btn-gta').onclick = () => { PG.audio.click(); needName(() => play(PG.GTA_DEF)); };
+    $('btn-settings').onclick = () => { PG.audio.click(); openSettings('title'); };
+    $('pause-settings').onclick = () => { PG.audio.click(); openSettings('pause'); };
+    $('set-back').onclick = closeSettings;
+    $('set-done').onclick = closeSettings;
+    PG.onSettings((S, keys) => { if (screen === 'settings') refreshSettings(); if (keys.includes('showFps')) fpsVisible(); });
+    fpsVisible();
     $('btn-rename').onclick = () => rename('title');
     $('board-rename').onclick = () => rename('board');
     $('name-form').addEventListener('submit', e => {
@@ -3536,7 +4156,8 @@ body.city .not-city { display: none !important; }
     $('pause-map').onclick = () => { demo(); if (current && (current.mode === 'city' || current.mode === 'gta')) UI.show('title'); else { renderMap(); UI.show('map'); } };
     $('btn-pause').onclick = () => { if (PG.pause(true)) UI.show('pause'); };
     const toggleTraining = () => { state.training = !G().training; PG.setTraining(state.training); save(); };
-    const toggleMute = () => { state.muted = !state.muted; PG.audio.setMuted(state.muted); $('btn-mute').setAttribute('aria-pressed', String(state.muted)); $('btn-mute').textContent = state.muted ? 'OFF' : 'SND'; save(); };
+    UI.setMuted = on => { state.muted = !!on; PG.audio.setMuted(state.muted); $('btn-mute').setAttribute('aria-pressed', String(state.muted)); $('btn-mute').textContent = state.muted ? 'OFF' : 'SND'; save(); if (screen === 'settings') refreshSettings(); };
+    const toggleMute = () => UI.setMuted(!state.muted);
     $('btn-training').onclick = toggleTraining;
     $('btn-mute').onclick = toggleMute;
     $('board-back').onclick = () => { PG.audio.click(); if (boardBack === 'result') UI.show('result'); else { demo(); UI.show('title'); } };
@@ -3547,6 +4168,14 @@ body.city .not-city { display: none !important; }
       const st = G().status;
       if (a === 'touchseen') return setTouch(true);
       if (a === 'mute') return toggleMute();
+      if (a === 'fps') return PG.setSetting('showFps', !PG.settings.showFps);
+      if (a === 'settings') {
+        if (screen === 'settings') return closeSettings();
+        if (screen === null && st === 'play') return openSettings('play');
+        if (screen === 'pause' || screen === 'title') return openSettings(screen);
+        return;
+      }
+      if (a === 'pause' && screen === 'settings') return closeSettings();
       if (a === 'training' && G().mode !== 'gta' && (st === 'play' || st === 'ready')) return toggleTraining();
       if (a === 'blur' && st === 'play') { if (PG.pause(true)) UI.show('pause'); return; }
       if (a === 'pause') { if (st === 'play' && screen === null) { if (PG.pause(true)) UI.show('pause'); } else if (st === 'paused' && screen === 'pause') { PG.pause(false); UI.show(null); } return; }
@@ -3610,6 +4239,7 @@ body.city .not-city { display: none !important; }
 
   PG.burst = (...a) => burst(...a);
   function burst(x, y, kind, n, speed, life, size, colors) {
+    if (PG.settings && PG.settings.detail === 'low') n = Math.ceil(n * 0.5);
     for (let i = 0; i < n; i++) {
       const a = Math.random() * Math.PI * 2, sp = speed * (0.3 + Math.random());
       G.particles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: life * (0.5 + Math.random() * 0.5), max: life, kind, size: size * (0.6 + Math.random() * 0.8),
@@ -3783,7 +4413,7 @@ body.city .not-city { display: none !important; }
     G.skidLast = G.skidLast || [];
     for (let i = 0; i < 4; i++) {
       const w = wheels[i], last = G.skidLast[i];
-      if (k[i] > 0.05 && last && G.skid && (sp > 0.6 || v.spinR > 0.3)) G.skid.line(last.x, last.y, w.x, w.y, Math.min(0.42, 0.1 + k[i] * 0.3));
+      if (k[i] > 0.05 && last && G.skid && (sp > 0.6 || v.spinR > 0.3) && (PG.settings || {}).skidMarks !== false) G.skid.line(last.x, last.y, w.x, w.y, Math.min(0.42, 0.1 + k[i] * 0.3));
       G.skidLast[i] = { x: w.x, y: w.y };
       if (i >= 2 && k[i] > 0.2 && G.particles.length < 520) {
         const rate = (sp > 1 ? 34 : 22) * k[i] * dt;
@@ -3964,6 +4594,8 @@ body.city .not-city { display: none !important; }
     dt = Math.min(dt, 0.05);
     for (const p of G.particles) { p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= 0.96; p.vy *= 0.96; p.life -= dt; if (p.rot != null) p.rot += p.vr * dt; }
     G.particles = G.particles.filter(p => p.life > 0);
+    const cap = PG.PARTICLE_CAP[(PG.settings || {}).particles] || 600;
+    if (G.particles.length > cap) G.particles.splice(0, G.particles.length - cap);   // oldest first
     if (G.shake > 0) G.shake = Math.max(0, G.shake - dt);
     if (G.status !== 'play') return;
     if (G.mode === 'drift') return driftTick(dt);
@@ -3997,7 +4629,7 @@ body.city .not-city { display: none !important; }
     PG.audio.engine(sp / PG.MAX_FWD, G.veh.v < -0.05);
     const skidding = (Math.abs(G.veh.steer) > 0.85 && sp > 2.8) || (ctl.hand && sp > 2);
     PG.audio.squeal(skidding ? Math.min(1, sp / PG.MAX_FWD) : 0);
-    if (skidding && G.skid) for (const w of PG.wheelPoses(G.veh).slice(2)) G.skid.mark(w.x, w.y);
+    if (skidding && G.skid && (PG.settings || {}).skidMarks !== false) for (const w of PG.wheelPoses(G.veh).slice(2)) G.skid.mark(w.x, w.y);
     // parking check
     const ev = PG.evalPark(G.veh, G.L.target); G.ev = ev;
     G.parkHold = PG.isParked(ev, G.veh.v) ? G.parkHold + dt : 0;
@@ -4020,27 +4652,109 @@ body.city .not-city { display: none !important; }
     return false;
   };
 
+  // ---------- frame loop: resolution, frame-rate cap, adaptive resolution, stats ----------
+  // Backing store = CSS size x min(devicePixelRatio, maxDpr) x render scale; the CSS size stays full-screen.
+  // Adaptive resolution steps the render scale down (to 0.5) while the frame rate stays below ~83% of the
+  // target, and back up towards the chosen scale once it holds ~93% (waiting longer each time a step up
+  // had to be taken back). Each step down is a trial: kept only if the frame rate really improved. A frame
+  // bound by script or per-call work (not by pixels) gains nothing from fewer pixels, so then the picture
+  // stays sharp and the next try waits twice as long.
+  const RS = PG.renderStats = { fps: 0, frameMs: 0, jsMs: 0, scale: 1, dpr: 1, w: 0, h: 0, frames: 0, hist: new Float32Array(60), hi: 0 };
+  let adaptScale = 1, lowT = 0, highT = 0, upWait = 3, downWait = 1.5, lastUpT = -1e9, capDue = 0, winN = 0, winT = 0, prevTs = 0, trial = null;
+  const recent = [];   // the last few half-second frame rates
+  RS.adaptive = { trials: 0, kept: 0, reverted: 0 };
+  const effScale = () => { const S = PG.settings || {}, rs = S.renderScale || 1; return S.adaptive ? Math.min(rs, adaptScale) : rs; };
   function resize() {
-    const dpr = Math.min(2, window.devicePixelRatio || 1), r = canvas.getBoundingClientRect();
-    canvas.width = Math.max(1, Math.round(r.width * dpr)); canvas.height = Math.max(1, Math.round(r.height * dpr));
+    if (!canvas) return;
+    const S = PG.settings || {}, r = canvas.getBoundingClientRect(), sc = effScale();
+    const d = Math.min(window.devicePixelRatio || 1, S.maxDpr || 2) * sc;
+    const w = Math.max(1, Math.round(r.width * d)), h = Math.max(1, Math.round(r.height * d));
+    if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+    RS.scale = sc; RS.dpr = d; RS.w = w; RS.h = h;
+  }
+  PG.resizeCanvas = resize;
+  // Judged on the half-second frame rate (one slow frame does not count), every time it is updated.
+  function adapt(ts, fresh) {
+    const S = PG.settings || {};
+    if (!S.adaptive || G.status !== 'play' || document.hidden) { lowT = highT = 0; trial = null; return; }
+    if (!fresh) return;
+    const target = S.fpsCap || 60, fps = RS.fps, dt = 0.5;
+    recent.push(fps); if (recent.length > 3) recent.shift();
+    if (trial) {   // judge a step down after 2 s at the new size (the first half second settles in)
+      if (++trial.n > 1) trial.sum += fps;
+      if (trial.n < 5) return;
+      const gain = trial.sum / (trial.n - 1) / Math.max(1, trial.fps0);
+      if (gain < 1.06) { adaptScale = trial.from; resize(); downWait = Math.min(60, downWait * 2); RS.adaptive.reverted++; }
+      else { downWait = 1.5; RS.adaptive.kept++; }
+      trial = null; lowT = highT = 0; recent.length = 0;
+      return;
+    }
+    if (fps < target * 0.83) { lowT += dt; highT = Math.max(0, highT - dt); }
+    else if (fps >= target * 0.93) { highT += dt; lowT = Math.max(0, lowT - dt); }
+    else { lowT = Math.max(0, lowT - dt / 2); highT = Math.max(0, highT - dt / 2); }
+    const cur = effScale(), want = S.renderScale || 1;
+    if (lowT >= downWait && cur > 0.5 + 1e-6) {
+      if (ts - lastUpT < 4000) upWait = Math.min(40, upWait * 2);   // the last step up did not hold
+      trial = { from: Math.min(adaptScale, cur), fps0: recent.reduce((a, b) => a + b, 0) / recent.length, n: 0, sum: 0 };
+      RS.adaptive.trials++;
+      adaptScale = Math.max(0.5, Math.round((cur - 0.1) * 100) / 100); lowT = 0; highT = 0; resize();
+    } else if (highT > upWait && cur < want - 1e-6) {
+      adaptScale = Math.min(1, Math.round((cur + 0.1) * 100) / 100); highT = 0; lastUpT = ts; resize();
+    }
+  }
+  function stats(ts, js) {
+    const iv = prevTs ? ts - prevTs : 16.7; prevTs = ts;
+    if (iv < 1000) {
+      RS.frameMs = RS.frameMs ? RS.frameMs + (iv - RS.frameMs) * 0.1 : iv;
+      RS.hist[RS.hi] = iv; RS.hi = (RS.hi + 1) % RS.hist.length;
+    }
+    RS.jsMs = RS.jsMs ? RS.jsMs + (js - RS.jsMs) * 0.1 : js;
+    RS.frames++; winN++;
+    if (!winT) winT = ts;
+    if (ts - winT >= 500) {
+      const long = ts - winT > 1500;   // a stall (tab hidden, debugger): no verdict from it
+      RS.fps = winN * 1000 / (ts - winT); winN = 0; winT = ts;
+      return !long;
+    }
+    return false;
   }
   function frame(ts) {
+    const S = PG.settings || {}, cap = S.fpsCap || 0;
+    if (cap) {   // draw only every n-th display frame; dt below still spans the real time between drawn frames
+      if (!capDue || ts - capDue > 250) capDue = ts;
+      if (ts < capDue - 2) { requestAnimationFrame(frame); return; }
+      capDue += 1000 / cap;
+    }
+    const t0 = performance.now();
     const dt = last ? (ts - last) / 1000 : 0; last = ts;
+    try { draw(ts, dt); }
+    finally {   // an exception in one frame must not stop the loop for good
+      adapt(ts, stats(ts, performance.now() - t0));
+      requestAnimationFrame(frame);
+    }
+  }
+  function draw(ts, dt) {
     if (G.L) {
       PG.tick(dt);
       const dpr = canvas.width / Math.max(1, canvas.clientWidth);
       const pad = PG.input.touchActive ? Math.min(170, canvas.clientHeight * 0.28) : 0;
       const view = G.mode === 'gta' ? PG.gta.view(canvas.clientWidth, canvas.clientHeight, G, dpr, pad, dt) : G.mode === 'city' ? PG.computeCityView(canvas.clientWidth, canvas.clientHeight, G, dpr, pad, dt) : G.mode === 'drift' && G.status !== 'demo' ? PG.computeDriftView(canvas.clientWidth, canvas.clientHeight, G, dpr, pad, dt) : PG.computeView(canvas.clientWidth, canvas.clientHeight, G, dpr, pad);
       view.bottomPad = pad;
+      PG.mainCtx = ctx; PG.renderPpm = view.scale * view.dpr;
       PG.render(ctx, G, view, ts / 1000);
       if (PG.ui && PG.ui.hud) PG.ui.hud(G);
     }
-    requestAnimationFrame(frame);
   }
   PG.startLoop = function (cv) {
-    canvas = cv; ctx = canvas.getContext('2d');
+    canvas = cv; ctx = canvas.getContext('2d', { alpha: false });
+    PG.mainCtx = ctx;
+    if (PG.renderCaps && PG.renderCaps.gpu == null) PG.renderCaps.detect();
     resize(); window.addEventListener('resize', resize);
     if (window.ResizeObserver) new ResizeObserver(resize).observe(canvas);
+    PG.onSettings((S, keys) => {
+      if (keys.some(k => k === 'renderScale' || k === 'maxDpr' || k === 'adaptive')) { adaptScale = 1; lowT = highT = 0; upWait = 3; downWait = 1.5; trial = null; resize(); }
+      if (keys.includes('fpsCap')) capDue = 0;
+    });
     requestAnimationFrame(frame);
   };
 })(typeof window !== 'undefined' ? (window.PG = window.PG || {}) : (globalThis.PG = globalThis.PG || {}));

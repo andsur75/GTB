@@ -137,7 +137,12 @@
   }
   // A comic impact star, s = radius in metres (never under a few pixels); txt is drawn above it, screen-sized.
   function pow(x, y, size, txt, rot) { fx('pow', x, y, txt ? 0.5 : 0.2, { s: size, txt, rot: rot == null ? rand(-0.5, 0.5) : rot }); }
+  // PG.settings: particles 'low' halves the sweat, detail 'low' drops it (and the motion smears)
+  const SET = () => PG.settings || {};
   function sweat(x, y, ang, n) {
+    const set = SET();
+    if (set.detail === 'low') return;
+    if (set.particles === 'low') n = Math.ceil(n / 2);
     for (let i = 0; i < n; i++) { const a = ang + rand(-1.1, 1.1), sp = rand(1.5, 3.8); fx('sweat', x, y, rand(0.3, 0.55), { vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, s: rand(0.7, 1.2), rot: a, top: false }); }
   }
   function tooth(x, y, ang) {
@@ -819,7 +824,7 @@
     }
     const lk = p.look || NONE, s = BODY;
     ctx.save(); ctx.translate(p.x, p.y);
-    ctx.fillStyle = 'rgba(0,0,0,0.28)'; ctx.beginPath(); ctx.ellipse(0.06, 0.08, 0.26 * s, 0.36 * s, p.th, 0, TAU); ctx.fill();
+    if (SET().shadows !== false) { ctx.fillStyle = 'rgba(0,0,0,0.28)'; ctx.beginPath(); ctx.ellipse(0.06, 0.08, 0.26 * s, 0.36 * s, p.th, 0, TAU); ctx.fill(); }
     ctx.rotate(p.th); ctx.scale(s, s); ctx.lineCap = 'round';
     ctx.strokeStyle = lk.pants || '#333'; ctx.lineWidth = 0.15; ctx.beginPath();
     if (b.leg) { ctx.moveTo(b.hipx, b.hipy); ctx.lineTo(b.knx, b.kny); ctx.lineTo(b.kx, b.ky); ctx.moveTo(0, -b.leg * 0.1); ctx.lineTo(-0.04, -b.leg * 0.12); }
@@ -1048,9 +1053,12 @@
     render: {
       cars(ctx, view, t) {   // cracked windows on cars someone has been punching
         if (!S) return;
+        let M = null;
         for (const c of X.cars) {
           const cr = c._bwCr; if (!cr || !cr.length || c.removed || !X.inView(c.x, c.y, c.len)) continue;
-          ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(c.th);
+          if (!M) M = ctx.getTransform();
+          const cs = Math.cos(c.th), sn = Math.sin(c.th);
+          ctx.setTransform(M.a * cs + M.c * sn, M.b * cs + M.d * sn, M.c * cs - M.a * sn, M.d * cs - M.b * sn, M.a * c.x + M.c * c.y + M.e, M.b * c.x + M.d * c.y + M.f);
           ctx.strokeStyle = c._bwBroke ? 'rgba(220,235,250,0.95)' : 'rgba(225,238,255,0.8)'; ctx.lineWidth = 0.03; ctx.lineCap = 'round';
           ctx.beginPath();
           for (const k of cr) {
@@ -1058,8 +1066,8 @@
             ctx.moveTo(k.x + k.r * 0.35, k.y); ctx.arc(k.x, k.y, k.r * 0.35, 0, TAU);
           }
           ctx.stroke();
-          ctx.restore();
         }
+        if (M) ctx.setTransform(M);
       },
       air(ctx, view, t) {
         if (!S) return;
@@ -1084,7 +1092,7 @@
       overlay(ctx, view, t) {
         if (!S) return;
         // motion smears behind fists, feet and bats
-        for (let i = 0, n = X.peds.length; i < n; i++) {
+        for (let i = 0, n = SET().detail === 'low' ? 0 : X.peds.length; i < n; i++) {
           const p = X.peds[i], A = p.act;
           if (!A || !A.on || !STRIKE[A.type] || A.cos || p.dead || p.hidden || p.car || A.t < A.w || A.t > A.w + A.s + 0.08 || !X.inView(p.x, p.y, 2)) continue;
           drawSmear(ctx, p, A);

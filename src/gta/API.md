@@ -152,7 +152,8 @@ running, but tests treat any console error as a failure.
   coords updated every frame). Codes are `KeyboardEvent.code`.
 * Taken by core: WASD/arrows (move/drive), F and Enter (use), Shift (sprint / full throttle), Space
   (handbrake; fire on foot), H (horn), C (camera mode), Tab (big map), P/Esc (pause), M (mute).
-  Weapons: Q/E/Digit1-9, Ctrl/J/mouse fire. Free for modules: G, R (radio), X, V, B, N, Z, T, Y, U, I, O, K, L.
+  Weapons: Q/E/Digit1-9, Ctrl/J/mouse fire. Engine: O (settings), ` (FPS counter). Free for modules: G,
+  R (radio), X, V, B, N, Z, T, Y, U, I, K, L.
 * Touch: `X.touch = {move: {x, y} | null, fire, aim, hand, presses: Set}` is written by the HUD module's
   on-screen controls and read by core and weapons.
 
@@ -245,6 +246,111 @@ another module deals directly still gets a swing and a flinch drawn.
   null while audio is locked or muted (always null-check). Existing one-shots: `PG.audio.honk(pan)`,
   `boom()`, `crash()`, `scrape()`, `chime(n)`, `fanfare()`, `trombone()`, `whoosh()`, `cone()`.
   Loops you start must stop in `stop()`, on pause (`PG.game.status !== 'play'`) and on mute.
+
+## Settings & rendering
+
+### Settings
+
+`PG.settings` is a plain object with the current values. Read it **every frame** (never cache a value across
+frames) and always with a fallback, so the module still works without the engine part:
+`const S = PG.settings || {}; if ((S.lighting || 'high') === 'off') ...`.
+
+| key | values | meaning |
+| --- | --- | --- |
+| `quality` | `low` `medium` `high` `ultra` `custom` | the preset the keys marked P came from |
+| `renderScale` P | 0.5 .. 1 | backing-store resolution factor |
+| `maxDpr` P | 1, 1.5, 2 | cap on `devicePixelRatio` |
+| `adaptive` P | bool | lower the render scale by itself when the frame rate drops |
+| `fpsCap` | 0, 30, 60 | 0 = display rate |
+| `showFps` | bool | FPS counter (` key) |
+| `fastRender` P | bool | cached tiles / sprites / batched paths (see Fast renderer) |
+| `lighting` P | `off` `low` `medium` `high` | night lighting quality (lighting.js) |
+| `lightEngine` | `auto` `webgl` `canvas` | lighting.js back end |
+| `shadows` P | bool | building, tree, car and ped drop shadows |
+| `particles` P | `low` `medium` `high` | caps `PG.PARTICLE_CAP` = 80 / 250 / 600 shared particles (oldest dropped) |
+| `decals` P | `low` `high` | caps `PG.DECAL_CAP` = 80 / 400 ground decals |
+| `skidMarks` P | bool | tyre marks recorded and drawn |
+| `weather` P | bool | rain, fog |
+| `ambientLife` P | bool | pigeons, litter, steam, train and other pure decoration |
+| `detail` P | `low` `high` | low: no wheel / hand / face details, fewer effect particles, no motion trails |
+| `screenFx` P | bool | vignettes, flashes, rain overlay, damage tint |
+| `cameraShake` | bool | false = no shake at all |
+| `traffic` P | 0.5 .. 1.25 | multiplier on moving and parked cars |
+| `pedDensity` P | 0.5 .. 1.25 | multiplier on pedestrians |
+| `policeMax` P | 3 .. 10 | most police vehicles at once |
+| `wheel` | `zoom` `weapon` | what the mouse wheel does (core zooms only on `zoom`) |
+| `radio` | bool | car radio |
+
+* `PG.setSetting(key, value)` validates (unknown key or bad value: returns false; numbers are clamped and
+  snapped to their step), stores, saves and notifies. Changing a preset key (P) switches `quality` to
+  `'custom'`; the other keys leave the preset alone. `PG.setSetting('quality', name)` = `PG.applyPreset(name)`.
+* `PG.applyPreset(name)` sets every P key from `PG.QUALITY_PRESETS[name]` (`low`, `medium`, `high` = the
+  default, `ultra`); `'custom'` only renames. Also `PG.PRESET_KEYS`, `PG.SETTINGS_DEFAULTS`, `PG.SETTINGS_SPEC`.
+* `PG.onSettings(fn)` → `fn(settings, changedKeys)` after every change; returns an unsubscribe function.
+* Saved with the player's state (`PG.ui.state().settings` is `PG.settings`), loaded before the first frame.
+* Core honours: resolution, frame cap, shadows (its cars, buses, default peds, buildings, trees), particle
+  and decal caps, skid marks, detail (car wheels, default ped hands, `PG.burst` halves its particle counts),
+  camera shake, traffic, wheel. Modules own the rest of their keys (lighting, weather, ambient life, screen
+  effects, pedestrians, police, radio, their own particle systems, the detail of their own drawings).
+* The settings screen (`#scr-settings`) opens from the title, from the pause screen and with O while playing
+  (the game pauses underneath; O, Esc or Back return). `PG.ui.openSettings(from)`, `PG.ui.closeSettings()`.
+
+### Resolution, frame rate, stats
+
+* The main canvas backing store is CSS size × min(`devicePixelRatio`, `maxDpr`) × render scale, and it can
+  change between any two frames (adaptive resolution, judged on the half-second frame rate: a 0.1 step
+  down, to 0.5 at most, after 1.5 s below ~83% of the target (60, or the frame cap), kept only if the
+  frame rate then really improves (a frame bound by script, not pixels, keeps its sharpness and the next try
+  waits twice as long); 0.1 back up after 3 s at ~93%, waiting twice as long each time that did not hold).
+  `PG.renderStats.adaptive` counts trials / kept / reverted steps. **`view.dpr` is backing pixels per CSS pixel**:
+  never assume `canvas.width === clientWidth`. Screen-space drawing works as before
+  (`ctx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0)`, then CSS pixels; the `light` and `screen` layers get
+  that transform) and `X.toScreen` / `X.toWorld` stay in CSS pixels. To read a pixel of the main canvas,
+  scale CSS coordinates by `canvas.width / canvas.clientWidth`.
+* `fpsCap` 30/60 skips display frames; `dt` still spans the real time between drawn frames.
+* `PG.renderStats` `{fps, frameMs, jsMs, scale, dpr, w, h, frames, hist (frame times), hi}` is what the FPS
+  counter shows; modules may add their own counts. `PG.resizeCanvas()` re-applies the size.
+* Set by the main loop before each frame: `PG.mainCtx` (the main canvas context) and `PG.renderPpm` (world
+  device pixels per metre = `view.scale * view.dpr`).
+
+### Fast renderer
+
+What pays off depends on how the browser rasterises a 2D canvas, so `PG.renderCaps` (detected once from the
+WebGL renderer string) says which cached techniques the engine uses: `{gpu, renderer, tiles, cars, trees,
+particles, decals, minimap}` (tests may switch them).
+
+* **GPU canvas** (`gpu: true`): blits are nearly free and draw calls are what costs. The static ground
+  (roads, paint, zebras, kerbs, sidewalks, parks, plazas) is cached in 512 px tiles at a half-octave
+  pixels-per-metre level picked from the zoom (with hysteresis), drawn under the world transform with a 1 px
+  overlap so the turning camera shows no seams, built a few per frame (nearest first; missing ones are drawn
+  the classic way meanwhile), LRU-limited, and dropped when the city, the background or a structural solid
+  changes (`PG.cityPut` / `PG.cityRemove` of anything but `prop` / `street` / `phone` / `tree`; buildings
+  stay vector, so recolouring one shows at once). Cars and buses are blitted from sprites cached per (model,
+  colour, size level, lights / brake / reverse / charred, steering bucket, flashing-light phase); trees,
+  smoke and fire, decals and the minimap come from cached sprites too.
+* **Software canvas** (`gpu: false`: no GPU, or SwiftShader / llvmpipe, which is what headless Chromium
+  uses): every scaled or turned `drawImage` is rasterised per pixel on the main thread. Measured there: 40
+  turned car sprites ~10 ms against ~1.7 ms for the same cars as vector paths; a full-screen turned tile
+  layer took a chase frame from 14 ms to 37 ms; only unscaled, unturned blits are cheap (40 sprites ~0.5 ms);
+  glow sprites beat per-frame gradients with `source-over` but lose with `lighter`; plain arcs and rects beat
+  both. So there the fast renderer stays vector and only cuts work: buildings in a handful of batched paths
+  (one per fill colour), lamp pools and lamp heads in one path each, particles with cached colour strings
+  (sparks and debris batched by colour), one `setTransform` per decal instead of save / translate / rotate /
+  restore. The big lever on such machines is pixels: render scale and adaptive resolution.
+* For modules: prefer plain fills for big shapes; cache small, busy drawings in sprites when
+  `PG.renderCaps.gpu` is true.
+* `PG.sprites.get(key, wPx, hPx, draw(ctx, wPx, hPx))` → a cached offscreen canvas (LRU, ~12 Mpx budget,
+  cleared when web fonts finish loading so lettering gets redrawn). Put everything that changes the picture
+  in the key; draw it this frame, never keep it across frames. `PG.sprites.glow(color, sizePx = 64)` soft
+  radial glow, `PG.sprites.disc(color, sizePx = 64)` soft-edged disc (draw with `drawImage` + `globalAlpha`
+  or `'lighter'`). `PG.sprites.stats`, `PG.sprites.clear()`. `PG.spriteLevel(ppm)` picks a half-octave
+  pixels-per-metre level (2 .. 128) for your own cached drawings.
+* `PG.drawCar(ctx, o)`: `o.overlay(ctx)` draws markings in the car's own frame (x forward) into the same
+  sprite, `o.overlayKey` must change whenever they look different; `o.vector` forces vector drawing.
+* `PG.cityDraw`: `begin`, `worldMatrix(view)` → `[a, b, c, d, e, f]` (one `setTransform` instead of five
+  calls), `worldTransform`, `viewBounds(view)` (world box of the screen), `ground` / `groundRaw`,
+  `buildings`, `canopies`, `lampPools`, `skids`, `invalidate(x0, y0, x1, y1)` (no arguments: everything),
+  `tileStats()`. `PG.rgbaStep(rgb, a)` → a cached `'rgba(r,g,b,a)'` string in 1/40 alpha steps.
 
 ## Scenes (interiors)
 

@@ -23,8 +23,13 @@
   const PX = new Float32Array(NP), PY = new Float32Array(NP), PVX = new Float32Array(NP), PVY = new Float32Array(NP);
   const PL = new Float32Array(NP), PM = new Float32Array(NP), PS0 = new Float32Array(NP), PS1 = new Float32Array(NP), PA = new Float32Array(NP);
   let pCur = 0, Q = 1, frameEma = 1 / 60, lastFrame = 0;   // Q: quality, drops when the frame rate does
+  // PG.settings.particles thins smoke and flames (embers start fires, so they always fly)
+  const PQK = { low: 0.35, medium: 0.65, high: 1 };
+  let PQ = 1;
+  const SET = () => PG.settings || {};
   function emit(k, x, y, vx, vy, life, s0, s1, a, flag) {
-    if (Q < 1 && k !== K_EMBER && Math.random() > Q) return;
+    const q = Q * PQ;
+    if (q < 1 && k !== K_EMBER && Math.random() > q) return;
     const i = pCur; pCur = pCur + 1 === NP ? 0 : pCur + 1;
     PK[i] = k; PX[i] = x; PY[i] = y; PVX[i] = vx; PVY[i] = vy; PL[i] = life; PM[i] = life; PS0[i] = s0; PS1[i] = s1; PA[i] = a; PF[i] = flag || 0;
   }
@@ -43,16 +48,51 @@
     g.fillStyle = gr; g.fillRect(0, 0, n, n);
     return cv;
   }
+  const STOPS = {
+    smoke: [[0, 'rgba(178,178,182,0.85)'], [0.375, 'rgba(165,165,170,0.6)'], [0.8, 'rgba(150,150,156,0.2)'], [1, 'rgba(140,140,146,0)']],
+    black: [[0, 'rgba(14,12,11,0.95)'], [0.375, 'rgba(18,16,15,0.7)'], [0.8, 'rgba(24,22,20,0.22)'], [1, 'rgba(30,28,26,0)']],
+    halo: [[0, 'rgba(255,165,70,0.55)'], [0.62, 'rgba(255,105,30,0.2)'], [0.86, 'rgba(255,80,24,0.06)'], [1, 'rgba(255,70,20,0)']],
+    hot: [[0, 'rgba(255,255,235,1)'], [0.3, 'rgba(255,228,130,0.95)'], [0.65, 'rgba(255,140,40,0.5)'], [1, 'rgba(255,80,10,0)']],
+    mid: [[0, 'rgba(255,212,110,0.95)'], [0.4, 'rgba(255,130,40,0.7)'], [1, 'rgba(220,50,10,0)']],
+    cool: [[0, 'rgba(255,120,40,0.8)'], [0.5, 'rgba(190,50,15,0.45)'], [1, 'rgba(120,20,5,0)']],
+    ground: [[0, 'rgba(255,120,30,0.65)'], [0.35, 'rgba(160,40,10,0.45)'], [0.8, 'rgba(40,12,6,0.35)'], [1, 'rgba(20,10,6,0)']],
+  };
   function sprites() {
-    return SPR || (SPR = {
-      smoke: sprite([[0, 'rgba(178,178,182,0.85)'], [0.375, 'rgba(165,165,170,0.6)'], [0.8, 'rgba(150,150,156,0.2)'], [1, 'rgba(140,140,146,0)']]),
-      black: sprite([[0, 'rgba(14,12,11,0.95)'], [0.375, 'rgba(18,16,15,0.7)'], [0.8, 'rgba(24,22,20,0.22)'], [1, 'rgba(30,28,26,0)']]),
-      halo: sprite([[0, 'rgba(255,165,70,0.55)'], [0.62, 'rgba(255,105,30,0.2)'], [0.86, 'rgba(255,80,24,0.06)'], [1, 'rgba(255,70,20,0)']]),
-      hot: sprite([[0, 'rgba(255,255,235,1)'], [0.3, 'rgba(255,228,130,0.95)'], [0.65, 'rgba(255,140,40,0.5)'], [1, 'rgba(255,80,10,0)']]),
-      mid: sprite([[0, 'rgba(255,212,110,0.95)'], [0.4, 'rgba(255,130,40,0.7)'], [1, 'rgba(220,50,10,0)']]),
-      cool: sprite([[0, 'rgba(255,120,40,0.8)'], [0.5, 'rgba(190,50,15,0.45)'], [1, 'rgba(120,20,5,0)']]),
-      ground: sprite([[0, 'rgba(255,120,30,0.65)'], [0.35, 'rgba(160,40,10,0.45)'], [0.8, 'rgba(40,12,6,0.35)'], [1, 'rgba(20,10,6,0)']]),
+    if (SPR) return SPR;
+    SPR = {};
+    for (const k in STOPS) SPR[k] = sprite(STOPS[k]);
+    return SPR;
+  }
+  // Soft round sprites (smoke, halos, flames, fire beds) at their on-screen pixel size (6 % steps), drawn
+  // in device space without filtering: a software-rasterised canvas blits those about 3x faster than a
+  // small sprite scaled up with filtering, and a soft gradient looks the same either way.
+  const SOFT_STEP = Math.log(1.06);
+  let softM = null, softPpm = 0;
+  function softBegin(ctx) {
+    softM = null;
+    if (SET().fastRender === false || !PG.sprites) return false;
+    softM = ctx.getTransform(); softPpm = Math.hypot(softM.a, softM.b);
+    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.imageSmoothingEnabled = false;
+    return true;
+  }
+  function softEnd(ctx) { if (softM) { ctx.setTransform(softM); ctx.imageSmoothingEnabled = true; softM = null; } }
+  // kind centred on world (x, y), world radius r (after softBegin; otherwise a plain scaled blit)
+  function soft(ctx, kind, x, y, r) {
+    const M = softM;
+    if (!M) { ctx.drawImage(SPR[kind], x - r, y - r, r * 2, r * 2); return; }
+    const px = 2 * r * softPpm;
+    if (px < 1.5) return;
+    if (px > 320) {   // huge: one filtered blit in world space
+      ctx.setTransform(M); ctx.imageSmoothingEnabled = true; ctx.drawImage(SPR[kind], x - r, y - r, r * 2, r * 2);
+      ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.imageSmoothingEnabled = false; return;
+    }
+    const n = Math.max(2, Math.round(Math.exp(Math.round(Math.log(px) / SOFT_STEP) * SOFT_STEP)));
+    const spr = PG.sprites.get('dsoft|' + kind + '|' + n, n, n, g => {
+      const h = n / 2, gr = g.createRadialGradient(h, h, 0, h, h, h);
+      for (const st of STOPS[kind]) gr.addColorStop(st[0], st[1]);
+      g.fillStyle = gr; g.fillRect(0, 0, n, n);
     });
+    ctx.drawImage(spr, M.a * x + M.c * y + M.e - n / 2, M.b * x + M.d * y + M.f - n / 2);
   }
 
   // ================= state =================
@@ -75,6 +115,8 @@
     return Math.hypot(lx > 0 ? lx : 0, ly > 0 ? ly : 0);
   }
   const carDist = (c, x, y) => carDistAt(c, c.x, c.y, x, y);
+  // decals 'low': no broken glass on the street (scorch marks stay)
+  function glassDecal(x, y, s) { if (SET().decals !== 'low') X.decal(x, y, 'glass', s); }
   const notProp = s => s.kind !== 'prop';
   const heavy = c => c.maxHp >= 2500;
   const isEV = c => !!(c.def && c.def.dyn && c.def.dyn.type === 'ev');
@@ -176,7 +218,7 @@
       if (amt > 0.14) { const b = v < -0.3 ? 1 : v > 0.3 ? 2 : (amt > 0.3 ? (Math.random() < 0.5 ? 1 : 2) : 0); if (b && !(d.tails & b)) { d.tails |= b; shards = true; } }
       if (d.b > 0.5 && !d.bumperB) d.bumperB = v < 0 ? 1 : -1;
     }
-    if (shards) { X.decal(wx, wy, 'glass', 0.7); if (seen(wx, wy, 5)) PG.burst(wx, wy, 'debris', 6, 3, 0.6, 0.12, ['#cfe3ef', '#9fc0d6', '#ffffff']); }
+    if (shards) { glassDecal(wx, wy, 0.7); if (seen(wx, wy, 5)) PG.burst(wx, wy, 'debris', 6, 3, 0.6, 0.12, ['#cfe3ef', '#9fc0d6', '#ffffff']); }
   }
   // Bullet hole on the side facing the shooter.
   function addHole(c, by) {
@@ -568,7 +610,7 @@
     const df = Math.hypot(x - X.cam.x, y - X.cam.y);
     if (seen(x, y, R * 2)) fireball(x, y, R, pw, src, byCur);
     X.decal(x, y, 'scorch', R * 0.5);
-    if (src && src.kind === 'car') X.decal(x, y, 'glass', 1.6);
+    if (src && src.kind === 'car') glassDecal(x, y, 1.6);
     G().shake = Math.max(G().shake || 0, Math.min(1.2, 0.95 * pw) * cl(1 - df / 75, 0, 1));
     sfxBoom(x, y, pw);
     // people: knocked down and flung by the shockwave, hurt with falloff (walls shield)
@@ -616,7 +658,7 @@
       if (d < R * 0.9) armProp(pr, by, 0.07 + Math.max(0, d) / R * 0.3);
     }
     const C = X.city;
-    for (const l of C.lamps) if (!l.broken && Math.abs(l.x - x) < R * 0.5 && Math.abs(l.y - y) < R * 0.5) { l.broken = true; PG.burst(l.x + l.nx * 1.2, l.y + l.ny * 1.2, 'spark', 12, 6, 0.5, 0.1); X.decal(l.x + l.nx * 1.2, l.y + l.ny * 1.2, 'glass', 0.8); X.emit('lampBroken', { lamp: l, by }); }
+    for (const l of C.lamps) if (!l.broken && Math.abs(l.x - x) < R * 0.5 && Math.abs(l.y - y) < R * 0.5) { l.broken = true; PG.burst(l.x + l.nx * 1.2, l.y + l.ny * 1.2, 'spark', 12, 6, 0.5, 0.1); glassDecal(l.x + l.nx * 1.2, l.y + l.ny * 1.2, 0.8); X.emit('lampBroken', { lamp: l, by }); }
     if (!o.noFire) {
       for (const tr of treesNear(x, y, R * 0.65)) igniteTree(tr, by);
       // a burning wreck is its own fire: car blasts just spill a little burning fuel beside it
@@ -939,6 +981,7 @@
   }
 
   function tick(dt) {
+    PQ = PQK[SET().particles] || 1;
     fx = X.cam.x; fy = X.cam.y;   // the listener: where the player is looking (indoors too)
     // queued prop explosions (a few per frame at most)
     if (pend.length) {
@@ -1018,17 +1061,18 @@
     else if (m.box) { WS0 = L * 0.33; WS1 = L * 0.41; WSF = WSB = W / 2 - 0.18; }
     else { WS0 = L * 0.12; WS1 = L * 0.30; WSB = W / 2 - 0.22; WSF = W / 2 - 0.16; }
   }
-  function crumple(ctx, rot, ext, half, depth, seed) {
+  function crumple(ctx, rot, ext, half, depth, seed, lowD) {
     ctx.save(); if (rot) ctx.rotate(rot);
     ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.beginPath(); ctx.moveTo(ext + 0.3, -half - 0.3);
     for (let i = 0; i <= 8; i++) ctx.lineTo(ext - depth * (0.45 + 0.55 * hr(seed, i)), -half + 2 * half * i / 8);
     ctx.lineTo(ext + 0.3, half + 0.3); ctx.closePath(); ctx.fill();
+    if (lowD) { ctx.restore(); return; }
     ctx.lineWidth = 0.04; ctx.strokeStyle = 'rgba(255,255,255,0.3)'; ctx.beginPath();
     for (let i = 1; i < 8; i += 2) { const y = -half + 2 * half * i / 8; ctx.moveTo(ext - 0.04, y + (hr(seed, i + 20) - 0.5) * 0.3); ctx.lineTo(ext - depth * (0.4 + 0.5 * hr(seed, i)), y); }
     ctx.stroke();
     ctx.restore();
   }
-  function drawCracks(ctx, c, d) {
+  function drawCracks(ctx, c, d, lowD) {
     windscreen(c);
     ctx.save();
     ctx.beginPath(); ctx.moveTo(WS1, -WSF); ctx.lineTo(WS0, -WSB); ctx.lineTo(WS0, WSB); ctx.lineTo(WS1, WSF); ctx.closePath(); ctx.clip();
@@ -1040,7 +1084,8 @@
       }
       ctx.fill(); ctx.restore(); return;
     }
-    if (d.glass >= 1) { ctx.fillStyle = 'rgba(200,215,228,0.33)'; ctx.fill(); }
+    if (d.glass >= 1 || lowD) { ctx.fillStyle = 'rgba(200,215,228,0.33)'; ctx.fill(); }
+    if (lowD) { ctx.restore(); return; }
     const ox = (WS0 + WS1) / 2 + d.gx * (WS1 - WS0) * 0.4, oy = cl(d.gy, -WSB * 0.7, WSB * 0.7);
     const n = d.glass >= 1 ? 11 : 2 + Math.round(d.glass * 7), len = d.glass >= 1 ? 1.7 : 0.35 + d.glass * 0.8;
     ctx.strokeStyle = 'rgba(232,240,246,0.85)'; ctx.lineWidth = 0.028; ctx.beginPath();
@@ -1053,25 +1098,58 @@
     ctx.stroke();
     ctx.restore();
   }
-  function bumper(ctx, ex, hw, side, dir, t, c, seed) {
+  function bumper(ctx, ex, hw, side, dir, t, c, seed, lowD) {
     const sp = Math.min(1, (c.speed || 0) / 10), sway = 0.32 + 0.06 * sp + 0.1 * Math.sin(t * 9 + seed) * sp;
     const px = ex + dir * 0.04, py = side * (hw - 0.1), len = hw * 2 - 0.2;
     const qx = px + dir * Math.sin(sway) * len, qy = py - side * Math.cos(sway) * len;
     ctx.lineCap = 'round'; ctx.strokeStyle = '#1c1c1e'; ctx.lineWidth = 0.17;
     ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(qx, qy); ctx.stroke();
-    ctx.strokeStyle = 'rgba(255,255,255,0.2)'; ctx.lineWidth = 0.05; ctx.stroke(); ctx.lineCap = 'butt';
+    if (!lowD) { ctx.strokeStyle = 'rgba(255,255,255,0.2)'; ctx.lineWidth = 0.05; ctx.stroke(); }
+    ctx.lineCap = 'butt';
+  }
+  // The battered look of a car (dents, crumples, holes, cracks, soot, dead lamps) changes only when it
+  // takes damage: with the fast renderer it is one cached sprite per car and damage state; only the
+  // swinging bumper is drawn every frame.
+  const DM = 0.06;
+  const q20 = v => Math.round(v * 20);
+  function place(ctx, M, x, y, th) {
+    const cs = Math.cos(th), sn = Math.sin(th);
+    ctx.setTransform(M.a * cs + M.c * sn, M.b * cs + M.d * sn, M.c * cs - M.a * sn, M.d * cs - M.b * sn, M.a * x + M.c * y + M.e, M.b * x + M.d * y + M.f);
   }
   function drawDamage(ctx, c, t) {
-    const d = c.dmg, L = c.len, W = c.wid, hl = L / 2, hw = W / 2, seed = d.seed;
+    const d = c.dmg, L = c.len, W = c.wid, hl = L / 2, hw = W / 2, seed = d.seed, set = SET(), lowD = set.detail === 'low';
+    if (set.fastRender !== false && PG.sprites && PG.spriteLevel) {
+      const M = ctx.getTransform(), lv = PG.spriteLevel(Math.hypot(M.a, M.b));
+      if (lv > 0 && (L + 2 * DM) * lv <= 2048) {
+        const dl = d.dents.length ? d.dents[d.dents.length - 1] : null, hl2 = d.holes.length ? d.holes[d.holes.length - 1] : null;
+        const key = 'dmg|' + c.id + '|' + L + 'x' + W + (c.model.kind || '') + (c.model.box ? 'b' : '') + '|' + q20(d.f) + ',' + q20(d.b) + ',' + q20(d.l) + ',' + q20(d.r) + '|' + d.dents.length + (dl ? dl.x.toFixed(2) : '') + '|' + d.holes.length + (hl2 ? hl2.x.toFixed(2) : '') +
+          '|' + q20(d.glass) + (d.glass ? d.gx.toFixed(2) : '') + '|' + (c.wrecked ? 'w' : q20(Math.min(0.72, d.soot * 0.75))) + '|' + d.lights + d.tails + (lowD ? 'l' : '') + '|' + lv;
+        const spr = PG.sprites.get(key, (L + 2 * DM) * lv, (W + 2 * DM) * lv, g => { g.setTransform(lv, 0, 0, lv, (hl + DM) * lv, (hw + DM) * lv); damageBody(g, c, d, lowD); });
+        place(ctx, M, c.x, c.y, c.th);
+        ctx.drawImage(spr, -hl - DM, -hw - DM, spr.width / lv, spr.height / lv);
+        if (d.bumperF) bumper(ctx, hl, hw, d.bumperF, 1, t, c, seed, lowD);
+        if (d.bumperB) bumper(ctx, -hl, hw, d.bumperB, -1, t, c, seed + 1, lowD);
+        ctx.setTransform(M);
+        return;
+      }
+    }
     ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(c.th);
+    damageBody(ctx, c, d, lowD);
+    if (d.bumperF) bumper(ctx, hl, hw, d.bumperF, 1, t, c, seed, lowD);
+    if (d.bumperB) bumper(ctx, -hl, hw, d.bumperB, -1, t, c, seed + 1, lowD);
+    ctx.restore();
+  }
+  // in the car's own frame
+  function damageBody(ctx, c, d, lowD) {
+    const L = c.len, W = c.wid, hl = L / 2, hw = W / 2, seed = d.seed;
     ctx.save();
     PG.rr(ctx, -hl, -hw, L, W, c.model.kind === 'bus' ? 0.45 : Math.min(0.42, W * 0.22)); ctx.clip();
     if (d.soot > 0.03 && !c.wrecked) { ctx.globalAlpha = Math.min(0.72, d.soot * 0.75); ctx.fillStyle = '#100d0b'; ctx.fillRect(-hl, -hw, L, W); ctx.globalAlpha = 1; }
-    if (d.f > 0.02) crumple(ctx, 0, hl, hw, d.f * Math.min(1.2, L * 0.16), seed);
-    if (d.b > 0.02) crumple(ctx, Math.PI, hl, hw, d.b * Math.min(1.2, L * 0.16), seed + 3);
-    if (d.l > 0.02) crumple(ctx, -Math.PI / 2, hw, hl, d.l * W * 0.3, seed + 7);
-    if (d.r > 0.02) crumple(ctx, Math.PI / 2, hw, hl, d.r * W * 0.3, seed + 11);
-    if (d.dents.length) {
+    if (d.f > 0.02) crumple(ctx, 0, hl, hw, d.f * Math.min(1.2, L * 0.16), seed, lowD);
+    if (d.b > 0.02) crumple(ctx, Math.PI, hl, hw, d.b * Math.min(1.2, L * 0.16), seed + 3, lowD);
+    if (d.l > 0.02) crumple(ctx, -Math.PI / 2, hw, hl, d.l * W * 0.3, seed + 7, lowD);
+    if (d.r > 0.02) crumple(ctx, Math.PI / 2, hw, hl, d.r * W * 0.3, seed + 11, lowD);
+    if (d.dents.length && !lowD) {
       ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.beginPath();
       for (const q of d.dents) { ctx.moveTo(q.x + q.s, q.y); ctx.ellipse(q.x, q.y, q.s, q.s * 0.7, q.a, 0, TAU); }
       ctx.fill();
@@ -1080,23 +1158,22 @@
       ctx.stroke();
     }
     if (d.holes.length) {
-      ctx.fillStyle = 'rgba(205,205,210,0.55)'; ctx.beginPath();
-      for (const h of d.holes) { ctx.moveTo(h.x + 0.08, h.y); ctx.arc(h.x, h.y, 0.08, 0, TAU); }
-      ctx.fill();
+      if (!lowD) {
+        ctx.fillStyle = 'rgba(205,205,210,0.55)'; ctx.beginPath();
+        for (const h of d.holes) { ctx.moveTo(h.x + 0.08, h.y); ctx.arc(h.x, h.y, 0.08, 0, TAU); }
+        ctx.fill();
+      }
       ctx.fillStyle = '#0a0a0a'; ctx.beginPath();
       for (const h of d.holes) { ctx.moveTo(h.x + 0.05, h.y); ctx.arc(h.x, h.y, 0.05, 0, TAU); }
       ctx.fill();
     }
     ctx.restore();
-    if (d.glass > 0.05) drawCracks(ctx, c, d);
+    if (d.glass > 0.05) drawCracks(ctx, c, d, lowD);
     if (d.lights) {
       ctx.fillStyle = '#222'; if (d.lights & 1) ctx.fillRect(hl - 0.15, -hw + 0.1, 0.14, 0.42); if (d.lights & 2) ctx.fillRect(hl - 0.15, hw - 0.52, 0.14, 0.42);
       ctx.fillStyle = 'rgba(220,235,245,0.7)'; if (d.lights & 1) ctx.fillRect(hl - 0.1, -hw + 0.2, 0.05, 0.06); if (d.lights & 2) ctx.fillRect(hl - 0.1, hw - 0.3, 0.05, 0.06);
     }
     if (d.tails) { ctx.fillStyle = '#1e1414'; if (d.tails & 1) ctx.fillRect(-hl + 0.01, -hw + 0.1, 0.12, 0.4); if (d.tails & 2) ctx.fillRect(-hl + 0.01, hw - 0.5, 0.12, 0.4); }
-    if (d.bumperF) bumper(ctx, hl, hw, d.bumperF, 1, t, c, seed);
-    if (d.bumperB) bumper(ctx, -hl, hw, d.bumperB, -1, t, c, seed + 1);
-    ctx.restore();
   }
   const baseDrawCar = X.drawCar;
   X.drawCar = function (ctx, c, t) {
@@ -1113,9 +1190,13 @@
     if (c.dmg) drawDamage(ctx, c, t);
   };
 
-  function drawProp(ctx, pr) {
+  function drawProp(ctx, pr, shadows, tiny) {
     const x = pr.x, y = pr.y, r = pr.r;
-    ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.beginPath(); ctx.arc(x + 0.1, y + 0.13, r, 0, TAU); ctx.fill();
+    if (shadows && !tiny) { ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.beginPath(); ctx.arc(x + 0.1, y + 0.13, r, 0, TAU); ctx.fill(); }
+    if (tiny) {   // a few pixels across (far zoom): just the coloured body
+      ctx.fillStyle = pr.type === 'gas' ? (pr.tint < 0.5 ? '#c9372c' : '#d9a21b') : pr.type === 'fireworks' ? '#9a6a3a' : pr.type === 'propane' ? '#ecebe6' : pr.tint < 0.75 ? '#b3261c' : '#c2481a';
+      ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill(); return;
+    }
     if (pr.type === 'gas') {
       ctx.save(); ctx.translate(x, y); ctx.rotate(pr.rot);
       ctx.fillStyle = pr.tint < 0.5 ? '#c9372c' : '#d9a21b'; PG.rr(ctx, -0.29, -0.2, 0.58, 0.4, 0.06); ctx.fill();
@@ -1149,11 +1230,11 @@
     }
     if (pr.heat > 0.05) { ctx.globalAlpha = Math.min(0.8, pr.heat) * (0.6 + 0.4 * Math.sin(X.time * 18)); ctx.strokeStyle = '#ff7a1a'; ctx.lineWidth = 0.08; ctx.beginPath(); ctx.arc(x, y, r + 0.04, 0, TAU); ctx.stroke(); ctx.globalAlpha = 1; }
   }
-  function drawChunk(ctx, ch) {
+  function drawChunk(ctx, ch, shadows) {
     const fade = ch.life - ch.t < 3 ? (ch.life - ch.t) / 3 : 1, s = 1 + ch.z * 0.12;
     ctx.save(); ctx.globalAlpha = fade;
     ctx.translate(ch.x, ch.y);
-    ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(ch.z * 0.35 - ch.w / 2, ch.z * 0.45 - ch.h / 2, ch.w, ch.h);
+    if (shadows) { ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(ch.z * 0.35 - ch.w / 2, ch.z * 0.45 - ch.h / 2, ch.w, ch.h); }
     ctx.rotate(ch.rot); ctx.scale(s, s);
     if (ch.type === 'wheel') {
       if (ch.flat) { ctx.fillStyle = '#151515'; ctx.beginPath(); ctx.arc(0, 0, 0.34, 0, TAU); ctx.fill(); ctx.fillStyle = '#6b6f75'; ctx.beginPath(); ctx.arc(0, 0, 0.17, 0, TAU); ctx.fill(); }
@@ -1166,15 +1247,17 @@
     ctx.restore();
   }
   function drawSmoke(ctx) {
-    const v = X.lastView, S = sprites(), cx = v.cx, cy = v.cy, R = v.r + 6;
+    const v = X.lastView, cx = v.cx, cy = v.cy, R = v.r + 6;
+    sprites(); softBegin(ctx);
     for (let i = 0; i < NP; i++) {
       const k = PK[i]; if (k !== K_SMOKE && k !== K_BLACK) continue;
       const x = PX[i], y = PY[i]; if (Math.abs(x - cx) > R || Math.abs(y - cy) > R) continue;
       const u = 1 - PL[i] / PM[i], s = (PS0[i] + (PS1[i] - PS0[i]) * u) * SMOKE_K, a = PA[i] * (u < 0.12 ? u / 0.12 : 1 - (u - 0.12) / 0.88);
       if (a < 0.03) continue;
       ctx.globalAlpha = a;
-      ctx.drawImage(k === K_BLACK ? S.black : S.smoke, x - s, y - s, s * 2, s * 2);
+      soft(ctx, k === K_BLACK ? 'black' : 'smoke', x, y, s);
     }
+    softEnd(ctx);
     ctx.globalAlpha = 1;
   }
   // Fire glow, gathered once a frame: sources within a few metres of each other share one light and one
@@ -1216,21 +1299,28 @@
   function halo(ctx, x, y, r, a) {
     r *= HALO_K;
     if (Math.abs(x - HX) > HR + r || Math.abs(y - HY) > HR + r) return;
-    ctx.globalAlpha = a; ctx.drawImage(SPR.halo, x - r, y - r, r * 2, r * 2);
+    ctx.globalAlpha = a; soft(ctx, 'halo', x, y, r);
   }
   function drawFire(ctx, t) {
-    const v = X.lastView, S = sprites(), cx = v.cx, cy = v.cy, R = v.r + 4;
+    const v = X.lastView, S = sprites(), cx = v.cx, cy = v.cy, R = v.r + 4, lowD = SET().detail === 'low';
     HX = cx; HY = cy; HR = R;
+    softBegin(ctx);
     for (let k = 0; k < nC; k++) if (CHA[k] > 0.01) halo(ctx, CX[k], CY[k], CHR[k], CHA[k]);
-    // flames and embers: additive, but small
+    // flames: additive, but small (embers are batched after them in world space)
     ctx.globalCompositeOperation = 'lighter';
-    ctx.fillStyle = '#ffb347';
+    let embers = 0;
     for (let i = 0; i < NP; i++) {
-      const k = PK[i]; if (k !== K_FLAME && k !== K_EMBER) continue;
+      const k = PK[i]; if (k !== K_FLAME) { if (k === K_EMBER) embers++; continue; }
       const x = PX[i], y = PY[i]; if (Math.abs(x - cx) > R || Math.abs(y - cy) > R) continue;
-      const u = 1 - PL[i] / PM[i];
-      if (k === K_FLAME) { const s = PS0[i] + (PS1[i] - PS0[i]) * u, a = PA[i] * (1 - u * u); if (a < 0.03) continue; ctx.globalAlpha = a; ctx.drawImage(u < 0.3 ? S.hot : u < 0.65 ? S.mid : S.cool, x - s, y - s, s * 2, s * 2); }
-      else { ctx.globalAlpha = PA[i] * (1 - u); ctx.fillRect(x - 0.07, y - 0.07, 0.14, 0.14); }
+      const u = 1 - PL[i] / PM[i], s = PS0[i] + (PS1[i] - PS0[i]) * u, a = PA[i] * (1 - u * u); if (a < 0.03) continue;
+      ctx.globalAlpha = a; soft(ctx, u < 0.3 ? 'hot' : u < 0.65 ? 'mid' : 'cool', x, y, s);
+    }
+    softEnd(ctx);
+    ctx.fillStyle = '#ffb347';
+    if (embers) for (let i = 0; i < NP; i++) {
+      if (PK[i] !== K_EMBER) continue;
+      const x = PX[i], y = PY[i]; if (Math.abs(x - cx) > R || Math.abs(y - cy) > R) continue;
+      ctx.globalAlpha = PA[i] * (1 - (1 - PL[i] / PM[i])); ctx.fillRect(x - 0.07, y - 0.07, 0.14, 0.14);
     }
     // fireworks sparks, one colour at a time
     if (rockets.length || pops.length || props.some(isShow) || sparkLeft > 0) {
@@ -1255,7 +1345,7 @@
     for (const c of X.cars) {
       if (!c.wrecked || c.removed || !(c.smoulder > 0) || Math.abs(c.x - cx) > R || Math.abs(c.y - cy) > R) continue;
       const k = Math.min(1, c.smoulder / 4), cs = Math.cos(c.th), sn = Math.sin(c.th), sd = c.dmg ? c.dmg.seed : c.id;
-      for (let i = 0; i < 7; i++) {
+      for (let i = 0, n = lowD ? 3 : 7; i < n; i++) {
         const lx = (hr(sd, i) - 0.5) * c.len * 0.8, ly = (hr(sd, i + 9) - 0.5) * c.wid * 0.8;
         ctx.globalAlpha = k * (0.4 + 0.6 * Math.abs(Math.sin(t * (3 + i) + i)));
         ctx.fillRect(c.x + cs * lx - sn * ly - 0.08, c.y + sn * lx + cs * ly - 0.08, 0.16, 0.16);
@@ -1358,24 +1448,30 @@
           if (s.done || !seen(s.x, s.y, 2)) continue;
           ctx.globalAlpha = 0.55 * Math.max(0, 1 - (X.time - s.t) / 90); ctx.beginPath(); ctx.ellipse(s.x, s.y, s.s, s.s * 0.7, s.t, 0, TAU); ctx.fill();
         }
-        for (const f of fires) {
-          if (!seen(f.x, f.y, 4)) continue;
-          const r = f.r * 1.6; ctx.globalAlpha = Math.min(1, f.life / 1.5) * (0.8 + 0.2 * Math.sin(t * 9 + f.seed));
-          ctx.drawImage(S.ground, f.x - r, f.y - r, r * 2, r * 2);
+        if (fires.length) {
+          softBegin(ctx);
+          for (const f of fires) {
+            if (!seen(f.x, f.y, 4)) continue;
+            ctx.globalAlpha = Math.min(1, f.life / 1.5) * (0.8 + 0.2 * Math.sin(t * 9 + f.seed));
+            soft(ctx, 'ground', f.x, f.y, f.r * 1.6);
+          }
+          softEnd(ctx);
         }
         ctx.globalAlpha = 1;
       },
-      props(ctx) {
+      props(ctx, view) {
+        const sh = SET().shadows !== false, tiny = view.scale < 7;
         for (const pr of props) {
           if (pr.dead || pr.fly || !seen(pr.x, pr.y, 2)) continue;
           if (pr.leak) { ctx.fillStyle = 'rgba(14,12,16,0.6)'; ctx.beginPath(); ctx.ellipse(pr.x + 0.25, pr.y + 0.3, pr.r + 0.2 * pr.leak, (pr.r + 0.2 * pr.leak) * 0.7, pr.rot, 0, TAU); ctx.fill(); }
-          drawProp(ctx, pr);
+          drawProp(ctx, pr, sh, tiny);
         }
       },
-      bodies(ctx) { for (const ch of chunks) if (ch.z <= 0.05 && seen(ch.x, ch.y, 2)) drawChunk(ctx, ch); },
+      bodies(ctx) { const sh = SET().shadows !== false; for (const ch of chunks) if (ch.z <= 0.05 && seen(ch.x, ch.y, 2)) drawChunk(ctx, ch, sh); },
       air(ctx) {
         drawSmoke(ctx);
-        for (const ch of chunks) if (ch.z > 0.05 && seen(ch.x, ch.y, 3)) drawChunk(ctx, ch);
+        const sh = SET().shadows !== false;
+        for (const ch of chunks) if (ch.z > 0.05 && seen(ch.x, ch.y, 3)) drawChunk(ctx, ch, sh);
         for (const pr of props) if (pr.fly && !pr.dead && seen(pr.x, pr.y, 2)) { ctx.save(); ctx.translate(pr.x, pr.y); ctx.rotate(pr.rot); ctx.fillStyle = '#ecebe6'; PG.rr(ctx, -0.45, -0.3, 0.9, 0.6, 0.28); ctx.fill(); ctx.fillStyle = '#c0392b'; ctx.fillRect(-0.12, -0.3, 0.1, 0.6); ctx.fillStyle = '#c9a227'; ctx.fillRect(0.38, -0.08, 0.12, 0.16); ctx.restore(); }
       },
       overlay(ctx, view, t) {
@@ -1386,6 +1482,7 @@
         drawFire(ctx, t);
       },
       screen(ctx, view) {
+        if (SET().screenFx === false) return;
         let a = 0;
         for (const b of blasts) {
           const age = X.time - b.t0; if (age > 0.14 || age < 0) continue;
