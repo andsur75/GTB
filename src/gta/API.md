@@ -193,6 +193,41 @@ A module that owns a service replaces it at load time, keeping the old one if it
 | `X.missions` | missions | `{active, start(id), fail(), ...}` |
 | `X.interiors` | interiors | `{enter(placeId|building), scenes}` |
 
+## Fist fights: brawl
+
+`brawl.js` owns melee for every person. `p.act` is a person's current action `{on, type, t, dur, w, s, r
+(wind-up / strike / recovery s), side (-1 left, 1 right), res (0 pending, 1 hit, 2 missed)}`; types: `jab cross
+hook uppercut haymaker kick bat stomp` (strikes) and `block dodge hitReact stagger knockdown taunt beg`. A strike
+lands only when the fist, foot or bat physically reaches somebody (at that frame), with hit-stop, knockback,
+blocks (-70%), and reports `assault` / `hitCopCar` for the player like weapons.js. Fists pass over people on the
+ground (knocked down, getting up, sent flying); kicks and bats still connect, and the player's fire on somebody
+lying in front is a `stomp` (once per knockdown). A clean blow stuns per type (a jab only makes them flinch);
+someone already swinging can take a light blow and keep swinging (the player always), fighters who eat several
+in a row shrug one off or raise a block, and a block is often answered with a counter. The player's uppercut
+floors people as the finisher of a combo that landed. Without a mouse, the player squares up to the nearest
+person fist-fighting them (so the move keys circle them and backing off kicks); sprinting breaks away.
+weapons.js routes fists and the bat (`X.fireWeapon` with a melee weapon) through `X.brawl.melee`; melee damage
+another module deals directly still gets a swing and a flinch drawn.
+
+* `X.brawl.strike(p, type, o)` start a strike (`o: {side, mul, ang}`); false while stunned or down.
+* `X.brawl.fight(p, target, o)` brawl takes over `p.ai` (`{owner: 'brawl', prev, target, ...}`) for a fist fight
+  (`o: {skill 0..1, aggr, giveUp (hp fraction), chase (s)}`) and gives the previous AI back when it ends,
+  emitting `brawlEnd {ped, target, reason: won | lost | flee | escaped | dead | stop}`. Owners react to that
+  (peds.js: flee, shake a fist, carry on). `X.brawl.provoke(victim, attacker)` is the same with a yell, for a
+  victim that decided to fight back (the decision is the owner's; peds.js rolls 75% for civilians).
+* `X.brawl.stopFight(p, reason)`, `X.brawl.isFighting(p)` (for the player: anyone fighting them).
+* `X.brawl.armPose(p, t)` the pose `X.drawPed` draws, or null when brawl has nothing to show: body frame of
+  the person before the draw scale (+x facing, +y right): shoulders `lsx/lsy rsx/rsy`, elbows `lex/ley
+  rex/rey`, fists `lx/ly rx/ry` (sizes `fl/fr`), torso twist `tw`, `lean`, sideways `sy`, head offset `hx/hy`,
+  `stance` (0..1), a kicking leg `leg` (side) `hipx/hipy knx/kny kx/ky`, a bat `bat ba`; or `body: 'fall' |
+  'lie' | 'getup' | 'kneel'` with `k` (progress) and `ang` (fall direction) for knockdowns and begging; `fk` is the
+  kicking foot's size (a raised stomp looks bigger from above).
+* `X.brawl.react(p, type)`, `X.brawl.knockdown(p, ang, by)`, `X.brawl.limbAt(p)` (world position of the striking
+  fist / foot / bat tip), `X.brawl.fights()` active fights `{x, y, a, b, player, alive, watch}` (peds.js gathers
+  a ring of watchers), `X.brawl.stats`, `X.brawl.opts`.
+* Events: `brawlStart {ped, target}`, `brawlHit {by, ped, type, dmg, blocked, knockdown}`, `brawlKnockdown
+  {ped, by}`, `brawlEnd`.
+
 ## Drawing helpers
 
 * `X.addLight(x, y, radius, color, intensity, {cone: {dir, spread}})` submits a light for this frame

@@ -193,7 +193,7 @@ const s9b = await t.eval(async () => {
 });
 check('a carjacked driver can fight back: kicks the car, then punches the player', s9b.victim && s9b.kicked && s9b.hurt > 0, s9b);
 await snap('05-fight');
-await t.eval(() => { PG.gta.crowd.opts.fightChance = 0.2; });
+await t.eval(() => { PG.gta.crowd.opts.fightChance = 0.75; });   // the default: 3 in 4 fight back
 
 // ---- 10. a burning pedestrian runs around wildly ----
 const s10 = await t.eval(async () => {

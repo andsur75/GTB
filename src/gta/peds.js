@@ -3,8 +3,9 @@
 // briefcases, tourists flashing cameras, night-time drunks), cross at the zebras when the road is clear (or
 // jaywalk), go in and out of building doors, stop to phone, smoke, chat, film wrecks and sit in the park.
 // They flee gunfire and explosions (panic spreads), dive away from cars on the pavement, scream, cower,
-// raise their hands at a pointed gun, shake their fists, fight back when carjacked or mugged, run around on
-// fire, mourn their partner and phone the police as witnesses. Corpses ragdoll, bleed spreading pools
+// raise their hands at a pointed gun, shake their fists, fight back (3 in 4 of them, with brawl.js) when
+// punched, kicked, shoved by a car, carjacked or mugged, gather in a ring to watch a street fight (cheering,
+// filming, calling the police), run around on fire, mourn their partner and phone the police as witnesses. Corpses ragdoll, bleed spreading pools
 // (bloody footprints included), drop cash and are cleaned up. Three gangs own districts and hang on their
 // corners until provoked, then fight with fists, bats and guns (X.gangs, with GTA2-style respect).
 // Replaces X.drawPed with chunky top-down people; adds X.crowd. Also applies car-on-pedestrian hits that
@@ -18,7 +19,10 @@
   const P = X.player;
   const hr = (s, i) => { const v = Math.sin(s * 127.1 + i * 311.7) * 43758.5453; return v - Math.floor(v); };
   // Tunables (tests poke these).
-  const OPT = { target: 70, fightChance: 0.2, diveChance: 0.85, crossChance: 0.22, jaywalk: 0.002, gangCap: 9, mugFight: 0.12, mugFightFists: 0.35, enterChance: 0.14 };
+  const OPT = { target: 70, fightChance: 0.75, diveChance: 0.85, crossChance: 0.22, jaywalk: 0.002, gangCap: 9, mugFight: 0.12, mugFightFists: 0.35, enterChance: 0.14 };
+
+  // How much more (or less) likely than OPT.fightChance each kind of person is to fight back.
+  const FIGHT_K = { old: 0.34, jogger: 0.6, business: 0.8, tourist: 0.85, drunk: 1.25, tough: 1.3 };
 
   // ================= looks =================
   const SKIN = ['#f1c7a1', '#e0ac7e', '#c68a5c', '#8d5a3b', '#5c3a24', '#f6d7bd'];
@@ -62,6 +66,10 @@
       case 'shopper': lk.acc = 'bags'; if (Math.random() < 0.5) lk.jacket = pick(JACKET); break;
       case 'drunk': lk.acc = 'beer'; if (Math.random() < 0.5) lk.jacket = pick(JACKET); break;
       case 'dogwalker': lk.acc = 'leash'; if (Math.random() < 0.4) lk.jacket = pick(JACKET); break;
+      case 'tough':   // big, buzz cut, tank top or a leather jacket: the one who always fights back
+        lk.scale = rand(1.1, 1.17); lk.hairStyle = pick(['buzz', 'bald', 'buzz', 'mohawk']); lk.shirt = pick(['#e9e4d8', '#1b1f27', '#8a9199', '#5a7a3a']);
+        lk.pants = pick(['#1f2a44', '#2b2d33', '#24332a']); lk.jacket = Math.random() < 0.45 ? '#1d1a18' : null; lk.outfit = 'tough';
+        break;
       default:
         if (Math.random() < 0.35) lk.jacket = pick(JACKET);
         if (Math.random() < 0.14) { lk.hat = pick(['#1b1f27', '#8a1f1a', '#e9e4d8', '#2f6fb5', '#3e8e5a']); lk.hatType = pick(['cap', 'beanie']); }
@@ -88,6 +96,8 @@
     warn: ['NOT ON OUR TURF!', 'PUT THAT AWAY!', 'LAST WARNING!'],
     hello: ['HEY BOSS!', 'RESPECT!', 'LOOKING GOOD!'],
     give: ['FINE, KEEP IT!', 'COME BACK HERE!', 'I KNOW WHERE YOU PARK!'],
+    cheer: ['FIGHT!', 'FIGHT! FIGHT!', 'HIT HIM!', 'OHHH!', 'KNOCK HIM OUT!', 'WORLDSTAR!', 'GO ON!'],
+    ooh: ['OOOOH!', 'DAAAMN!', 'HE IS DOWN!', 'OUCH!'],
   };
 
   // ================= gangs =================
@@ -111,15 +121,17 @@
   let S = null, BI = null;
   function fresh() {
     return {
-      popT: 0, cleanT: 0.2, aimT: 0, beatT: 0, beat: 0, gangT: 0, scanT: 0, printT: 0, sndT: 0, lineT: 0, q: 1, ema: 1 / 60, slowT: 0, lastNow: 0, nThreat: 0, gid: 0, lastDistrict: '', popupT: 0,
+      popT: 0, cleanT: 0.2, aimT: 0, crowdT: 0.3, cheerT: 0, beatT: 0, beat: 0, gangT: 0, scanT: 0, printT: 0, sndT: 0, lineT: 0, q: 1, ema: 1 / 60, slowT: 0, lastNow: 0, nThreat: 0, gid: 0, lastDistrict: '', popupT: 0,
       pools: [], prints: [], dogs: [], groups: [], corpses: [], wrecks: [], cash: [], flashes: [], respT: 0,
-      stats: { spawned: 0, despawned: 0, fled: 0, dives: 0, crossings: 0, jaywalks: 0, witnesses: 0, calls: 0, cash: 0, cleaned: 0, fights: 0, provoked: 0, mugs: 0, adopted: 0, chats: 0, entered: 0, exited: 0 },
+      stats: { spawned: 0, despawned: 0, fled: 0, dives: 0, crossings: 0, jaywalks: 0, witnesses: 0, calls: 0, cash: 0, cleaned: 0, fights: 0, provoked: 0, mugs: 0, adopted: 0, chats: 0, entered: 0, exited: 0, watchers: 0, joined: 0 },
     };
   }
   const live = () => X.active && S && X.city;
   const hour = () => Math.floor((X.clock || 0) / 60) % 24;
   const night = () => { const h = hour(); return h >= 19 || h < 7; };
   const mine = p => !!(p && p.ai && p.ai.owner === 'peds');
+  // Our AI for someone, even while brawl.js has them in a fist fight (it keeps ours as ai.prev).
+  const pai = p => !p || !p.ai ? null : p.ai.owner === 'peds' ? p.ai : p.ai.owner === 'brawl' && p.ai.prev && p.ai.prev.owner === 'peds' ? p.ai.prev : null;
 
   // ================= city geometry: blocks and their sidewalk rings =================
   function buildIndex() {
@@ -185,9 +197,9 @@
   }
 
   // ================= spawning =================
-  const SPEED = { walker: [1.5, 1.9], business: [1.8, 2.1], jogger: [4.2, 5.2], old: [0.8, 1.1], shopper: [1.35, 1.7], tourist: [1.2, 1.5], drunk: [1.0, 1.35], dogwalker: [1.35, 1.6], couple: [1.35, 1.6], victim: [1.6, 1.9], gang: [1.6, 2.0] };
+  const SPEED = { tough: [1.4, 1.7], walker: [1.5, 1.9], business: [1.8, 2.1], jogger: [4.2, 5.2], old: [0.8, 1.1], shopper: [1.35, 1.7], tourist: [1.2, 1.5], drunk: [1.0, 1.35], dogwalker: [1.35, 1.6], couple: [1.35, 1.6], victim: [1.6, 1.9], gang: [1.6, 2.0] };
   const FLEE = { old: 2.7, jogger: 6.6, drunk: 3.8 };
-  const TYPE_NAME = { walker: 'pedestrian', business: 'businessman', jogger: 'jogger', old: 'pensioner', shopper: 'shopper', tourist: 'tourist', drunk: 'drunk', dogwalker: 'dog walker', couple: 'lovebird', victim: 'driver' };
+  const TYPE_NAME = { walker: 'pedestrian', business: 'businessman', jogger: 'jogger', old: 'pensioner', shopper: 'shopper', tourist: 'tourist', drunk: 'drunk', dogwalker: 'dog walker', couple: 'lovebird', victim: 'driver', tough: 'tough guy' };
   function newAI(type) {
     const sp = SPEED[type] || SPEED.walker;
     return {
@@ -197,6 +209,7 @@
       idle: null, face: null, pose: null, stuck: 0, stuckT: 0, lx: 0, ly: 0, witT: 0, bumpCd: 0, brisk: 0, sawBody: false, sawWreck: 0,
       mugged: false, scrT: 0, jumpT: 0, fade: 1, doorT: rand(0, 0.6), los: false, losT: 0, hostT: 0, burst: 0, pause: 0, strafe: 1, strafeT: 0, warnT: -9,
       cx0: 0, cy0: 0, cx1: 0, cy1: 0, nb: null, jay: false, chk: 0, angryAt: null, slot: 0, rad: 1, hpose: null, hposeT: 0, jit: 0,
+      provBy: null, provT: -9, provFight: false, fightRef: null, seenFight: null, wpose: null,
     };
   }
   function pickType(x, y) {
@@ -206,7 +219,7 @@
       ['walker', 30], ['business', (day ? 13 : 3) + (dn === 'Bank Row' ? 12 : 0)], ['jogger', (h >= 5 && h < 10) || (h >= 17 && h < 21) ? 10 : 3],
       ['old', (h >= 8 && h < 20 ? 9 : 2) + (dn === 'Old Pier' ? 6 : 0)], ['shopper', (h >= 9 && h < 21 ? 9 : 1.5) + (dn === 'Neon Mile' ? 5 : 0)],
       ['tourist', 5 + (dn === 'Old Pier' || dn === 'Fjordheim' ? 6 : 0)], ['couple', 6], ['dogwalker', 6],
-      ['drunk', (late ? 8 : 0.5) + (late && (dn === 'Neon Mile' || nearBar) ? 12 : 0)],
+      ['drunk', (late ? 8 : 0.5) + (late && (dn === 'Neon Mile' || nearBar) ? 12 : 0)], ['tough', 3 + (late ? 2 : 0) + (nearBar ? 3 : 0)],
     ];
     let tot = 0; for (const w of W) tot += w[1];
     let r = Math.random() * tot;
@@ -214,8 +227,9 @@
     return 'walker';
   }
   function makeCiv(type, x, y, b) {
-    const old = type === 'old';
-    const p = X.makePed({ x, y, th: Math.random() * TAU, team: 'civ', look: makeLook(type), hp: old ? 60 : 100, maxHp: old ? 60 : 100 });
+    const old = type === 'old', hp = old ? 60 : type === 'tough' ? 130 : 100;
+    const p = X.makePed({ x, y, th: Math.random() * TAU, team: 'civ', look: makeLook(type), hp, maxHp: hp });
+    if (type === 'tough') p.meleeMul = 1.25;   // big lads hit harder (brawl.js)
     p.ai = newAI(type);
     snapRing(p, b);
     corner(b, p.ai.li, p.ai.ci, TMP); p.th = Math.atan2(TMP.y - p.y, TMP.x - p.x);
@@ -375,7 +389,7 @@
   }
 
   // ================= reactions =================
-  const CALM = { walk: 1, toKerb: 1, wait: 1, cross: 1, idle: 1, chat: 1, stroll: 1 };
+  const CALM = { walk: 1, toKerb: 1, wait: 1, cross: 1, idle: 1, chat: 1, stroll: 1, watch: 1 };
   function attackerOf(by) {
     if (!by) return null;
     if (by.kind === 'ped') return by;
@@ -520,6 +534,26 @@
     a.st = 'fight'; a.target = target; a.t = 20; a.atkCd = 0.6; a.alertT = 1;
     S.stats.fights++;
     voice(p, 'hey');
+  }
+  // Attacked: fight back or run? One roll per provocation (the same attacker within a few seconds keeps the
+  // answer); hurt or burning people always run.
+  function fightsBack(p, att) {
+    const a = p.ai;
+    if (a.provBy === att && X.time - a.provT < 4) return a.provFight;
+    const c = p.hp < p.maxHp * 0.3 || p.onFire > 0 ? 0 : OPT.fightChance * (FIGHT_K[a.type] || 1);
+    a.provBy = att; a.provT = X.time; a.provFight = Math.random() < c;
+    return a.provFight;
+  }
+  // Fight back: brawl.js runs the fist fight and hands the person back afterwards (brawlEnd); without it, the
+  // old punch-up. A partner close by may wade in too.
+  function retaliate(p, att, partner) {
+    if (!att || att.dead || att.removed || att === p) return false;
+    endChat(p);
+    if (X.brawl) { if (!X.brawl.provoke(p, att)) return false; S.stats.fights++; }
+    else { startFight(p, att); say(p, L.fight, null, '#ffd23a'); }
+    const q = partner !== false && pai(p) ? (pai(p).follow || pai(p).lead) : null;
+    if (q && mine(q) && !q.dead && q.ai.type !== 'old' && Math.hypot(q.x - p.x, q.y - p.y) < 6 && Math.random() < 0.5) retaliate(q, att, false);
+    return true;
   }
   function startDive(p, ux, uy, car) {
     const a = p.ai;
@@ -672,6 +706,7 @@
     }
     if (S.groups.some(gr => !gr.members.length)) S.groups = S.groups.filter(gr => gr.members.length);
   }
+  const hostileM = m => m.ai && (m.ai.st === 'attack' || m.ai.owner === 'brawl');
 
   // ================= dogs =================
   function makeDog(owner) {
@@ -999,7 +1034,7 @@
       X.movePed(p, dt, 0, 0);
       return;
     }
-    if (a.st === 'down') { a.st = 'getup'; a.t = 0.75; }
+    if (a.st === 'down') { const K = p.act && p.act.on && p.act.type === 'knockdown' ? p.act : null; a.st = 'getup'; a.t = K ? Math.max(0.05, K.dur - K.t) : 0.75; }   // (brawl.js draws its own get-up)
     if (p.onFire > 0 && a.st !== 'burn' && a.st !== 'dive' && a.st !== 'getup') { endChat(p); a.st = 'burn'; a.hT = 0; a.ha = p.th; a.scrT = 0; if (a.type === 'gang') p.holster = true; }
     const near = X.inView(p.x, p.y, 16);
     let vx = 0, vy = 0, face = null, cheap = false;
@@ -1151,6 +1186,21 @@
         if (a.scrT <= 0) { a.scrT = rand(1.6, 2.6); voice(p, 'sob'); }
         const pp = P.ped;
         if (a.t <= 0 || !body || body.removed || (pp && !P.car && Math.hypot(pp.x - p.x, pp.y - p.y) < 3)) { a.target = null; a.st = 'walk'; startFlee(p, pp ? pp.x : p.x, pp ? pp.y : p.y, rand(5, 8), 0, true); }
+        break;
+      }
+      case 'watch': {   // a street fight: a spot in the ring around it, facing in; cheer, film or just stare
+        const f = a.fightRef;
+        a.t -= dt;
+        if (!f || !f.alive || a.t <= 0) { a.fightRef = null; resume(p); a.brisk = 3; break; }
+        const tx = f.x + Math.cos(a.ha) * a.rad, ty = f.y + Math.sin(a.ha) * a.rad, dx = tx - p.x, dy = ty - p.y, d = Math.hypot(dx, dy);
+        const cx = p.x - f.x, cy = p.y - f.y, dc = Math.hypot(cx, cy) || 1;
+        face = Math.atan2(-cy, -cx);
+        if (dc < a.rad - 1.3) { vx = cx / dc * 2.4; vy = cy / dc * 2.4; }   // the fight came this way: step back
+        else if (d > 0.45) { const sp = d > 3 ? 3.4 : 1.2; vx = dx / d * sp; vy = dy / d * sp; }
+        if (d < 1.6) {
+          a.pose = a.wpose;
+          if (a.wpose === 'cheer') { if (Math.random() < dt * 0.7) a.jumpT = 0.3; if (near && X.time > S.cheerT) { S.cheerT = X.time + rand(1.1, 2.2); X.floatText(p.x, p.y - 0.8, pick(L.cheer), '#ffe14a', { size: 12, life: 1.1 }); } }
+        }
         break;
       }
       case 'hands': {
@@ -1312,6 +1362,7 @@
         }
       }
     } else {
+      if (X.brawl && d < 25 && X.brawl.fight(p, tg, { skill: 0.58 })) return;   // fists and bats: brawl.js fights it out
       const reach = tc ? tc.len / 2 + 0.9 : 0.95;
       if (d > reach) { const h = freeHeading(p, ang, 1.2); vx = Math.cos(h) * 5.2; vy = Math.sin(h) * 5.2; }
       else if (a.atkCd <= 0) { a.atkCd = W && W.id === 'bat' ? 0.95 : rand(0.6, 0.85); if (tc) kickCar(p, tc); else punch(p, tg, ang); }
@@ -1360,20 +1411,21 @@
   });
   X.on('pedHurt', e => {
     if (!live() || !e.ped) return;
-    const p = e.ped, a = p.ai;
-    if (!a || a.owner !== 'peds' || p.dead) return;
+    const p = e.ped, a = p.ai, ga = pai(p);
     const att = attackerOf(e.by);
-    if (a.type === 'gang') {
-      if (att && att.ai && att.ai.gang === a.gang) return;
-      if (att && X.byPlayer(e.by) && X.time > a.gang.hurtT) { a.gang.hurtT = X.time + 1; addRespect(a.gang, -2); }
-      if (att) provoke(a.gang, att, p.x, p.y);
+    if (ga && ga.type === 'gang' && !p.dead) {   // (even while brawl.js has them in a fist fight)
+      const aa = pai(att);
+      if (aa && aa.gang === ga.gang) return;
+      if (att && X.byPlayer(e.by) && X.time > ga.gang.hurtT) { ga.gang.hurtT = X.time + 1; addRespect(ga.gang, -2); }
+      if (att) provoke(ga.gang, att, p.x, p.y);
       return;
     }
+    if (!a || a.owner !== 'peds' || p.dead) return;
     if (e.kind === 'fire') return;
     voice(p, e.kind === 'melee' ? 'oof' : 'yelp');
     if (a.st === 'fight') { if (att && att !== a.target && att.isPlayer) a.target = att; return; }
-    if (e.kind === 'melee' && att && p.hp > p.maxHp * 0.5 && a.type !== 'old' && Math.random() < OPT.fightChance + (a.type === 'jogger' ? 0.15 : 0)) { startFight(p, att); say(p, L.fight, null, '#ffd23a'); }
-    else startFlee(p, att ? att.x : p.x - Math.cos(p.th), att ? att.y : p.y - Math.sin(p.th), rand(6, 10), 1, true);
+    if (e.kind === 'melee' && att && fightsBack(p, att) && retaliate(p, att)) return;
+    startFlee(p, att ? att.x : p.x - Math.cos(p.th), att ? att.y : p.y - Math.sin(p.th), rand(6, 10), 1, true);
   });
   X.on('pedHitByCar', e => {
     if (!live() || !e.ped) return;
@@ -1384,6 +1436,10 @@
     }
     voice(p, sp > 9 ? 'die' : 'yelp');
     if (mine(p) && p.ai.type === 'gang' && e.car && (e.car === P.car || e.car.driver)) { const att = e.car.driver || P.ped; provoke(p.ai.gang, att, p.x, p.y); if (e.car === P.car) addRespect(p.ai.gang, -2); }
+    else if (mine(p) && !p.dead && sp < 8 && e.car && X.brawl) {   // shoved by a slow car: have a go at the driver
+      const drv = e.car === P.car ? P.ped : e.car.driver;
+      if (drv && !drv.dead && fightsBack(p, drv)) retaliate(p, drv);
+    }
   });
   X.on('pedKilled', e => {
     if (!live() || !e.ped) return;
@@ -1395,8 +1451,8 @@
       const f = X.focus();
       if (Math.hypot(p.x - f.x, p.y - f.y) < 200) S.pools[S.pools.length - 1].cash = cashFor(p);   // dropped once the body comes to rest
     }
-    const a = p.ai;
-    if (a && a.owner === 'peds') {
+    const a = pai(p);
+    if (a) {
       endChat(p);
       const q = a.follow || a.lead;
       if (q && !q.dead && mine(q) && Math.hypot(q.x - p.x, q.y - p.y) < 10) startMourn(q, p);
@@ -1415,7 +1471,7 @@
     const c = e.car;
     if (e.reason === 'carjack') {
       voice(p, 'hey');
-      if (Math.random() < OPT.fightChance && P.ped && !P.ped.dead) { startFight(p, P.ped); say(p, L.fight, null, '#ffd23a'); }
+      if (P.ped && !P.ped.dead && fightsBack(p, P.ped) && retaliate(p, P.ped)) { /* out of the car swinging */ }
       else { startFlee(p, c ? c.x : p.x, c ? c.y : p.y, rand(5, 9), 1, true); say(p, L.jacked, { car: c ? c.model.name.toUpperCase() : 'CAR' }, '#ffd23a'); }
     } else startFlee(p, c ? c.x : p.x, c ? c.y : p.y, rand(4, 8), 1, true);
     if (p.ai.st === 'cower') p.ai.st = 'flee';   // out of the car and straight off down the street
@@ -1443,6 +1499,27 @@
     }
   });
   X.on('carDestroyed', e => { if (live() && e.car) S.wrecks.push({ car: e.car, t: X.time, id: e.car.id }); });
+  // brawl.js hands a fighter back: run if they lost their nerve, shake a fist at one who got away, else carry on.
+  X.on('brawlEnd', e => {
+    if (!live() || !e || !e.ped) return;
+    const p = e.ped, a = p.ai, tg = e.target;
+    if (!mine(p) || p.dead) return;
+    a.target = null; a.pose = null; a.alertT = 0;
+    if (a.type === 'gang') { endAttack(p); return; }
+    if (e.reason === 'flee') { a.st = 'walk'; startFlee(p, tg ? tg.x : p.x, tg ? tg.y : p.y, rand(7, 11), 1, true); if (a.st === 'cower') a.st = 'flee'; }
+    else if (e.reason === 'escaped') { a.st = 'angry'; a.t = 2.2; a.angryAt = tg && tg.car ? tg.car : tg; }
+    else { resume(p); a.brisk = 6; }
+  });
+  // Somebody went down in a street fight: the ring of watchers jumps and gasps.
+  X.on('brawlKnockdown', e => {
+    if (!live() || !e) return;
+    let said = false;
+    eachNear(e.x, e.y, 12, q => {
+      if (!mine(q) || q.ai.st !== 'watch') return;
+      q.ai.jumpT = 0.3;
+      if (!said && Math.random() < 0.5) { said = true; X.floatText(q.x, q.y - 0.8, pick(L.ooh), '#ffe14a', { size: 13, life: 1.3 }); }
+    });
+  });
 
   // A gun pointed at people: hands up close by, running further off. Gang corners take it badly.
   function gangWarn(gr, sh) {
@@ -1472,13 +1549,52 @@
     for (const gr of S.groups) {
       if (gr.gang.id !== 'russ' || !gr.members.length) continue;
       const d = Math.hypot(gr.x - pp.x, gr.y - pp.y); if (d > 30) continue;
-      if (gr.members.some(m => m.ai.st === 'attack')) continue;
+      if (gr.members.some(hostileM)) continue;
       const k = PG.audio.kit(); if (!k) return;
       const v = Math.pow(1 - d / 30, 1.5), t = k.now, n = S.beat++;
       k.tone('sine', 95, t, 0.16, 0.22 * v, { to: 42 });
       if (n % 2) k.noise(t, 0.05, 0.05 * v, 'highpass', 6000);
       if (n % 4 === 2) k.tone('sawtooth', 55, t, 0.22, 0.05 * v, { lp: 300 });
       return;
+    }
+  }
+
+  // ================= street fights draw a crowd =================
+  function startWatch(p, f) {
+    const a = p.ai; endChat(p);
+    a.st = 'watch'; a.fightRef = f; a.t = rand(15, 35); a.pose = null;
+    a.ha = Math.atan2(p.y - f.y, p.x - f.x) + rand(-0.4, 0.4); a.rad = rand(3.3, 5);
+    const r = Math.random();
+    a.wpose = r < 0.42 ? 'cheer' : r < 0.68 ? 'film' : a.type === 'old' ? 'look' : 'cross';
+    if (a.wpose === 'look') a.wpose = null;
+    S.stats.watchers++;
+  }
+  // Every half second: people within 15 m of a fight stop to watch, phone it in, or (the timid) leave; the odd
+  // tough guy or drunk wades in.
+  function crowdScan() {
+    if (!X.brawl || X.scene) return;
+    const fs = X.brawl.fights();
+    for (let i = 0; i < fs.length && i < 6; i++) {
+      const f = fs[i];
+      if (!X.inView(f.x, f.y, 12)) continue;
+      let n = 0;
+      eachNear(f.x, f.y, 16, q => { if (mine(q) && q.ai.st === 'watch' && q.ai.fightRef === f) n++; });
+      f.watch = n;
+      eachNear(f.x, f.y, 15, q => {
+        const a = q.ai;
+        if (!mine(q) || q.dead || !CALM[a.st] || a.st === 'watch' || a.type === 'gang' || a.lead || a.seenFight === f || q === f.a || q === f.b) return;
+        if (Math.hypot(q.x - f.x, q.y - f.y) > 15) return;
+        a.seenFight = f;
+        const r = Math.random();
+        if ((a.type === 'tough' || a.type === 'drunk') && r < 0.12) {   // 'HEY! LEAVE HIM ALONE!'
+          const tg = f.player ? (f.a.isPlayer ? f.a : f.b) : Math.random() < 0.5 ? f.a : f.b;
+          if (retaliate(q, tg, false)) { S.stats.joined++; return; }
+        }
+        if (r < 0.6 && n < 14) { startWatch(q, f); n++; }
+        else if (r < 0.76 && f.player) startCall(q, { type: 'assault', x: f.x, y: f.y, by: P.ped });
+        else if (r < 0.86 && (a.type === 'old' || a.type === 'business' || a.type === 'tourist')) startFlee(q, f.x, f.y, rand(4, 7), 0, false);
+      });
+      f.watch = n;
     }
   }
 
@@ -1500,7 +1616,7 @@
     const a = q.ai, pp = P.ped; if (!a || q.dead) return;
     a.mugged = true; endChat(q);
     const armed = P.weapon && P.weapon !== 'fists';
-    if (a.type !== 'old' && Math.random() < (armed ? OPT.mugFight : OPT.mugFightFists)) { startFight(q, pp); say(q, L.fight, null, '#ffd23a'); return; }
+    if (a.type !== 'old' && Math.random() < (armed ? OPT.mugFight : OPT.mugFightFists) && retaliate(q, pp)) return;
     const amt = Math.round(cashFor(q) * (armed ? 1.5 : 1));
     a.st = 'hands'; a.t = 1.1; a.fx = pp.x; a.fy = pp.y;
     voice(q, 'yelp'); say(q, L.mug, null, '#ffd23a');
@@ -1548,6 +1664,8 @@
     const sc = X.lastView ? X.lastView.scale : 30, s = (lk.scale || 1) * 1.18;   // a touch larger than life, GTA2 style
     if (p.dead) { drawSprawl(ctx, p, lk, outfit, sc, s * 0.9, true, t); return; }
     const ai = mine(p) ? p.ai : null;
+    const bp = X.brawl ? X.brawl.armPose(p, t) : null;   // fists, kicks, knockdowns (brawl.js)
+    if (bp && bp.body !== 'up') { drawDown(ctx, p, lk, outfit, sc, s, bp, t); if (p.onFire > 0) flames(ctx, p.x, p.y, t, p.id); return; }
     let pose = p.pose || (ai && ai.pose) || null;
     if (p.knock > 0) pose = 'down';
     if (pose === 'down' || pose === 'lie') { drawSprawl(ctx, p, lk, outfit, sc, s * 0.9, false, t); if (p.onFire > 0) flames(ctx, p.x, p.y, t, p.id); return; }
@@ -1563,11 +1681,17 @@
     if (ai && ai.fade < 1) ctx.globalAlpha = ai.fade;
     ctx.fillStyle = 'rgba(0,0,0,0.28)'; oval(ctx, 0.09 * jump, 0.11 * jump, 0.24 * s, 0.36 * s, p.th);
     ctx.rotate(p.th);
+    const ra = !bp && p.act && p.act.on && (p.act.type === 'hitReact' || p.act.type === 'stagger') ? p.act : null;
+    if (ra) {   // somebody brawl.js draws no arms for (a gun in hand) still reels from a punch
+      const e = ra.type === 'stagger' ? Math.max(0, 1 - ra.t / ra.dur) : (ra.t < 0.05 ? ra.t / 0.05 : Math.max(0, 1 - (ra.t - 0.05) / Math.max(0.05, ra.dur - 0.05))) * (ra.k || 1);
+      ctx.translate(-0.1 * e, -ra.side * 0.06 * e); ctx.rotate(ra.side * 0.3 * e * (ra.type === 'stagger' ? Math.sin(ra.t * 13) : 1));
+    }
     if (s * jump !== 1) ctx.scale(s * jump, s * jump);
     ctx.lineCap = 'round';
     if (pose === 'dive') drawDive(ctx, lk);
     else if (pose === 'sit') drawSit(ctx, lk);
     else if (pose === 'cower' || pose === 'kneel') drawCrouch(ctx, p, lk, pose, t);
+    else if (bp) drawFighter(ctx, p, lk, outfit, t, bp);
     else drawUpright(ctx, p, lk, outfit, pose, t, ai);
     if (p.hurtT > 0) { ctx.fillStyle = `rgba(255,40,30,${(0.5 * Math.min(1, p.hurtT / 0.25)).toFixed(3)})`; disc(ctx, 0, 0, 0.38); }
     ctx.restore();
@@ -1610,6 +1734,7 @@
       case 'point': rx = 0.58; ry = 0.16; break;
       case 'dance': { const g = Math.sin(t * 8 + p.id); lx = 0.1 + g * 0.14; ly = -0.4; rx = 0.1 - g * 0.14; ry = 0.4; break; }
       case 'headbang': lx = 0.22; ly = -0.28; rx = 0.22; ry = 0.28; break;
+      case 'cheer': { const g = Math.max(0, Math.sin(t * 9 + p.id)); lx = 0.2; ly = -0.24; rx = 0.07 + g * 0.05; ry = 0.34 - g * 0.17; break; }   // pumping a fist
     }
     ctx.strokeStyle = CC.sleeve; ctx.lineWidth = 0.12;
     ctx.beginPath(); ctx.moveTo(0.01, -0.24); ctx.lineTo(lx, ly); ctx.moveTo(0.01, 0.24); ctx.lineTo(rx, ry); ctx.stroke();
@@ -1636,6 +1761,61 @@
     if (pose === 'headbang') hx += Math.sin(t * 10 + p.id) * 0.08;
     if (pose === 'dance') hx += Math.sin(t * 8 + p.id) * 0.03;
     drawHead(ctx, p, lk, outfit, hx, 0, t);
+  }
+  // A person in brawl.js's hands: guard stance or a strike, reaction, taunt. b = X.brawl.armPose(): shoulders,
+  // elbows and fists, torso twist and lean, head offset, stance, a kicking leg, a bat.
+  const LONG = { suit: 1, cop: 1, swat: 1, army: 1, guard: 1, old: 1, medic: 1, fire: 1, worker: 1 };
+  function drawFighter(ctx, p, lk, outfit, t, b) {
+    const mv = Math.min(1, (p.speed || 0) / 1.3), shoe = outfit === 'jog' ? '#f2f2f2' : '#17171a';
+    if (b.leg) {   // a kick: the standing foot, then the kicking leg hip -> knee -> foot
+      const sd = b.leg;
+      ctx.fillStyle = shoe; ctx.beginPath(); dot(ctx, 0.02, -sd * 0.12, 0.07); ctx.fill();
+      ctx.strokeStyle = CC.pants; ctx.lineWidth = 0.16; ctx.beginPath(); ctx.moveTo(b.hipx, b.hipy); ctx.lineTo(b.knx, b.kny); ctx.lineTo(b.kx, b.ky); ctx.stroke();
+      ctx.fillStyle = shoe; ctx.beginPath(); dot(ctx, b.kx, b.ky, 0.085 * (b.fk || 1)); ctx.fill();
+      ctx.strokeStyle = 'rgba(225,225,215,0.55)'; ctx.lineWidth = 0.025; ctx.stroke();   // a pale sole rim: a dark shoe on a dark street
+    } else {   // the boxer's stance (left foot forward, bouncing) blended with walking steps
+      const st = b.stance, sw = Math.sin(p.walk * 3) * mv * 0.22, bob = st * Math.sin(t * 9 + p.id * 1.7) * 0.02;
+      const f1 = 0.13 * st + sw, f2 = -0.11 * st - sw, y1 = -0.11 - st * 0.03, y2 = 0.11 + st * 0.03;
+      ctx.strokeStyle = CC.pants; ctx.lineWidth = 0.15; ctx.beginPath(); ctx.moveTo(0, -0.1); ctx.lineTo(f1, y1); ctx.moveTo(0, 0.1); ctx.lineTo(f2, y2); ctx.stroke();
+      ctx.fillStyle = shoe; ctx.beginPath(); dot(ctx, f1 + 0.06 + bob, y1, 0.07); dot(ctx, f2 + 0.06 - bob, y2, 0.07); ctx.fill();
+    }
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = CC.sleeve; ctx.lineWidth = 0.13;
+    ctx.beginPath(); ctx.moveTo(b.lsx, b.lsy); ctx.lineTo(b.lex, b.ley); ctx.moveTo(b.rsx, b.rsy); ctx.lineTo(b.rex, b.rey); ctx.stroke();
+    const tw = outfit === 'suit' || outfit === 'cop' || outfit === 'swat' || outfit === 'metal' || outfit === 'army' || outfit === 'tough' ? 0.3 : 0.285;
+    ctx.save(); ctx.translate(b.lean, b.sy); if (b.tw) ctx.rotate(b.tw);
+    ctx.fillStyle = CC.jacket || CC.shirt; oval(ctx, 0, 0, 0.165, tw);
+    torsoDetail(ctx, p, lk, outfit, t);
+    ctx.restore();
+    ctx.strokeStyle = CC.jacket || LONG[outfit] ? CC.sleeve : CC.skin; ctx.lineWidth = 0.115;
+    ctx.beginPath(); ctx.moveTo(b.lex, b.ley); ctx.lineTo(b.lx, b.ly); ctx.moveTo(b.rex, b.rey); ctx.lineTo(b.rx, b.ry); ctx.stroke();
+    if (b.bat) {   // both hands on the handle, the barrel out along the swing
+      const c = Math.cos(b.ba), sn = Math.sin(b.ba), hx = (b.lx + b.rx) / 2 - c * 0.05, hy = (b.ly + b.ry) / 2 - sn * 0.05, nx = -sn, ny = c;
+      ctx.fillStyle = '#b07a3e'; ctx.beginPath();
+      ctx.moveTo(hx + nx * 0.028, hy + ny * 0.028); ctx.lineTo(hx + c * 0.8 + nx * 0.062, hy + sn * 0.8 + ny * 0.062); ctx.lineTo(hx + c * 0.84, hy + sn * 0.84);
+      ctx.lineTo(hx + c * 0.8 - nx * 0.062, hy + sn * 0.8 - ny * 0.062); ctx.lineTo(hx - nx * 0.028, hy - ny * 0.028); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#7a5228'; disc(ctx, hx - c * 0.02, hy - sn * 0.02, 0.035);
+    }
+    ctx.fillStyle = outfit === 'swat' ? '#1c1f24' : CC.skin; ctx.strokeStyle = 'rgba(0,0,0,0.55)'; ctx.lineWidth = 0.022;
+    ctx.beginPath(); ctx.arc(b.lx, b.ly, 0.084 * b.fl, 0, TAU); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.arc(b.rx, b.ry, 0.084 * b.fr, 0, TAU); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.beginPath(); dot(ctx, b.lx + 0.025 * b.fl, b.ly - 0.025 * b.fl, 0.032 * b.fl); dot(ctx, b.rx + 0.025 * b.fr, b.ry - 0.025 * b.fr, 0.032 * b.fr); ctx.fill();   // knuckle shine
+    if (outfit === 'metal') { ctx.strokeStyle = '#9aa0a8'; ctx.lineWidth = 0.03; ctx.beginPath(); ctx.arc(b.lx, b.ly, 0.09 * b.fl, 0, TAU); ctx.moveTo(b.rx + 0.09 * b.fr, b.ry); ctx.arc(b.rx, b.ry, 0.09 * b.fr, 0, TAU); ctx.stroke(); }
+    drawHead(ctx, p, lk, outfit, 0.03 + b.lean + b.hx, b.sy + b.hy, t);
+  }
+  // Knocked down by a blow (brawl.js): topple over (the body lengthening as it falls), lie dazed, get up via
+  // sitting and a knee; or on the knees, begging.
+  function drawDown(ctx, p, lk, outfit, sc, s, b, t) {
+    if (b.body === 'fall' || b.body === 'lie') { drawSprawl(ctx, p, lk, outfit, sc, s * 0.9, false, t, b.ang, b.body === 'fall' ? 0.35 + 0.65 * b.k : 1); return; }
+    ctx.save(); ctx.translate(p.x, p.y);
+    ctx.fillStyle = 'rgba(0,0,0,0.26)'; oval(ctx, 0.07, 0.09, 0.3 * s, 0.34 * s, p.th);
+    ctx.rotate(p.th); ctx.scale(s, s); ctx.lineCap = 'round';
+    if (b.body === 'kneel') drawCrouch(ctx, p, lk, 'beg', t);
+    else if (b.k < 0.42) drawSit(ctx, lk);
+    else if (b.k < 0.8) drawCrouch(ctx, p, lk, 'kneel', t);
+    else drawUpright(ctx, p, lk, outfit, null, t, null);
+    if (p.hurtT > 0) { ctx.fillStyle = `rgba(255,40,30,${(0.5 * Math.min(1, p.hurtT / 0.25)).toFixed(3)})`; disc(ctx, 0, 0, 0.38); }
+    ctx.restore();
   }
   function torsoDetail(ctx, p, lk, outfit, t) {
     switch (outfit) {
@@ -1728,13 +1908,15 @@
     if (id === 'flamer') { ctx.fillStyle = '#8a8f96'; disc(ctx, -0.22, 0, 0.14); }
   }
   // Lying down: dead, knocked flat (spinning) or 'lie'. Limbs splay in a pose seeded by the id.
-  function drawSprawl(ctx, p, lk, outfit, sc, s, dead, t) {
+  // ang / len (optional): a knockdown's fall direction and how far the body has toppled (0.35 standing .. 1 flat).
+  function drawSprawl(ctx, p, lk, outfit, sc, s, dead, t, ang, len) {
     const id = p.id || 1, r1 = hr(id, 11), r2 = hr(id, 12), r3 = hr(id, 13), r4 = hr(id, 14), r5 = hr(id, 15), r6 = hr(id, 16);
-    ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.th); if (s !== 1) ctx.scale(s, s);
+    ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(ang == null ? p.th : ang); if (s !== 1) ctx.scale(s, s);
+    if (len != null && len !== 1) ctx.scale(len, 1);
     ctx.fillStyle = 'rgba(0,0,0,0.22)'; oval(ctx, 0.05, 0.06, 0.78, 0.48);
     if (sc * s < 9) { ctx.fillStyle = CC.shirt; oval(ctx, 0, 0, 0.32, 0.2); ctx.fillStyle = CC.skin; disc(ctx, 0.42, 0, 0.14); ctx.restore(); return; }
     ctx.lineCap = 'round';
-    const f1 = 0.1 + r1 * 0.3, f2 = 0.1 + r2 * 0.3, flail = dead ? 0 : Math.sin(t * 14 + id) * 0.08;
+    const f1 = 0.1 + r1 * 0.3, f2 = 0.1 + r2 * 0.3, flail = dead ? 0 : ang != null ? Math.sin(t * 3 + id) * 0.025 : Math.sin(t * 14 + id) * 0.08;
     ctx.strokeStyle = CC.pants; ctx.lineWidth = 0.15; ctx.beginPath();
     ctx.moveTo(-0.2, -0.08); ctx.lineTo(-0.44, -0.1 - f1 * 0.5 + (r3 - 0.5) * 0.16); ctx.lineTo(-0.7 + r4 * 0.08, -f1 - flail);
     ctx.moveTo(-0.2, 0.08); ctx.lineTo(-0.46, 0.1 + f2 * 0.45); ctx.lineTo(-0.72 + r5 * 0.1, f2 + flail);
@@ -1791,11 +1973,13 @@
     const shake = pose === 'cower' ? Math.sin(t * 30 + p.id) * 0.01 : 0;
     drawHead(ctx, p, lk, '', 0.05 + shake, 0, t);
     ctx.strokeStyle = CC.sleeve; ctx.lineWidth = 0.11; ctx.beginPath();
+    const bx = pose === 'beg' ? 0.25 + Math.sin(t * 26 + p.id) * 0.012 : 0;   // begging: hands clasped out in front, shaking
     if (pose === 'cower') { ctx.moveTo(0, -0.22); ctx.lineTo(0.06, -0.08); ctx.moveTo(0, 0.22); ctx.lineTo(0.06, 0.08); }
+    else if (pose === 'beg') { ctx.moveTo(0, -0.22); ctx.lineTo(0.12, -0.14); ctx.lineTo(bx, -0.035); ctx.moveTo(0, 0.22); ctx.lineTo(0.12, 0.14); ctx.lineTo(bx, 0.035); }
     else { ctx.moveTo(0, -0.22); ctx.lineTo(0.17, -0.06); ctx.moveTo(0, 0.22); ctx.lineTo(0.17, 0.06); }
     ctx.stroke();
     ctx.fillStyle = CC.skin; ctx.beginPath();
-    if (pose === 'cower') { dot(ctx, 0.07, -0.08, 0.06); dot(ctx, 0.07, 0.08, 0.06); } else { dot(ctx, 0.17, -0.05, 0.06); dot(ctx, 0.17, 0.05, 0.06); }
+    if (pose === 'cower') { dot(ctx, 0.07, -0.08, 0.06); dot(ctx, 0.07, 0.08, 0.06); } else if (pose === 'beg') { dot(ctx, bx, -0.035, 0.06); dot(ctx, bx, 0.035, 0.06); } else { dot(ctx, 0.17, -0.05, 0.06); dot(ctx, 0.17, 0.05, 0.06); }
     ctx.fill();
   }
   function flames(ctx, x, y, t, k) {
@@ -1884,6 +2068,7 @@
       S.popT -= dt; if (S.popT <= 0) { S.popT = 0.25; population(f); }
       S.cleanT -= dt; if (S.cleanT <= 0) { S.cleanT = 0.5; cleanup(f); discoveries(); adoptScan(); }
       S.aimT -= dt; if (S.aimT <= 0) { S.aimT = 0.25; aimScan(); }
+      S.crowdT -= dt; if (S.crowdT <= 0) { S.crowdT = 0.5; crowdScan(); }
       S.beatT -= dt; if (S.beatT <= 0) { S.beatT = 0.46; russBeat(); }
       S.gangT -= dt; if (S.gangT <= 0 && !X.scene) { S.gangT = 1.3; const vr = viewR(); for (const g of GL) maybeSpawnGroup(g, f, vr, false); }
       groupsTick(dt);
@@ -1901,7 +2086,7 @@
       if (S.flashes.length && X.time - S.flashes[0].t > 0.3) S.flashes.shift();
       // gangs on the radar, turf notices
       for (const gr of S.groups) {
-        const hostile = gr.members.some(m => m.ai.st === 'attack');
+        const hostile = gr.members.some(hostileM);
         if (Math.abs(gr.x - f.x) < 260 && Math.abs(gr.y - f.y) < 260) X.blip(gr.x, gr.y, hostile && Math.floor(X.time * 4) % 2 ? '#ffffff' : gr.gang.color, { size: hostile ? 3.4 : 2.4, shape: 'square', ring: hostile });
       }
       S.popupT -= dt;
@@ -1989,7 +2174,7 @@
     get groups() { return S ? S.groups : []; },
     get cash() { return S ? S.cash : []; },
     get prints() { return S ? S.prints : []; },
-    // A civilian of a given type ('walker', 'business', 'jogger', 'old', 'shopper', 'tourist', 'drunk', 'dogwalker', 'couple'),
+    // A civilian of a given type ('walker', 'business', 'jogger', 'old', 'shopper', 'tourist', 'drunk', 'tough', 'dogwalker', 'couple'),
     // put on the sidewalk nearest to (x, y). Returns the ped (the leader for a couple).
     spawn(type, x, y) {
       if (!live()) return null;
@@ -2011,7 +2196,7 @@
     count() { let n = 0; for (const p of X.peds) if (mine(p) && !p.dead && !p.removed && p.ai.type !== 'gang') n++; return n; },
     panic(x, y, r, o) { return panic(x, y, r || 25, o); },
     flee(p, x, y, s) { if (mine(p)) startFlee(p, x, y, s || 8, 1, true); },
-    fight(p, target) { if (mine(p) && target) startFight(p, target); },
+    fight(p, target) { if (mine(p) && target) { if (X.brawl) X.brawl.fight(p, target); else startFight(p, target); } },
     // Hand one of ours to another module (a taxi fare, a mission target); release() gives it back.
     claim(p, owner, ai) { if (!p || p.dead) return null; if (mine(p)) { endChat(p); if (p.ai.dog) p.ai.dog.owner = null; } p.ai = Object.assign({ owner }, ai); p.pose = null; return p; },
     release(p) { if (p && !p.dead) { p.ai = null; p.pose = null; p._seenFree = -99; } },

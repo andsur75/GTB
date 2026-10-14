@@ -4,7 +4,8 @@
 // thrown grenades that bounce, molotov fire pools), ammo and weapon switching, drive-bys, keyboard aim
 // assist, spinning GTA2 pickup crates (weapons, health, armour, cash, power-ups, cop bribes, kill frenzies)
 // and the HUD weapon icon and weapon strip. Shooters up in the air (z > 3, the police helicopter) fire past
-// rooftops; water (X.extinguish) puts molotov pools out; dropped pickups merge and are capped.
+// rooftops; water (X.extinguish) puts molotov pools out; dropped pickups merge and are capped. With brawl.js
+// present, fists and the bat are swung there (combos, hits land when the fist or bat gets there).
 (function (PG) {
   if (typeof document === 'undefined') return;
   const X = PG.gta;
@@ -286,7 +287,9 @@
     // a shooter up in the air (the police helicopter's door gunner) fires down past the rooftops
     const air = !car && shooter.z > 3;
     switch (w.kind) {
-      case 'melee': melee(shooter, w, angle, mul, isP); break;
+      case 'melee':   // brawl.js animates the swing and lands it when the fist / bat gets there; else hit at once
+        if (X.brawl && X.brawl.melee && shooter.kind === 'ped') X.brawl.melee(shooter, w, angle, mul, isP); else melee(shooter, w, angle, mul, isP);
+        break;
       case 'gun': {
         const n = w.pellets || 1;
         for (let k = 0; k < n; k++) bullet(shooter, w, mx, my, angle + (Math.random() - Math.random()) * (w.spread + inacc), mul, car, air);

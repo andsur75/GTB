@@ -251,13 +251,14 @@ check('electro gun arcs from one person to the next', el.filter(h => h < 100).le
 await frames(2); await snap('w10-electro');
 
 // ---------- 12. melee ----------
-const me = await t.eval(() => {
+// (with brawl.js the blow lands a moment later, when the fist or bat gets there: wait for it)
+const me = await t.eval(async () => {
   const X = PG.gta, P = X.player, A = window.__arena(0), E = window.__ev;
   const a = window.__ped(A.x + 0.9, A.y), b = window.__ped(A.x - 1.2, A.y + 0.2);
-  const cr0 = E.crime.length;
-  P.ped.fireCd = 0; X.fireWeapon(P.ped, 'fists', 0);
-  P.ped.fireCd = 0; X.fireWeapon(P.ped, 'bat', Math.PI);
-  P.ped.fireCd = 0; const miss = X.fireWeapon(P.ped, 'fists', Math.PI / 2);
+  const cr0 = E.crime.length, wait = ms => new Promise(r => setTimeout(r, ms));
+  P.ped.fireCd = 0; X.fireWeapon(P.ped, 'fists', 0); await wait(350);
+  P.ped.fireCd = 0; X.fireWeapon(P.ped, 'bat', Math.PI); await wait(450);
+  P.ped.fireCd = 0; const miss = X.fireWeapon(P.ped, 'fists', Math.PI / 2); await wait(350);
   return { a: a.hp, b: b.hp, crimes: E.crime.slice(cr0), miss };
 });
 check('fists and bat hurt the person in front', me.a < 100 && me.a >= 85 && me.b <= 100 - 30, me);
