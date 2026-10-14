@@ -59,7 +59,7 @@
     ]],
   ];
   // Main engine: the default sound every car in the game is built from (see CARS below).
-  const DEFAULTS = { cyl: 1, idle: 900, redline: 12000, shift: 87, gears: 6, revUp: 0.75, revDown: 1, drop: 24, shiftTime: 0.35,
+  const DEFAULTS = { cyl: 1, idle: 900, redline: 12000, shift: 87, gears: 6, revUp: 0.75, revDown: 0.4, drop: 24, shiftTime: 0.35,
     pitch: 0.8, saw: 0.49, square: 0.27, sub: 0.28, harm2: 0.06, detune: 8, drive: 0.84, rough: 0.59,
     cutLo: 500, cutHi: 2030, cutLoad: 690, res: 2.7, sub2: 0, subTri: 0, sub3: 0, halfOrd: 0.29, harm3: 0, harm4: 0, subFollow: 1, bassBoost: 18, bassFreq: 115,
     vol: 1, volIdle: 0.32, volRpm: 1, volLoad: 0.33, noise: 0.57, pops: 0.51, limiter: 0.63 };
@@ -96,7 +96,14 @@
   try { Object.assign(P, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch (e) { /* storage blocked */ }
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(P)); } catch (e) { /* storage blocked */ } };
   const cl = (v, a, b) => Math.max(a, Math.min(b, v));
+  // Animated sliders: ping-pong between lo and hi, one full cycle per period (s). Drives lab and game alike.
+  const ANIM = { sub2: [0, 1, 3.1], subTri: [0, 1, 4.7], sub3: [0, 1, 2.3], halfOrd: [0, 1, 5.9], harm3: [0, 1, 6.8], harm4: [0, 1, 3.9], revDown: [0.3, 0.7, 4] };
+  function animate() {
+    const t = (typeof performance !== 'undefined' ? performance.now() : Date.now()) / 1000;
+    for (const k in ANIM) { const [lo, hi, per] = ANIM[k], ph = (t / per) % 1; P[k] = lo + (hi - lo) * (ph < 0.5 ? ph * 2 : 2 - ph * 2); }
+  }
   function profileFor(id) {
+    animate();
     const t = CARS[id], o = Object.assign({}, P);
     if (!t) return o;
     Object.keys(t).forEach(k => {
@@ -115,6 +122,7 @@
   const topKmh = () => 60 + 25 * P.gears; // rough top speed in top gear at redline
   const gearRatio = g => Math.pow(0.62, g - 1); // rpm per km/h shrinks each gear
   function step(dt, gas) {
+    animate();
     const s = sim, span = P.redline - P.idle;
     s.thr += ((gas && s.shiftT <= 0 ? 1 : 0) - s.thr) * Math.min(1, dt * 12);
     if (s.shiftT > 0) s.shiftT -= dt;
@@ -250,7 +258,7 @@
     render(Pp, game, dt);
     return true;
   }
-  PG.carSound = { P, DEFAULTS, PRESETS, GROUPS, CARS, profileFor, drive, silence: () => silence(), sim, step, freqOf, reset() { Object.assign(sim, { rpm: P.idle, gear: 1, kmh: 0, thr: 0, shiftT: 0, cut: false, pops: 0 }); } };
+  PG.carSound = { ANIM, P, DEFAULTS, PRESETS, GROUPS, CARS, profileFor, drive, silence: () => silence(), sim, step, freqOf, reset() { Object.assign(sim, { rpm: P.idle, gear: 1, kmh: 0, thr: 0, shiftT: 0, cut: false, pops: 0 }); } };
 
   // ---------------- screen ----------------
   if (typeof document === 'undefined') return;
@@ -359,6 +367,7 @@
     step(dt, keyGas || btnGas);
     if (PG.audio.ctx && PG.audio.ctx() && PG.audio.ctx().state === 'running') render(profileFor(labCar), sim, dt);
     draw();
+    for (const k in ANIM) if (inputs[k]) { inputs[k].inp.value = P[k]; inputs[k].out.textContent = fmt(P[k], inputs[k].st, inputs[k].u); }
     requestAnimationFrame(loop);
   }
   function open() {
