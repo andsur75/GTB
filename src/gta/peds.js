@@ -261,9 +261,12 @@
     const a = p.ai;
     if (a && a.dog) { a.dog.owner = null; if (!X.inView(a.dog.x, a.dog.y, 3)) a.dog.removed = true; }
   }
-  function targetCount() {
+  // PG.settings.pedDensity scales the crowd (0.5 .. 1.25)
+  const density = () => { const d = +(PG.settings || {}).pedDensity; return d > 0 ? Math.min(2, d) : 1; };
+  // q: the module's own frame-rate guard (only slows the spawning); the density setting also trims
+  function targetCount(q) {
     const h = hour(), late = h >= 2 && h < 5;
-    return Math.round(OPT.target * (late ? 0.72 : 1) * S.q);
+    return Math.round(OPT.target * (late ? 0.72 : 1) * (q == null ? S.q : q) * density());
   }
   function viewR() { const v = X.lastView; return Math.min(150, v ? v.r : 40); }
   function population(f) {
@@ -277,6 +280,14 @@
       if (a.type !== 'gang') civ++;
     }
     const want = targetCount(), rMin = vr + 3, rMax = Math.max(rMin + 20, Math.min(keep - 5, rMin + 55));
+    const most = targetCount(1);
+    if (civ > most + 3) {   // the density setting went down: the farthest idle walkers out of sight go first
+      let n = Math.min(4, civ - most);
+      const far = [];
+      for (const p of X.peds) { const a = p.ai; if (a && a.owner === 'peds' && !p.removed && !p.dead && a.type !== 'gang' && !a.dog && !a.lead && !a.follow && !a.partner && a.st !== 'chat' && CALM[a.st] && !X.inView(p.x, p.y, 6)) far.push(p); }
+      far.sort((a, b) => Math.hypot(b.x - f.x, b.y - f.y) - Math.hypot(a.x - f.x, a.y - f.y));
+      for (const p of far) { if (n-- <= 0) break; removePed(p); civ--; }
+    }
     if (civ < want && !X.scene && Math.random() < 0.3) civ += spawnAtDoor(f);
     for (let k = 0; k < 4 && civ < want; k++) { const n = spawnCiv(f, rMin, rMax, false); if (!n) break; civ += n; }
   }
@@ -1656,19 +1667,45 @@
     if (p.team === 'cop') return lk.outfit === 'swat' ? 'swat' : 'cop';
     return lk.outfit || (p.team === 'guard' ? 'guard' : p.team === 'army' ? 'army' : '');
   }
+  // ---- drawing state ----
+  // Settings are read once per person drawn (PG.settings.detail 'low' = a simple figure without hands,
+  // shoes, faces or clothing details; shadows). The world transform comes back with one setTransform
+  // instead of a save/restore per person. (Cached sprites were tried for bodies and corpses: on a
+  // software-rasterised canvas a filtered, rotated blit of the sprite costs more than these few small fills.)
+  let CM = null, LOWD = false, SHADOW = true;
+  function place(ctx, M, x, y, th, k) {
+    const cs = Math.cos(th) * k, sn = Math.sin(th) * k;
+    ctx.setTransform(M.a * cs + M.c * sn, M.b * cs + M.d * sn, M.c * cs - M.a * sn, M.d * cs - M.b * sn, M.a * x + M.c * y + M.e, M.b * x + M.d * y + M.f);
+  }
+  function torso(ctx, p, lk, outfit, tw) {
+    ctx.fillStyle = CC.jacket || CC.shirt; oval(ctx, 0, 0, 0.165, tw);
+    if (!LOWD) torsoDetail(ctx, p, lk, outfit, 0);
+  }
+  function head(ctx, p, lk, outfit, hx, hy, t) {
+    if (!LOWD) { drawHead(ctx, p, lk, outfit, hx, hy, t); return; }
+    ctx.fillStyle = CC.skin; disc(ctx, hx, hy, 0.13);
+    const top = CC.hat || (CC.style === 'bald' ? null : CC.hair);
+    if (top) { ctx.fillStyle = top; disc(ctx, hx - 0.02, hy, CC.hat ? 0.14 : 0.122); }
+  }
   // Any person, any state. Local frame: +x is where they face, +y their right hand side.
   function drawPed(ctx, p, t) {
     const lk = p.look || DEF_LOOK, outfit = outfitOf(p, lk);
     const charred = (p.dead && (p.lastKind === 'fire' || p.lastKind === 'explosion')) || lk.skin === CHARC.skin;
     colorsOf(p, lk, outfit, charred);
-    const sc = X.lastView ? X.lastView.scale : 30, s = (lk.scale || 1) * 1.18;   // a touch larger than life, GTA2 style
+    const set = PG.settings || {}, sc = X.lastView ? X.lastView.scale : 30, s = (lk.scale || 1) * 1.18;   // a touch larger than life, GTA2 style
+    LOWD = set.detail === 'low'; SHADOW = set.shadows !== false;
+    const M = CM = ctx.getTransform(), ga = ctx.globalAlpha, lw = ctx.lineWidth, lc = ctx.lineCap;
+    drawPedIn(ctx, p, t, lk, outfit, sc, s);
+    ctx.setTransform(M); ctx.globalAlpha = ga; ctx.lineWidth = lw; ctx.lineCap = lc;
+  }
+  function drawPedIn(ctx, p, t, lk, outfit, sc, s) {
     if (p.dead) { drawSprawl(ctx, p, lk, outfit, sc, s * 0.9, true, t); return; }
     const ai = mine(p) ? p.ai : null;
     const bp = X.brawl ? X.brawl.armPose(p, t) : null;   // fists, kicks, knockdowns (brawl.js)
-    if (bp && bp.body !== 'up') { drawDown(ctx, p, lk, outfit, sc, s, bp, t); if (p.onFire > 0) flames(ctx, p.x, p.y, t, p.id); return; }
+    if (bp && bp.body !== 'up') { drawDown(ctx, p, lk, outfit, sc, s, bp, t); if (p.onFire > 0) { ctx.setTransform(CM); flames(ctx, p.x, p.y, t, p.id); } return; }
     let pose = p.pose || (ai && ai.pose) || null;
     if (p.knock > 0) pose = 'down';
-    if (pose === 'down' || pose === 'lie') { drawSprawl(ctx, p, lk, outfit, sc, s * 0.9, false, t); if (p.onFire > 0) flames(ctx, p.x, p.y, t, p.id); return; }
+    if (pose === 'down' || pose === 'lie') { drawSprawl(ctx, p, lk, outfit, sc, s * 0.9, false, t); if (p.onFire > 0) { ctx.setTransform(CM); flames(ctx, p.x, p.y, t, p.id); } return; }
     if (sc * s < 9) {   // far zoom: a blob and a head
       if (ai && ai.fade < 0.5) return;
       ctx.fillStyle = CC.sleeve; oval(ctx, p.x, p.y, 0.19, 0.3, p.th);
@@ -1677,10 +1714,9 @@
       return;
     }
     const jump = ai && ai.jumpT > 0 ? 1 + Math.sin(ai.jumpT / 0.3 * Math.PI) * 0.18 : 1;
-    ctx.save(); ctx.translate(p.x, p.y);
     if (ai && ai.fade < 1) ctx.globalAlpha = ai.fade;
-    ctx.fillStyle = 'rgba(0,0,0,0.28)'; oval(ctx, 0.09 * jump, 0.11 * jump, 0.24 * s, 0.36 * s, p.th);
-    ctx.rotate(p.th);
+    if (SHADOW) { ctx.fillStyle = 'rgba(0,0,0,0.28)'; oval(ctx, p.x + 0.09 * jump, p.y + 0.11 * jump, 0.24 * s, 0.36 * s, p.th); }
+    place(ctx, CM, p.x, p.y, p.th, 1);
     const ra = !bp && p.act && p.act.on && (p.act.type === 'hitReact' || p.act.type === 'stagger') ? p.act : null;
     if (ra) {   // somebody brawl.js draws no arms for (a gun in hand) still reels from a punch
       const e = ra.type === 'stagger' ? Math.max(0, 1 - ra.t / ra.dur) : (ra.t < 0.05 ? ra.t / 0.05 : Math.max(0, 1 - (ra.t - 0.05) / Math.max(0.05, ra.dur - 0.05))) * (ra.k || 1);
@@ -1694,8 +1730,7 @@
     else if (bp) drawFighter(ctx, p, lk, outfit, t, bp);
     else drawUpright(ctx, p, lk, outfit, pose, t, ai);
     if (p.hurtT > 0) { ctx.fillStyle = `rgba(255,40,30,${(0.5 * Math.min(1, p.hurtT / 0.25)).toFixed(3)})`; disc(ctx, 0, 0, 0.38); }
-    ctx.restore();
-    if (p.onFire > 0) flames(ctx, p.x, p.y, t, p.id);
+    if (p.onFire > 0) { ctx.setTransform(CM); flames(ctx, p.x, p.y, t, p.id); }
   }
   function drawUpright(ctx, p, lk, outfit, pose, t, ai) {
     const sp = p.speed || 0, run = sp > 3.3 && !pose;
@@ -1707,9 +1742,9 @@
     // legs and shoes
     if (amp > 0.06) {
       ctx.strokeStyle = CC.pants; ctx.lineWidth = 0.15; ctx.beginPath(); ctx.moveTo(0, -0.1); ctx.lineTo(sw, -0.11); ctx.moveTo(0, 0.1); ctx.lineTo(-sw, 0.11); ctx.stroke();
-      if (outfit === 'jog') { ctx.strokeStyle = CC.skin; ctx.lineWidth = 0.11; ctx.beginPath(); ctx.moveTo(sw * 0.5, -0.105); ctx.lineTo(sw, -0.11); ctx.moveTo(-sw * 0.5, 0.105); ctx.lineTo(-sw, 0.11); ctx.stroke(); }
-      ctx.fillStyle = outfit === 'jog' ? '#f2f2f2' : '#17171a'; ctx.beginPath(); dot(ctx, sw + 0.06, -0.11, 0.07); dot(ctx, -sw + 0.06, 0.11, 0.07); ctx.fill();
-    } else { ctx.fillStyle = '#17171a'; ctx.beginPath(); dot(ctx, 0.12, -0.1, 0.065); dot(ctx, 0.12, 0.1, 0.065); ctx.fill(); }
+      if (LOWD) { /* no shoes */ } else if (outfit === 'jog') { ctx.strokeStyle = CC.skin; ctx.lineWidth = 0.11; ctx.beginPath(); ctx.moveTo(sw * 0.5, -0.105); ctx.lineTo(sw, -0.11); ctx.moveTo(-sw * 0.5, 0.105); ctx.lineTo(-sw, 0.11); ctx.stroke(); }
+      if (!LOWD) { ctx.fillStyle = outfit === 'jog' ? '#f2f2f2' : '#17171a'; ctx.beginPath(); dot(ctx, sw + 0.06, -0.11, 0.07); dot(ctx, -sw + 0.06, 0.11, 0.07); ctx.fill(); }
+    } else if (!LOWD) { ctx.fillStyle = '#17171a'; ctx.beginPath(); dot(ctx, 0.12, -0.1, 0.065); dot(ctx, 0.12, 0.1, 0.065); ctx.fill(); }
     // hands (left = -y)
     let lx, ly, rx, ry;
     if (run) { lx = 0.12 - sw * 0.7; ly = -0.27; rx = 0.12 + sw * 0.7; ry = 0.27; }
@@ -1739,28 +1774,27 @@
     ctx.strokeStyle = CC.sleeve; ctx.lineWidth = 0.12;
     ctx.beginPath(); ctx.moveTo(0.01, -0.24); ctx.lineTo(lx, ly); ctx.moveTo(0.01, 0.24); ctx.lineTo(rx, ry); ctx.stroke();
     // things carried
-    const acc = lk.acc, free = !armed && (!pose || pose === 'fist');
+    const acc = LOWD ? null : lk.acc, free = !armed && (!pose || pose === 'fist');
     if (acc === 'briefcase' && free) { ctx.fillStyle = '#3a2a1e'; ctx.fillRect(rx - 0.16, ry + 0.02, 0.32, 0.1); ctx.fillStyle = '#c9a46a'; ctx.fillRect(rx - 0.02, ry + 0.03, 0.04, 0.08); }
     else if (acc === 'bags' && free) { ctx.fillStyle = '#c8a46a'; ctx.fillRect(lx - 0.09, ly - 0.14, 0.18, 0.12); ctx.fillStyle = '#e8e8e8'; ctx.fillRect(rx - 0.09, ry + 0.02, 0.18, 0.12); ctx.fillStyle = '#d64a3b'; ctx.fillRect(rx - 0.09, ry + 0.06, 0.18, 0.025); }
     else if (acc === 'cane' && free) { ctx.strokeStyle = '#5a3a20'; ctx.lineWidth = 0.05; ctx.beginPath(); ctx.moveTo(rx, ry); ctx.lineTo(rx + 0.2 + Math.max(0, Math.sin(p.walk * 3)) * 0.08, ry + 0.04); ctx.stroke(); }
     else if (acc === 'beer' && !armed) { ctx.fillStyle = '#3f6a2a'; disc(ctx, rx + 0.04, ry, 0.055); }
-    if (pose === 'phone' || pose === 'call' || pose === 'film') { ctx.fillStyle = '#101216'; ctx.fillRect(rx - 0.03, ry - 0.06, 0.07, 0.12); if (night()) { ctx.fillStyle = '#9fd6ff'; ctx.fillRect(rx - 0.02, ry - 0.05, 0.05, 0.1); } }
-    if (pose === 'smoke') { ctx.strokeStyle = '#f2f2f2'; ctx.lineWidth = 0.025; ctx.beginPath(); ctx.moveTo(rx + 0.03, ry); ctx.lineTo(rx + 0.11, ry); ctx.stroke(); ctx.fillStyle = '#ff6a1a'; disc(ctx, rx + 0.12, ry, 0.018); }
-    if (pose === 'photo') { ctx.fillStyle = '#1b1b1f'; ctx.fillRect(0.27, -0.09, 0.09, 0.18); ctx.fillStyle = '#5a6a7a'; disc(ctx, 0.37, 0, 0.035); }
+    if (LOWD) { /* no props in hand */ } else if (pose === 'phone' || pose === 'call' || pose === 'film') { ctx.fillStyle = '#101216'; ctx.fillRect(rx - 0.03, ry - 0.06, 0.07, 0.12); if (night()) { ctx.fillStyle = '#9fd6ff'; ctx.fillRect(rx - 0.02, ry - 0.05, 0.05, 0.1); } }
+    if (pose === 'smoke' && !LOWD) { ctx.strokeStyle = '#f2f2f2'; ctx.lineWidth = 0.025; ctx.beginPath(); ctx.moveTo(rx + 0.03, ry); ctx.lineTo(rx + 0.11, ry); ctx.stroke(); ctx.fillStyle = '#ff6a1a'; disc(ctx, rx + 0.12, ry, 0.018); }
+    if (pose === 'photo' && !LOWD) { ctx.fillStyle = '#1b1b1f'; ctx.fillRect(0.27, -0.09, 0.09, 0.18); ctx.fillStyle = '#5a6a7a'; disc(ctx, 0.37, 0, 0.035); }
     // torso
     const tw = outfit === 'suit' || outfit === 'cop' || outfit === 'swat' || outfit === 'metal' || outfit === 'army' ? 0.3 : 0.285;
-    ctx.fillStyle = CC.jacket || CC.shirt; oval(ctx, 0, 0, 0.165, tw);
-    torsoDetail(ctx, p, lk, outfit, t);
+    torso(ctx, p, lk, outfit, tw);
     // the weapon, then the hands holding it
     if (armed) heldWeapon(ctx, held, p.weapon);
     else if (p.holster && p.weapon === 'bat') { ctx.strokeStyle = '#b07a3e'; ctx.lineWidth = 0.08; ctx.beginPath(); ctx.moveTo(-0.28, 0.24); ctx.lineTo(0.12, -0.12); ctx.stroke(); }
-    ctx.fillStyle = outfit === 'swat' ? '#1c1f24' : CC.skin; ctx.beginPath(); dot(ctx, lx, ly, 0.065); dot(ctx, rx, ry, 0.065); ctx.fill();
-    if (outfit === 'metal') { ctx.strokeStyle = '#9aa0a8'; ctx.lineWidth = 0.03; ctx.beginPath(); ctx.arc(lx, ly, 0.075, 0, TAU); ctx.moveTo(rx + 0.075, ry); ctx.arc(rx, ry, 0.075, 0, TAU); ctx.stroke(); }
+    if (!LOWD) { ctx.fillStyle = outfit === 'swat' ? '#1c1f24' : CC.skin; ctx.beginPath(); dot(ctx, lx, ly, 0.065); dot(ctx, rx, ry, 0.065); ctx.fill(); }
+    if (outfit === 'metal' && !LOWD) { ctx.strokeStyle = '#9aa0a8'; ctx.lineWidth = 0.03; ctx.beginPath(); ctx.arc(lx, ly, 0.075, 0, TAU); ctx.moveTo(rx + 0.075, ry); ctx.arc(rx, ry, 0.075, 0, TAU); ctx.stroke(); }
     // head
     let hx = 0.03 + lean;
     if (pose === 'headbang') hx += Math.sin(t * 10 + p.id) * 0.08;
     if (pose === 'dance') hx += Math.sin(t * 8 + p.id) * 0.03;
-    drawHead(ctx, p, lk, outfit, hx, 0, t);
+    head(ctx, p, lk, outfit, hx, 0, t);
   }
   // A person in brawl.js's hands: guard stance or a strike, reaction, taunt. b = X.brawl.armPose(): shoulders,
   // elbows and fists, torso twist and lean, head offset, stance, a kicking leg, a bat.
@@ -1784,8 +1818,7 @@
     ctx.beginPath(); ctx.moveTo(b.lsx, b.lsy); ctx.lineTo(b.lex, b.ley); ctx.moveTo(b.rsx, b.rsy); ctx.lineTo(b.rex, b.rey); ctx.stroke();
     const tw = outfit === 'suit' || outfit === 'cop' || outfit === 'swat' || outfit === 'metal' || outfit === 'army' || outfit === 'tough' ? 0.3 : 0.285;
     ctx.save(); ctx.translate(b.lean, b.sy); if (b.tw) ctx.rotate(b.tw);
-    ctx.fillStyle = CC.jacket || CC.shirt; oval(ctx, 0, 0, 0.165, tw);
-    torsoDetail(ctx, p, lk, outfit, t);
+    torso(ctx, p, lk, outfit, tw);
     ctx.restore();
     ctx.strokeStyle = CC.jacket || LONG[outfit] ? CC.sleeve : CC.skin; ctx.lineWidth = 0.115;
     ctx.beginPath(); ctx.moveTo(b.lex, b.ley); ctx.lineTo(b.lx, b.ly); ctx.moveTo(b.rex, b.rey); ctx.lineTo(b.rx, b.ry); ctx.stroke();
@@ -1797,25 +1830,24 @@
       ctx.fillStyle = '#7a5228'; disc(ctx, hx - c * 0.02, hy - sn * 0.02, 0.035);
     }
     ctx.fillStyle = outfit === 'swat' ? '#1c1f24' : CC.skin; ctx.strokeStyle = 'rgba(0,0,0,0.55)'; ctx.lineWidth = 0.022;
+    if (LOWD) { ctx.beginPath(); dot(ctx, b.lx, b.ly, 0.084 * b.fl); dot(ctx, b.rx, b.ry, 0.084 * b.fr); ctx.fill(); head(ctx, p, lk, outfit, 0.03 + b.lean + b.hx, b.sy + b.hy, t); return; }
     ctx.beginPath(); ctx.arc(b.lx, b.ly, 0.084 * b.fl, 0, TAU); ctx.fill(); ctx.stroke();
     ctx.beginPath(); ctx.arc(b.rx, b.ry, 0.084 * b.fr, 0, TAU); ctx.fill(); ctx.stroke();
     ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.beginPath(); dot(ctx, b.lx + 0.025 * b.fl, b.ly - 0.025 * b.fl, 0.032 * b.fl); dot(ctx, b.rx + 0.025 * b.fr, b.ry - 0.025 * b.fr, 0.032 * b.fr); ctx.fill();   // knuckle shine
     if (outfit === 'metal') { ctx.strokeStyle = '#9aa0a8'; ctx.lineWidth = 0.03; ctx.beginPath(); ctx.arc(b.lx, b.ly, 0.09 * b.fl, 0, TAU); ctx.moveTo(b.rx + 0.09 * b.fr, b.ry); ctx.arc(b.rx, b.ry, 0.09 * b.fr, 0, TAU); ctx.stroke(); }
-    drawHead(ctx, p, lk, outfit, 0.03 + b.lean + b.hx, b.sy + b.hy, t);
+    head(ctx, p, lk, outfit, 0.03 + b.lean + b.hx, b.sy + b.hy, t);
   }
   // Knocked down by a blow (brawl.js): topple over (the body lengthening as it falls), lie dazed, get up via
   // sitting and a knee; or on the knees, begging.
   function drawDown(ctx, p, lk, outfit, sc, s, b, t) {
     if (b.body === 'fall' || b.body === 'lie') { drawSprawl(ctx, p, lk, outfit, sc, s * 0.9, false, t, b.ang, b.body === 'fall' ? 0.35 + 0.65 * b.k : 1); return; }
-    ctx.save(); ctx.translate(p.x, p.y);
-    ctx.fillStyle = 'rgba(0,0,0,0.26)'; oval(ctx, 0.07, 0.09, 0.3 * s, 0.34 * s, p.th);
-    ctx.rotate(p.th); ctx.scale(s, s); ctx.lineCap = 'round';
+    if (SHADOW) { ctx.fillStyle = 'rgba(0,0,0,0.26)'; oval(ctx, p.x + 0.07, p.y + 0.09, 0.3 * s, 0.34 * s, p.th); }
+    place(ctx, CM, p.x, p.y, p.th, s); ctx.lineCap = 'round';
     if (b.body === 'kneel') drawCrouch(ctx, p, lk, 'beg', t);
     else if (b.k < 0.42) drawSit(ctx, lk);
     else if (b.k < 0.8) drawCrouch(ctx, p, lk, 'kneel', t);
     else drawUpright(ctx, p, lk, outfit, null, t, null);
     if (p.hurtT > 0) { ctx.fillStyle = `rgba(255,40,30,${(0.5 * Math.min(1, p.hurtT / 0.25)).toFixed(3)})`; disc(ctx, 0, 0, 0.38); }
-    ctx.restore();
   }
   function torsoDetail(ctx, p, lk, outfit, t) {
     switch (outfit) {
@@ -1910,11 +1942,16 @@
   // Lying down: dead, knocked flat (spinning) or 'lie'. Limbs splay in a pose seeded by the id.
   // ang / len (optional): a knockdown's fall direction and how far the body has toppled (0.35 standing .. 1 flat).
   function drawSprawl(ctx, p, lk, outfit, sc, s, dead, t, ang, len) {
-    const id = p.id || 1, r1 = hr(id, 11), r2 = hr(id, 12), r3 = hr(id, 13), r4 = hr(id, 14), r5 = hr(id, 15), r6 = hr(id, 16);
-    ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(ang == null ? p.th : ang); if (s !== 1) ctx.scale(s, s);
+    place(ctx, CM, p.x, p.y, ang == null ? p.th : ang, s);
     if (len != null && len !== 1) ctx.scale(len, 1);
-    ctx.fillStyle = 'rgba(0,0,0,0.22)'; oval(ctx, 0.05, 0.06, 0.78, 0.48);
-    if (sc * s < 9) { ctx.fillStyle = CC.shirt; oval(ctx, 0, 0, 0.32, 0.2); ctx.fillStyle = CC.skin; disc(ctx, 0.42, 0, 0.14); ctx.restore(); return; }
+    sprawlBody(ctx, p, lk, outfit, LOWD ? 0 : sc * s, dead, t, ang);
+    if (p.hurtT > 0) { ctx.fillStyle = 'rgba(255,40,30,0.35)'; oval(ctx, 0, 0, 0.5, 0.3); }
+  }
+  // the lying figure in its own frame; px = its scale in CSS px per unit (small: a simple blob)
+  function sprawlBody(ctx, p, lk, outfit, px, dead, t, ang) {
+    const id = p.id || 1, r1 = hr(id, 11), r2 = hr(id, 12), r3 = hr(id, 13), r4 = hr(id, 14), r5 = hr(id, 15), r6 = hr(id, 16);
+    if (SHADOW) { ctx.fillStyle = 'rgba(0,0,0,0.22)'; oval(ctx, 0.05, 0.06, 0.78, 0.48); }
+    if (px < 9) { ctx.fillStyle = CC.shirt; oval(ctx, 0, 0, 0.32, 0.2); ctx.fillStyle = CC.skin; disc(ctx, 0.42, 0, 0.14); return; }
     ctx.lineCap = 'round';
     const f1 = 0.1 + r1 * 0.3, f2 = 0.1 + r2 * 0.3, flail = dead ? 0 : ang != null ? Math.sin(t * 3 + id) * 0.025 : Math.sin(t * 14 + id) * 0.08;
     ctx.strokeStyle = CC.pants; ctx.lineWidth = 0.15; ctx.beginPath();
@@ -1946,8 +1983,6 @@
       if (CC.hatType === 'russ') { ctx.strokeStyle = '#1b1b1b'; ctx.lineWidth = 0.025; ctx.beginPath(); ctx.moveTo(hx2, hy2); ctx.lineTo(hx2 - 0.3, hy2 + 0.15); ctx.stroke(); }
     } else if (CC.hat) { ctx.fillStyle = CC.hat; disc(ctx, 0.47, hy, 0.13); }
     if (lk.acc === 'briefcase' && dead) { ctx.save(); ctx.translate(-0.05 + r5 * 0.4, 0.62 + r6 * 0.25); ctx.rotate(r1 * 3); ctx.fillStyle = '#3a2a1e'; ctx.fillRect(-0.16, -0.05, 0.32, 0.1); ctx.restore(); }
-    if (p.hurtT > 0) { ctx.fillStyle = 'rgba(255,40,30,0.35)'; oval(ctx, 0, 0, 0.5, 0.3); }
-    ctx.restore();
   }
   function drawDive(ctx, lk) {
     ctx.strokeStyle = CC.pants; ctx.lineWidth = 0.15; ctx.beginPath(); ctx.moveTo(-0.2, -0.08); ctx.lineTo(-0.66, -0.16); ctx.moveTo(-0.2, 0.08); ctx.lineTo(-0.64, 0.12); ctx.stroke();
@@ -1958,20 +1993,21 @@
     ctx.fillStyle = CC.skin; disc(ctx, 0.42, 0, 0.13);
     ctx.fillStyle = CC.hat || CC.hair; if (CC.style !== 'bald' || CC.hat) disc(ctx, 0.43, 0, 0.12);
   }
+  const SITP = { id: 0, walk: 0 };
   function drawSit(ctx, lk) {
     ctx.strokeStyle = CC.pants; ctx.lineWidth = 0.15; ctx.beginPath(); ctx.moveTo(0, -0.1); ctx.lineTo(0.45, -0.13); ctx.moveTo(0, 0.1); ctx.lineTo(0.45, 0.13); ctx.stroke();
     ctx.fillStyle = '#17171a'; ctx.beginPath(); dot(ctx, 0.5, -0.13, 0.07); dot(ctx, 0.5, 0.13, 0.07); ctx.fill();
     ctx.strokeStyle = CC.sleeve; ctx.lineWidth = 0.12; ctx.beginPath(); ctx.moveTo(-0.04, -0.24); ctx.lineTo(-0.3, -0.33); ctx.moveTo(-0.04, 0.24); ctx.lineTo(-0.3, 0.33); ctx.stroke();
     ctx.fillStyle = CC.skin; ctx.beginPath(); dot(ctx, -0.3, -0.33, 0.065); dot(ctx, -0.3, 0.33, 0.065); ctx.fill();
     ctx.fillStyle = CC.jacket || CC.shirt; oval(ctx, -0.05, 0, 0.15, 0.27);
-    drawHead(ctx, { id: 0, walk: 0 }, lk, '', -0.03, 0, 0);
+    head(ctx, SITP, lk, '', -0.03, 0, 0);
   }
   function drawCrouch(ctx, p, lk, pose, t) {
     ctx.fillStyle = '#17171a'; ctx.beginPath(); dot(ctx, 0.2, -0.12, 0.07); dot(ctx, 0.2, 0.12, 0.07); ctx.fill();
     ctx.fillStyle = CC.pants; oval(ctx, 0.08, 0, 0.14, 0.2);
     ctx.fillStyle = CC.jacket || CC.shirt; oval(ctx, -0.03, 0, 0.15, 0.25);
     const shake = pose === 'cower' ? Math.sin(t * 30 + p.id) * 0.01 : 0;
-    drawHead(ctx, p, lk, '', 0.05 + shake, 0, t);
+    head(ctx, p, lk, '', 0.05 + shake, 0, t);
     ctx.strokeStyle = CC.sleeve; ctx.lineWidth = 0.11; ctx.beginPath();
     const bx = pose === 'beg' ? 0.25 + Math.sin(t * 26 + p.id) * 0.012 : 0;   // begging: hands clasped out in front, shaking
     if (pose === 'cower') { ctx.moveTo(0, -0.22); ctx.lineTo(0.06, -0.08); ctx.moveTo(0, 0.22); ctx.lineTo(0.06, 0.08); }
@@ -1983,7 +2019,7 @@
     ctx.fill();
   }
   function flames(ctx, x, y, t, k) {
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0, n = LOWD ? 2 : 5; i < n; i++) {
       const a = i * 1.26 + t * 3 + k, r = 0.15 + 0.06 * Math.sin(t * 17 + i * 2 + k);
       ctx.fillStyle = i % 2 ? 'rgba(255,90,20,0.8)' : 'rgba(255,170,40,0.85)';
       disc(ctx, x + Math.cos(a) * 0.17, y + Math.sin(a) * 0.17 - 0.08, r);
@@ -1995,7 +2031,7 @@
 
   function drawDog(ctx, d, t) {
     ctx.save(); ctx.translate(d.x, d.y);
-    ctx.fillStyle = 'rgba(0,0,0,0.25)'; oval(ctx, 0.06, 0.08, 0.36 * d.sz, 0.17 * d.sz, d.th);
+    if ((PG.settings || {}).shadows !== false) { ctx.fillStyle = 'rgba(0,0,0,0.25)'; oval(ctx, 0.06, 0.08, 0.36 * d.sz, 0.17 * d.sz, d.th); }
     ctx.rotate(d.th + (d.knock > 0 ? Math.sin(t * 20) * 0.5 : 0)); ctx.scale(d.sz, d.sz);
     const sit = d.st === 'sit', mv = Math.min(1, d.speed / 1.5), ph = d.walk * 5, g = Math.sin(ph) * 0.07 * mv;
     ctx.lineCap = 'round';
@@ -2018,21 +2054,24 @@
     const cx = d.x + Math.cos(d.th) * 0.17 * d.sz, cy = d.y + Math.sin(d.th) * 0.17 * d.sz;
     ctx.strokeStyle = '#7a2a24'; ctx.lineWidth = 0.035; ctx.beginPath(); ctx.moveTo(hx, hy); ctx.quadraticCurveTo((hx + cx) / 2 + 0.08, (hy + cy) / 2 + 0.12, cx, cy); ctx.stroke();
   }
-  function drawPool(ctx, pl) {
+  const PRINTB = [], PRINTC = [];
+  for (let k = 0; k <= 16; k++) { PRINTB.push([]); PRINTC.push(`rgba(92,10,12,${(k / 16).toFixed(3)})`); }
+  // M: the world transform (the caller puts it back)
+  function drawPool(ctx, M, pl, lowD) {
     const age = X.time - pl.t0; if (age < 0) return;
     const g = Math.min(1, age / 7), e = 1 - (1 - g) * (1 - g), r = pl.size * (0.2 + 0.8 * e), sd = pl.seed;
-    ctx.save(); ctx.translate(pl.x, pl.y); ctx.rotate(pl.rot); ctx.globalAlpha = pl.fade;
+    place(ctx, M, pl.x, pl.y, pl.rot, 1); ctx.globalAlpha = pl.fade;
     ctx.fillStyle = '#4e080b'; ctx.beginPath(); ctx.ellipse(0, 0, r, r * 0.72, 0, 0, TAU);
     for (let i = 0; i < 3; i++) { const a = sd * 9 + i * 2.1, q = r * (0.3 + 0.12 * ((sd * (i + 3) * 7) % 1)); dot(ctx, Math.cos(a) * r * 0.75, Math.sin(a) * r * 0.55, q); }
     ctx.fill();
+    if (lowD) return;
     ctx.fillStyle = 'rgba(150,18,26,0.55)'; oval(ctx, -r * 0.12, -r * 0.1, r * 0.55, r * 0.34);
     ctx.fillStyle = 'rgba(255,210,210,0.13)'; oval(ctx, -r * 0.3, -r * 0.25, r * 0.16, r * 0.07, 0.4);
-    ctx.restore(); ctx.globalAlpha = 1;
   }
   function drawCash(ctx, c, t) {
     if (c.ttl - (X.time - c.t) < 4 && Math.floor(t * 7) % 2 === 0) return;
     ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(c.rot);
-    ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(-0.24, -0.11, 0.5, 0.26);
+    if ((PG.settings || {}).shadows !== false) { ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(-0.24, -0.11, 0.5, 0.26); }
     for (let i = 0; i < 2; i++) { ctx.rotate(0.35); ctx.fillStyle = '#3d8b3d'; ctx.fillRect(-0.27, -0.13, 0.5, 0.25); ctx.fillStyle = '#9fe09f'; ctx.fillRect(-0.2, -0.07, 0.36, 0.13); ctx.fillStyle = '#3d8b3d'; disc(ctx, -0.02, 0, 0.05); }
     ctx.restore();
   }
@@ -2103,10 +2142,20 @@
     render: {
       ground(ctx, view, t) {
         if (!S) return;
-        for (const pl of S.pools) if (X.inView(pl.x, pl.y, pl.size + 1)) drawPool(ctx, pl);
+        const lowD = (PG.settings || {}).detail === 'low';
+        if (S.pools.length) { const M = ctx.getTransform(); for (const pl of S.pools) if (X.inView(pl.x, pl.y, pl.size + 1)) drawPool(ctx, M, pl, lowD); ctx.setTransform(M); ctx.globalAlpha = 1; }
+        if (lowD || !S.prints.length) return;
+        // bloody footprints: one path per fade level
+        for (const b of PRINTB) b.length = 0;
         for (const fp of S.prints) {
           const age = X.time - fp.t; if (age > 30 || !X.inView(fp.x, fp.y, 1)) continue;
-          ctx.fillStyle = `rgba(92,10,12,${(fp.a * 0.7 * (1 - age / 30)).toFixed(3)})`; oval(ctx, fp.x, fp.y, 0.1, 0.055, fp.th);
+          const k = Math.round(fp.a * 0.7 * (1 - age / 30) * 16); if (k > 0) PRINTB[Math.min(16, k)].push(fp);
+        }
+        for (let k = 1; k <= 16; k++) {
+          const B = PRINTB[k]; if (!B.length) continue;
+          ctx.fillStyle = PRINTC[k]; ctx.beginPath();
+          for (const fp of B) { ctx.moveTo(fp.x + Math.cos(fp.th) * 0.1, fp.y + Math.sin(fp.th) * 0.1); ctx.ellipse(fp.x, fp.y, 0.1, 0.055, fp.th, 0, TAU); }
+          ctx.fill();
         }
       },
       bodies(ctx, view, t) {
@@ -2119,17 +2168,17 @@
       },
       peds(ctx, view, t) {
         if (!S) return;
-        const nt = night();
+        const nt = night(), lowD = (PG.settings || {}).detail === 'low';
         let lights = 0;
         for (const p of X.peds) {
           const a = p.ai;
           if (!a || a.owner !== 'peds' || p.dead || p.removed || p.hidden || !X.inView(p.x, p.y, 2)) continue;
-          if (a.st === 'chat' && (p.id + Math.floor(t * 1.5)) % 2) {   // speech dots
+          if (a.st === 'chat' && !lowD && (p.id + Math.floor(t * 1.5)) % 2) {   // speech dots
             ctx.fillStyle = 'rgba(255,255,255,0.75)'; ctx.beginPath();
             for (let i = 0; i < 3; i++) dot(ctx, p.x - 0.22 + i * 0.2, p.y - 0.62 - (Math.floor(t * 4) % 3 === i ? 0.06 : 0), 0.055);
             ctx.fill();
           }
-          if (a.lead && a.lead.ai && !a.lead.dead && !a.lead.removed && a.st === 'walk' && a.lead.knock <= 0 && !a.lead.ai.pose) {   // holding hands
+          if (!lowD && a.lead && a.lead.ai && !a.lead.dead && !a.lead.removed && a.st === 'walk' && a.lead.knock <= 0 && !a.lead.ai.pose) {   // holding hands
             const L2 = a.lead, d = Math.hypot(L2.x - p.x, L2.y - p.y);
             if (d < 1.05) {
               const hx = L2.x - Math.sin(L2.th) * 0.33, hy = L2.y + Math.cos(L2.th) * 0.33, qx = p.x + Math.sin(p.th) * 0.33, qy = p.y - Math.cos(p.th) * 0.33;

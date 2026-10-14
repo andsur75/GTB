@@ -788,6 +788,7 @@
   }
   function cleanup(sc) {
     despawn(sc);
+    if (sc._floorC) tcDrop(sc._floorC);
     if (sc.st.drill) sc.st.drill.on = false;
     S.rob = null; S.warn = null; S.padIn = null; S.danceT = 0;
     if (P.ped) P.ped.pose = null;
@@ -1568,7 +1569,10 @@
     v = 'rgb(' + f(n >> 16) + ',' + f((n >> 8) & 255) + ',' + f(n & 255) + ')'; SHADE.set(key, v); return v;
   }
   const FONT = '"Barlow Condensed", "Arial Narrow", Arial, sans-serif';
-  function sh(c, hw, hh, k) { c.fillStyle = 'rgba(0,0,0,' + (k || 0.3) + ')'; c.fillRect(-hw + 0.12, -hh + 0.16, hw * 2, hh * 2); }
+  // Quality settings, read again by every drawing entry point each frame: drop shadows, fine detail.
+  let SH = true, HI = true;
+  function readSettings() { const q = PG.settings || {}; SH = q.shadows !== false; HI = q.detail !== 'low'; }
+  function sh(c, hw, hh, k) { if (!SH) return; c.fillStyle = 'rgba(0,0,0,' + (k || 0.3) + ')'; c.fillRect(-hw + 0.12, -hh + 0.16, hw * 2, hh * 2); }
   function rect(c, x, y, w, h, col) { c.fillStyle = col; c.fillRect(x, y, w, h); }
   function rr(c, x, y, w, h, r, col) { c.fillStyle = col; PG.rr(c, x, y, w, h, r); c.fill(); }
   function disc(c, x, y, r, col) { c.fillStyle = col; c.beginPath(); c.arc(x, y, r, 0, TAU); c.fill(); }
@@ -1956,36 +1960,142 @@
     ctx.restore();
   }
 
-  // ================= interiors: floor, walls, top =================
-  function drawFloor(sc, ctx, view, t) {
-    const e = sc.entry;
-    if (e && X.inView(e.x, sc.y1 + 4, 16)) {   // a strip of street outside the front door, fading into the night
-      rect(ctx, e.x - 10, sc.y1, 20, 4.4, '#3e4148'); ctx.fillStyle = '#4c4f57'; for (let x = e.x - 10; x < e.x + 10; x += 1.5) ctx.fillRect(x, sc.y1, 0.05, 4.4);
-      rect(ctx, e.x - 10, sc.y1 + 4.4, 20, 0.3, '#6a6d74'); rect(ctx, e.x - 10, sc.y1 + 4.7, 20, 7, '#26282d'); rect(ctx, e.x - 10, sc.y1 + 8.5, 20, 0.14, 'rgba(236,232,220,0.6)');
-      if (!sc.outG) { const g = ctx.createRadialGradient(e.x, sc.y1, 3, e.x, sc.y1, 10.5); g.addColorStop(0, 'rgba(4,5,7,0)'); g.addColorStop(1, 'rgba(4,5,7,1)'); sc.outG = g; }
-      ctx.fillStyle = sc.outG; ctx.fillRect(e.x - 11, sc.y1, 22, 12);
+  // ================= cached static layers =================
+  // On a software-rasterised canvas (headless Chromium, SwiftShader, llvmpipe) every scaled pattern, gradient
+  // or image is paid for per pixel: a bar's floor patterns and light pools cost ~10 ms a frame that way, while a
+  // 1:1 blit at whole-pixel coordinates is close to a memcpy (a screenful of 512 px tiles ~0.5 ms). So a scene's
+  // static floor is drawn once into 512 px tiles at the pixels per metre the camera settles on and blitted
+  // unscaled at whole pixels; while the zoom eases in they are blitted scaled, and a turned camera on a software
+  // canvas (or fastRender off) draws the classic way.
+  const TC_N = 512, TC_MAX = 30, TC_POOL = [];
+  function tileCache() { return { ppm: 0, gx: 0, gy: 0, key: '', prev: 0, calm: 0, tiles: new Map(), built: 0 }; }
+  function tcDrop(L) { for (const cv of L.tiles.values()) if (TC_POOL.length < 16) TC_POOL.push(cv); L.tiles.clear(); L.ppm = 0; }
+  function tcTile(L, i, j, paint) {
+    const k = i * 4096 + j; let cv = L.tiles.get(k);
+    if (cv) { L.tiles.delete(k); L.tiles.set(k, cv); return cv; }   // most recently used last
+    cv = TC_POOL.pop() || document.createElement('canvas');
+    cv.width = TC_N; cv.height = TC_N;   // (re)sizing also clears it
+    const g = cv.getContext('2d'), p = L.ppm, T = TC_N / p, x0 = L.gx + i * T, y0 = L.gy + j * T;
+    g.setTransform(p, 0, 0, p, -x0 * p, -y0 * p);
+    paint(g, x0, y0, x0 + T, y0 + T);
+    L.tiles.set(k, cv); L.built++;
+    while (L.tiles.size > TC_MAX) { const it = L.tiles.entries().next().value; L.tiles.delete(it[0]); if (TC_POOL.length < 16) TC_POOL.push(it[1]); }
+    return cv;
+  }
+  // Draws a static layer from its tiles; false = draw it the classic way this frame. b: world box of the
+  // content, key: everything that changes its look, want: the pixels per metre the camera is easing towards.
+  function tcDraw(L, ctx, view, b, key, want, paint) {
+    if ((PG.settings || {}).fastRender === false) return false;
+    const m = ctx.getTransform(), turned = Math.abs(m.b) > 1e-9 || Math.abs(m.c) > 1e-9, ppm = Math.hypot(m.a, m.b);
+    if (!(ppm > 0) || (turned && !(PG.renderCaps && PG.renderCaps.gpu))) return false;
+    const reach = Math.hypot(view.cw, view.ch) * (view.dpr || 1) / 2 + TC_N, tol = 0.5 / reach;
+    L.calm = Math.abs(ppm / (L.prev || ppm) - 1) < tol / 8 ? L.calm + 1 : 0; L.prev = ppm;
+    if (!(want > 0) || (L.calm > 20 && Math.abs(ppm / want - 1) > tol)) want = ppm;   // settled somewhere else
+    if (L.key !== key || !L.ppm || Math.abs(want / L.ppm - 1) > tol / 2) { tcDrop(L); L.key = key; L.ppm = want; L.gx = b.x0; L.gy = b.y0; }
+    const ratio = ppm / L.ppm, snap = !turned && Math.abs(ratio - 1) <= tol;
+    if (!snap && (ratio < 0.7 || ratio > 1.45)) return false;   // the zoom is still far from the cached scale
+    const T = TC_N / L.ppm, cw = ctx.canvas.width, ch = ctx.canvas.height;
+    let vx0, vy0, vx1, vy1;
+    if (turned) { vx0 = view.cx - view.r; vx1 = view.cx + view.r; vy0 = view.cy - view.r; vy1 = view.cy + view.r; }
+    else { vx0 = -m.e / m.a; vx1 = (cw - m.e) / m.a; vy0 = -m.f / m.d; vy1 = (ch - m.f) / m.d; }
+    const i0 = Math.max(0, Math.floor((Math.max(vx0, b.x0) - L.gx) / T)), i1 = Math.floor((Math.min(vx1, b.x1) - L.gx) / T);
+    const j0 = Math.max(0, Math.floor((Math.max(vy0, b.y0) - L.gy) / T)), j1 = Math.floor((Math.min(vy1, b.y1) - L.gy) / T);
+    if (i1 < i0 || j1 < j0) return true;   // none of it on screen
+    const built = L.built;
+    if (snap) {
+      const ia = cl(Math.floor((view.cx - L.gx) / T), i0, i1), ja = cl(Math.floor((view.cy - L.gy) / T), j0, j1);
+      const ax = Math.round(m.a * (L.gx + ia * T) + m.e), ay = Math.round(m.d * (L.gy + ja * T) + m.f);
+      ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
+      for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) ctx.drawImage(tcTile(L, i, j, paint), ax + (i - ia) * TC_N, ay + (j - ja) * TC_N);
+      ctx.restore();
+    } else {
+      const e = 1.2 / ppm;   // a hair of overlap: no hairline seams between scaled tiles
+      for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) ctx.drawImage(tcTile(L, i, j, paint), L.gx + i * T, L.gy + j * T, T + e, T + e);
     }
+    // nothing new needed this frame: get one tile of the ring around the screen ready
+    if (L.built === built) {
+      const I1 = Math.floor((b.x1 - L.gx) / T), J1 = Math.floor((b.y1 - L.gy) / T);
+      outer: for (let j = Math.max(0, j0 - 1); j <= Math.min(J1, j1 + 1); j++) for (let i = Math.max(0, i0 - 1); i <= Math.min(I1, i1 + 1); i++) {
+        if (!L.tiles.has(i * 4096 + j) && L.tiles.size < TC_MAX - 4) { tcTile(L, i, j, paint); break outer; }
+      }
+    }
+    return true;
+  }
+  // The pixels per metre the camera is easing towards (core's X.view), so the tiles are drawn once at the end scale.
+  function settlePpm(ppm) {
+    const cam = X.cam; if (!cam || !(cam.span > 0)) return ppm;
+    let want = (X.scene && X.scene.camSpan) || cam.span;
+    if (P.state !== 'play') want *= 0.8;
+    want *= cam.zoom || 1;
+    if (X.input.down('Tab')) want = 260;
+    return ppm * cam.span / want;
+  }
+
+  // ================= interiors: floor, walls, top =================
+  function floorBox(sc) {
+    if (sc._fbox) return sc._fbox;
+    const b = { x0: sc.x0 - 1, y0: sc.y0 - 1, x1: sc.x1 + 1, y1: sc.y1 + 1 }, e = sc.entry;
+    if (e) { b.x0 = Math.min(b.x0, e.x - 11.5); b.x1 = Math.max(b.x1, e.x + 11.5); b.y1 = Math.max(b.y1, sc.y1 + 12.5); }
+    for (const l of sc.lights) if (!l.disco) { b.x0 = Math.min(b.x0, l.x - l.r); b.x1 = Math.max(b.x1, l.x + l.r); b.y0 = Math.min(b.y0, l.y - l.r); b.y1 = Math.max(b.y1, l.y + l.r); }
+    return (sc._fbox = b);
+  }
+  // Everything static under the people: the street outside, floors (dance floors left clear: they are drawn
+  // live underneath), the light pools, rugs and paint, the door mat. In world coordinates, clipped to a tile.
+  function paintFloor(sc, g, x0, y0, x1, y1) {
+    const ov = (a0, b0, a1, b1) => a1 > x0 && a0 < x1 && b1 > y0 && b0 < y1;
+    g.fillStyle = sc.bg || '#040507'; g.fillRect(x0, y0, x1 - x0, y1 - y0);
+    const e = sc.entry;
+    if (e && ov(e.x - 11, sc.y1, e.x + 11, sc.y1 + 12)) streetStrip(sc, g);
+    for (const r of sc.rooms) {
+      if (!ov(r.x0, r.y0, r.x1, r.y1)) continue;
+      if (r.floor === 'dance') { g.clearRect(r.x0, r.y0, r.x1 - r.x0, r.y1 - r.y0); continue; }
+      roomFloor(g, r);
+    }
+    g.globalCompositeOperation = 'lighter';
+    for (const l of sc.lights) if (!l.disco && ov(l.x - l.r, l.y - l.r, l.x + l.r, l.y + l.r)) lightPool(g, l);
+    g.globalCompositeOperation = 'source-over';
+    for (const f of sc.furn) { const r = Math.max(f.w, f.h) / 2 + 1; if (f.layer === 0 && ov(f.x - r, f.y - r, f.x + r, f.y + r)) drawFurn(g, f, 0, sc); }
+    if (sc.exit) doorMat(sc, g);
+  }
+  function streetStrip(sc, ctx) {
+    const e = sc.entry;
+    rect(ctx, e.x - 10, sc.y1, 20, 4.4, '#3e4148'); ctx.fillStyle = '#4c4f57'; for (let x = e.x - 10; x < e.x + 10; x += 1.5) ctx.fillRect(x, sc.y1, 0.05, 4.4);
+    rect(ctx, e.x - 10, sc.y1 + 4.4, 20, 0.3, '#6a6d74'); rect(ctx, e.x - 10, sc.y1 + 4.7, 20, 7, '#26282d'); rect(ctx, e.x - 10, sc.y1 + 8.5, 20, 0.14, 'rgba(236,232,220,0.6)');
+    if (!sc.outG) { const g = ctx.createRadialGradient(e.x, sc.y1, 3, e.x, sc.y1, 10.5); g.addColorStop(0, 'rgba(4,5,7,0)'); g.addColorStop(1, 'rgba(4,5,7,1)'); sc.outG = g; }
+    ctx.fillStyle = sc.outG; ctx.fillRect(e.x - 11, sc.y1, 22, 12);
+  }
+  function roomFloor(ctx, r) {
+    const p = floorPattern(ctx, r.floor, r.c1, r.c2);
+    if (!r.mat) r.mat = new DOMMatrix([p.k, 0, 0, p.k, r.x0, r.y0]);
+    p.pat.setTransform(r.mat); ctx.fillStyle = p.pat; ctx.fillRect(r.x0, r.y0, r.x1 - r.x0, r.y1 - r.y0);
+  }
+  function lightPool(ctx, l) {
+    if (!l.g) { const g = ctx.createRadialGradient(l.x, l.y, 0, l.x, l.y, l.r * 0.85); g.addColorStop(0, rgba(l.c, (0.1 * l.i).toFixed(3))); g.addColorStop(1, rgba(l.c, 0)); l.g = g; }
+    ctx.fillStyle = l.g; ctx.fillRect(l.x - l.r, l.y - l.r, l.r * 2, l.r * 2);
+  }
+  function doorMat(sc, ctx) {
+    const x = sc.exit, w = x.x1 - x.x0, h = x.y1 - x.y0;
+    rect(ctx, x.x0, x.y0, w, h, '#2a2622'); ctx.strokeStyle = '#4a4038'; ctx.lineWidth = 0.08; ctx.strokeRect(x.x0 + 0.1, x.y0 + 0.1, w - 0.2, h - 0.2);
+    wtext(ctx, sc.type === 'apartment' || sc.type === 'hideout' ? 'HOME' : 'VELKOMMEN', x.x0 + w / 2, x.y0 + h / 2, 0.36, '#8a7a62', 800);
+  }
+  function drawFloor(sc, ctx, view, t) {
+    readSettings();
+    // dance floors are live: drawn first, the cached floor leaves them clear
+    for (const r of sc.rooms) if (r.floor === 'dance' && X.inView((r.x0 + r.x1) / 2, (r.y0 + r.y1) / 2, Math.max(r.x1 - r.x0, r.y1 - r.y0) / 2 + 2)) drawDance(ctx, r, t);
+    const L = sc._floorC || (sc._floorC = tileCache());
+    if (tcDraw(L, ctx, view, floorBox(sc), 'floor', settlePpm(view.scale * (view.dpr || 1)), (g, x0, y0, x1, y1) => paintFloor(sc, g, x0, y0, x1, y1))) return;
+    const e = sc.entry;
+    if (e && X.inView(e.x, sc.y1 + 4, 16)) streetStrip(sc, ctx);
     for (const r of sc.rooms) {
       const w = r.x1 - r.x0, h = r.y1 - r.y0;
-      if (!X.inView(r.x0 + w / 2, r.y0 + h / 2, Math.max(w, h) / 2 + 2)) continue;
-      if (r.floor === 'dance') { drawDance(ctx, r, t); continue; }
-      const p = floorPattern(ctx, r.floor, r.c1, r.c2);
-      if (!r.mat) r.mat = new DOMMatrix([p.k, 0, 0, p.k, r.x0, r.y0]);
-      p.pat.setTransform(r.mat); ctx.fillStyle = p.pat; ctx.fillRect(r.x0, r.y0, w, h);
+      if (r.floor === 'dance' || !X.inView(r.x0 + w / 2, r.y0 + h / 2, Math.max(w, h) / 2 + 2)) continue;
+      roomFloor(ctx, r);
     }
     ctx.globalCompositeOperation = 'lighter';
-    for (const l of sc.lights) {
-      if (l.disco || !X.inView(l.x, l.y, l.r)) continue;
-      if (!l.g) { const g = ctx.createRadialGradient(l.x, l.y, 0, l.x, l.y, l.r * 0.85); g.addColorStop(0, rgba(l.c, (0.1 * l.i).toFixed(3))); g.addColorStop(1, rgba(l.c, 0)); l.g = g; }
-      ctx.fillStyle = l.g; ctx.fillRect(l.x - l.r, l.y - l.r, l.r * 2, l.r * 2);
-    }
+    for (const l of sc.lights) if (!l.disco && X.inView(l.x, l.y, l.r)) lightPool(ctx, l);
     ctx.globalCompositeOperation = 'source-over';
     for (const f of sc.furn) if (f.layer === 0 && X.inView(f.x, f.y, Math.max(f.w, f.h) / 2 + 1)) drawFurn(ctx, f, t, sc);
-    if (sc.exit) {
-      const x = sc.exit, w = x.x1 - x.x0, h = x.y1 - x.y0;
-      rect(ctx, x.x0, x.y0, w, h, '#2a2622'); ctx.strokeStyle = '#4a4038'; ctx.lineWidth = 0.08; ctx.strokeRect(x.x0 + 0.1, x.y0 + 0.1, w - 0.2, h - 0.2);
-      wtext(ctx, sc.type === 'apartment' || sc.type === 'hideout' ? 'HOME' : 'VELKOMMEN', x.x0 + w / 2, x.y0 + h / 2, 0.36, '#8a7a62', 800);
-    }
+    if (sc.exit) doorMat(sc, ctx);
   }
   function drawDance(ctx, r, t) {
     const b = Math.floor(t * 126 / 60 * 2);
@@ -1998,13 +2108,14 @@
   }
   function visR(w) { return X.inView((w.x0 + w.x1) / 2, (w.y0 + w.y1) / 2, Math.max(w.x1 - w.x0, w.y1 - w.y0) / 2 + 1); }
   function drawWalls(sc, ctx, view, t) {
+    readSettings();
     for (const f of sc.furn) if (f.layer === 1 && X.inView(f.x, f.y, Math.max(f.w, f.h) / 2 + 1)) drawFurn(ctx, f, t, sc);
     for (const pd of sc.pads) if (X.inView(pd.x, pd.y, 2)) drawPad(ctx, pd, t);
     if (sc.type === 'bank') for (const l of sc.loot) if (!l.taken && X.inView(l.x, l.y, 1)) drawLoot(ctx, l, t);
     if (sc.critter && sc.critter.st) drawCritter(ctx, sc.critter, t);
     const plugOpen = sc.st.plug && !sc.st.plug.q;
     ctx.fillStyle = 'rgba(0,0,0,0.3)';
-    for (const w of sc.walls) if ((w.kind === 'wall' || (w.kind === 'plug' && !plugOpen)) && visR(w)) ctx.fillRect(w.x0 + 0.18, w.y0 + 0.24, w.x1 - w.x0, w.y1 - w.y0);
+    if (SH) for (const w of sc.walls) if ((w.kind === 'wall' || (w.kind === 'plug' && !plugOpen)) && visR(w)) ctx.fillRect(w.x0 + 0.18, w.y0 + 0.24, w.x1 - w.x0, w.y1 - w.y0);
     for (const w of sc.walls) {
       if (!visR(w) || (w.kind === 'plug' && plugOpen)) continue;
       const x = w.x0, y = w.y0, ww = w.x1 - w.x0, hh = w.y1 - w.y0;
@@ -2044,6 +2155,7 @@
     if (sc.type === 'bank') drawVault(ctx, sc, t);
   }
   function drawTop(sc, ctx, view, t) {
+    readSettings();
     for (const f of sc.furn) {
       if (f.layer !== 3 || f.t === 'vault' || !X.inView(f.x, f.y, 6)) continue;
       if (f.t === 'camera') {
@@ -2130,6 +2242,7 @@
     }
   }
   function drawCityDoors(ctx, t) {
+    readSettings();
     const pp = P.ped, foot = !P.car && pp && !pp.dead;
     for (const d of S.doors) if (X.inView(d.x, d.y, 8)) drawCityDoor(ctx, d, t, foot && Math.abs(pp.x - d.x) < 9 && Math.abs(pp.y - d.y) < 9);
   }

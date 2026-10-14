@@ -299,7 +299,7 @@
 
   // ================= input =================
   const keys = new Set(), pressedSet = new Set();
-  const mouse = X.mouse = { sx: 0, sy: 0, wx: 0, wy: 0, down: false, pressed: false, t: -1e9 };
+  const mouse = X.mouse = { sx: 0, sy: 0, wx: 0, wy: 0, dx: 0, dy: 0, down: false, pressed: false, t: -1e9 };
   const GAME_KEYS = new Set(['Space', 'Tab', 'KeyF', 'KeyQ', 'KeyE', 'KeyH', 'KeyC', 'KeyG', 'KeyJ', 'KeyX', 'KeyV', 'KeyB', 'KeyN', 'KeyZ', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ControlLeft', 'ControlRight', 'ShiftLeft', 'ShiftRight', 'Enter', 'AltLeft']);
   const playing = () => X.active && G().status === 'play';
   window.addEventListener('keydown', e => {
@@ -309,20 +309,47 @@
     if (playing() && (GAME_KEYS.has(e.code) || /^Digit/.test(e.code))) e.preventDefault();
   });
   window.addEventListener('keyup', e => keys.delete(e.code));
-  window.addEventListener('blur', () => { keys.clear(); mouse.down = false; });
+  window.addEventListener('blur', () => { keys.clear(); mouse.down = false; mouse.rdown = false; });
   let canvasHooked = false;
   function hookCanvas() {
     if (canvasHooked) return; canvasHooked = true;
     const cv = document.getElementById('game');
     const pos = e => { const r = cv.getBoundingClientRect(); mouse.sx = e.clientX - r.left; mouse.sy = e.clientY - r.top; };
-    cv.addEventListener('pointermove', e => { if (e.pointerType === 'mouse') { pos(e); mouse.t = performance.now(); } });
-    cv.addEventListener('pointerdown', e => { if (!X.active || e.pointerType !== 'mouse') return; pos(e); mouse.t = performance.now(); if (e.button === 0) { mouse.down = true; mouse.pressed = true; } e.preventDefault(); });
-    window.addEventListener('pointerup', e => { if (e.button === 0) mouse.down = false; });
+    cv.addEventListener('pointermove', e => {
+      if (e.pointerType !== 'mouse') return;
+      // relative motion steers in a car; some browsers (and synthetic events) report no movementX, so fall back to the position change
+      let mx = e.movementX || 0, my = e.movementY || 0;
+      if (!mx && !my && mouse.lx != null) { mx = e.clientX - mouse.lx; my = e.clientY - mouse.ly; }
+      mouse.lx = e.clientX; mouse.ly = e.clientY;
+      // browsers send a bogus jump when the cursor is hidden or the pointer lock engages: drop those
+      if (performance.now() < (mouse.quietUntil || 0) || Math.abs(mx) > 160 || Math.abs(my) > 160) mx = my = 0;
+      pos(e); mouse.t = performance.now(); mouse.dx += mx; mouse.dy += my;
+    });
+    cv.addEventListener('pointerdown', e => {
+      if (!X.active || e.pointerType !== 'mouse') return;
+      pos(e); mouse.t = performance.now();
+      if (e.button === 0) { mouse.down = true; mouse.pressed = true; }
+      if (e.button === 2) { mouse.rdown = true; if (P.car && P.state === 'play') { startMouseSteer(P.car); lockPointer(); } }
+      e.preventDefault();
+    });
+    // pointerdown/up fire only for the first button pressed and the last released: a chorded press or release (shooting while
+    // holding RMB to steer) arrives as a pointermove whose button is not -1
+    cv.addEventListener('pointermove', e => {
+      if (e.pointerType !== 'mouse' || e.button < 0 || !X.active) return;
+      const l = (e.buttons & 1) !== 0, r = (e.buttons & 2) !== 0;
+      if (l && !mouse.down) mouse.pressed = true;
+      mouse.down = l;
+      if (r && !mouse.rdown && P.car && P.state === 'play') { startMouseSteer(P.car); lockPointer(); }
+      mouse.rdown = r;
+    });
+    window.addEventListener('pointerup', e => { if (e.button === 0) mouse.down = false; if (e.button === 2) mouse.rdown = false; });
+    document.addEventListener('pointerlockchange', () => { mouse.quietUntil = performance.now() + 150; mouse.dx = mouse.dy = 0; });
     cv.addEventListener('contextmenu', e => { if (X.active) e.preventDefault(); });
     // Wheel zooms the view: each notch scales the framing by ~10%, clamped so the car stays readable and the city stays in reach.
     cv.addEventListener('wheel', e => {
       if (!X.active) return;
       e.preventDefault();
+      if ((PG.settings || {}).wheel === 'weapon') return;   // weapons.js switches weapons instead
       X.cam.zoom = cl(X.cam.zoom * Math.exp(e.deltaY * 0.0015), 0.45, 2.2);
     }, { passive: false });
   }
@@ -341,7 +368,7 @@
   function endFrameInput() { pressedSet.clear(); mouse.pressed = false; X.touch.presses.clear(); }
 
   // ================= state =================
-  const P = X.player = { ped: null, car: null, money: 0, wanted: 0, state: 'play', stateT: 0, inv: { fists: Infinity }, weapon: 'fists', entering: null, kills: 0 };
+  const P = X.player = { ped: null, car: null, money: 0, wanted: 0, state: 'play', stateT: 0, inv: { fists: Infinity }, weapon: 'fists', entering: null, kills: 0, seatT: 0 };
   X.cars = []; X.peds = []; X.lights = []; X.blips = []; X.floats = []; X.interactions = [];
   // yaw: the view's heading (-PI/2 = north up). mode 'follow' turns it to the car while driving; lift: screen height of the focus (0..1), eased too.
   X.cam = { x: 0, y: 0, span: 30, yaw: -Math.PI / 2, mode: 'follow', lift: 0.5, zoom: 1 };
@@ -408,7 +435,8 @@
   X.decals = [];
   X.decal = function (x, y, kind, size, o) {
     X.decals.push(Object.assign({ x, y, kind, size: size || 1, rot: Math.random() * TAU, t: X.time, seed: Math.random() }, o));
-    if (X.decals.length > 400) X.decals.shift();
+    const cap = PG.DECAL_CAP[(PG.settings || {}).decals] || 400;
+    if (X.decals.length > cap) X.decals.splice(0, X.decals.length - cap);
   };
   // Objective marker for this frame: pulsing ring on the ground, an arrow at the screen edge when it is
   // off-screen, and a map blip. o: {color, label, radius}.
@@ -431,6 +459,8 @@
   X.occupants = function (c) {
     const out = [];
     if (c.driver) out.push(c.driver);
+    const e = P.entering;   // half way through the door (getting in or out) counts as inside
+    if (e && e.car === c && e.ped && e.ped.seqHidden && e.ped !== c.driver) out.push(e.ped);
     return out;
   };
   // Pull the NPC driver (and any extra occupants) out at the driver's door: returns the new peds.
@@ -452,15 +482,21 @@
     if (c.ctrl === 'path') toPhys(c);
     return out;
   };
-  function doorSpot(c, side) {   // side -1 = driver (left), 1 = right
+  // Car-local (x forward, y right, from the body centre) to world.
+  const carWorld = (c, l) => { const cs = Math.cos(c.th), sn = Math.sin(c.th); return { x: c.x + cs * l.x - sn * l.y, y: c.y + sn * l.x + cs * l.y }; };
+  const spotFree = (c, q, r) => !X.blocked(q.x, q.y, r) && !X.cars.some(o => o !== c && !o.removed && Math.abs(o.x - q.x) < o.len / 2 + 1 && Math.abs(o.y - q.y) < o.len / 2 + 1 && circlePoly(q.x, q.y, r, X.carPoly(o)));
+  // Where whoever sits on `side` (-1 driver, 1 front passenger) steps out: beside their own door (doors.js
+  // knows where every door is), else the other side, else behind or in front of the car.
+  function doorSpot(c, side) {
     const fx = Math.cos(c.th), fy = Math.sin(c.th), lx = fy * side * -1, ly = -fx * side * -1;
+    const ds = X.doors && X.doors.exitSpot, a = ds && ds(c, side), b = ds && ds(c, -side);
     const cands = [
-      { x: c.x + lx * (c.wid / 2 + 0.6) + fx * 0.4, y: c.y + ly * (c.wid / 2 + 0.6) + fy * 0.4 },
-      { x: c.x - lx * (c.wid / 2 + 0.6) + fx * 0.4, y: c.y - ly * (c.wid / 2 + 0.6) + fy * 0.4 },
+      a ? carWorld(c, a) : { x: c.x + lx * (c.wid / 2 + 0.6) + fx * 0.4, y: c.y + ly * (c.wid / 2 + 0.6) + fy * 0.4 },
+      b ? carWorld(c, b) : { x: c.x - lx * (c.wid / 2 + 0.6) + fx * 0.4, y: c.y - ly * (c.wid / 2 + 0.6) + fy * 0.4 },
       { x: c.x - fx * (c.len / 2 + 0.7), y: c.y - fy * (c.len / 2 + 0.7) },
       { x: c.x + fx * (c.len / 2 + 0.7), y: c.y + fy * (c.len / 2 + 0.7) },
     ];
-    for (const q of cands) if (!X.blocked(q.x, q.y, 0.35) && !X.cars.some(o => o !== c && !o.removed && Math.abs(o.x - q.x) < 6 && Math.abs(o.y - q.y) < 6 && circlePoly(q.x, q.y, 0.35, X.carPoly(o)))) return q;
+    for (const q of cands) if (spotFree(c, q, 0.35)) return q;
     return null;
   }
   X.doorSpot = doorSpot;
@@ -564,10 +600,63 @@
     return X.steerCtl(c, rp.x, rp.y, { speed: 6, dt });
   }
 
+  // Steering. A/D and the arrows steer and always win. Holding the right mouse button switches on mouse fine steering: the OS cursor
+  // hides (pointer lock where the browser allows it) and the mouse moves a marker round the car at a fixed screen distance. The
+  // marker holds a direction in the WORLD (P.aim, radians), not on the screen: as the follow camera turns, the marker turns with the
+  // world, so the car steers towards it and settles once it points that way. Without the right button (or while a key steers) the
+  // marker rides on the car's nose, unseen, so pressing the button starts from straight ahead and letting go of a key holds the
+  // new heading; the cursor is back and aims drive-bys.
+  const AIM_R = 400, MOUSE_SENS = 0.4, AIM_LEAD = 0.4;
+  const mouseUsed = () => mouse.t > 0;
+  const mouseSteering = () => !!mouse.rdown && mouseUsed();
+  function startMouseSteer(c) { P.aimCar = c; P.aim = c.th; mouse.dx = mouse.dy = 0; mouse.quietUntil = performance.now() + 150; }
+  const keySteer = () => (X.input.any('KeyD', 'ArrowRight') ? 1 : 0) - (X.input.any('KeyA', 'ArrowLeft') ? 1 : 0);
+  function mouseSteer(c) {
+    if (P.aimCar !== c) { P.aimCar = c; P.aim = c.th; }
+    // aim with the heading the car will have AIM_LEAD s from now: counter-steers early, no overshoot
+    let err = wrap(P.aim - c.th) - (c.dv ? c.dv.r : 0) * AIM_LEAD;
+    if (c.dv && c.dv.v < -1) err = -err;                     // reversing: opposite lock turns the nose the same way
+    return (c.mouseSteer = cl(err / (c.def.maxSteer * 0.85), -1, 1));
+  }
+  // Called from X.view with the frame's view: turns mouse motion into a new world direction for the marker.
+  function updateAim(view) {
+    const c = P.car;
+    if (!c || P.state !== 'play' || X.scene) { mouse.dx = mouse.dy = 0; return; }
+    if (P.aimCar !== c) { P.aimCar = c; P.aim = c.th; }
+    const r = aimRadius(c, view);
+    if (keySteer() || !mouseSteering()) { P.aim = c.th + (c.dv ? c.dv.r : 0) * AIM_LEAD; mouse.dx = mouse.dy = 0; return; }   // the marker rides on the nose
+    else if (mouse.dx || mouse.dy) {
+      const a = P.aim + view.rot;   // world direction -> screen direction
+      P.aim = Math.atan2(Math.sin(a) * r + mouse.dy * MOUSE_SENS, Math.cos(a) * r + mouse.dx * MOUSE_SENS) - view.rot;
+      mouse.dx = mouse.dy = 0;
+    }
+    // while mouse-steering, anything aiming with the mouse (drive-bys) aims at the marker
+    mouse.wx = c.x + Math.cos(P.aim) * r / view.scale; mouse.wy = c.y + Math.sin(P.aim) * r / view.scale;
+  }
+  // AIM_R, cut down only when the window is too small to show the whole circle round the car
+  const aimRadius = (c, view) => {
+    const room = Math.min(view.ax, view.cw - view.ax, view.ay, view.ch - (view.bottomPad || 0) - view.ay) - 24;
+    return Math.max(Math.min(AIM_R, room), c.len / 2 * view.scale + 70);
+  };
+  function lockPointer() {
+    const cv = document.getElementById('game');
+    if (!cv || document.pointerLockElement === cv || !cv.requestPointerLock) return;
+    try { const r = cv.requestPointerLock(); if (r && r.catch) r.catch(() => {}); } catch (e) { /* not allowed here: the hidden cursor still steers */ }
+  }
+  // Cursor hidden and pointer locked only while mouse-steering in play; released everywhere else (menus need the cursor).
+  function syncCursor() {
+    const cv = document.getElementById('game'); if (!cv) return;
+    const driving = X.active && !!P.car && P.state === 'play' && G().status === 'play' && mouseSteering();
+    const want = driving ? 'none' : '';
+    if (cv.style.cursor !== want) cv.style.cursor = want;
+    if (!driving && document.pointerLockElement === cv && document.exitPointerLock) document.exitPointerLock();
+  }
+  X.steerTarget = c => mouseSteer(c);
   function playerCarCtl(c) {
     const T = X.touch, k = X.input;
     let fwd = k.any('KeyW', 'ArrowUp'), rev = k.any('KeyS', 'ArrowDown'), boost = k.any('ShiftLeft', 'ShiftRight');
-    let steer = (k.any('KeyD', 'ArrowRight') ? 1 : 0) - (k.any('KeyA', 'ArrowLeft') ? 1 : 0), steerAbs = null;
+    let steer = keySteer(), steerAbs = null;
+    if (steer || !mouseSteering()) c.mouseSteer = 0; else steerAbs = mouseSteer(c);   // keys first, then the mouse while RMB is held
     if (T.move) { if (T.move.y < -0.3) fwd = true; if (T.move.y > 0.3) rev = true; steerAbs = cl(T.move.x * 1.3, -1, 1); boost = boost || T.move.y < -0.85; }
     const ctl = { fwd: fwd || boost ? 1 : 0, rev: rev ? 1 : 0, hand: k.down('Space') || !!T.hand, steerDir: steer, steerAbs, thrMax: boost ? 1 : 0.78 };
     if (P.state !== 'play') { ctl.fwd = 0; ctl.rev = 0; ctl.hand = true; ctl.steerDir = 0; ctl.steerAbs = null; }
@@ -731,6 +820,7 @@
   // Tyre marks, smoke and squeal for every physics car; engine note for the player's.
   const skidLast = new Map();
   function tyreFx(dt) {
+    const S = PG.settings || {}, skids = S.skidMarks !== false, pcap = PG.PARTICLE_CAP[S.particles] || 600;
     for (const c of X.cars) {
       if (c.ctrl !== 'phys' || !c.dv || c.removed) { skidLast.delete(c.id); continue; }
       const v = c.dv, sp = v.speed;
@@ -741,9 +831,9 @@
       let last = skidLast.get(c.id) || [];
       for (let i = 0; i < 4; i++) {
         const w = wheels[i];
-        if (k[i] > 0.08 && last[i] && Math.hypot(w.x - last[i].x, w.y - last[i].y) < 3) X.skid.line(last[i].x, last[i].y, w.x, w.y);
+        if (k[i] > 0.08 && last[i] && skids && Math.hypot(w.x - last[i].x, w.y - last[i].y) < 3) X.skid.line(last[i].x, last[i].y, w.x, w.y);
         last[i] = { x: w.x, y: w.y };
-        if (i >= 2 && k[i] > 0.25 && G().particles.length < 600 && Math.random() < k[i] * dt * 26) G().particles.push({ x: w.x, y: w.y, vx: v.vx * 0.2 + rand(-1, 1), vy: v.vy * 0.2 + rand(-1, 1), life: rand(1, 2), max: 2.2, kind: 'tsmoke', size: rand(0.3, 0.5) });
+        if (i >= 2 && k[i] > 0.25 && G().particles.length < pcap && Math.random() < k[i] * dt * 26) G().particles.push({ x: w.x, y: w.y, vx: v.vx * 0.2 + rand(-1, 1), vy: v.vy * 0.2 + rand(-1, 1), life: rand(1, 2), max: 2.2, kind: 'tsmoke', size: rand(0.3, 0.5) });
       }
       skidLast.set(c.id, last);
       if (c === P.car) PG.audio.squeal(sp > 2 ? Math.min(1, Math.max(rear, front * 0.7)) * Math.min(1, 0.4 + sp / 15) : 0, 1500 + 1600 * Math.min(1, sp / 25));
@@ -798,31 +888,39 @@
     }
     return null;
   };
+  // Keeps about TRAFFIC_N moving and PARKED_N parked cars around the focus (times the traffic setting); with
+  // too many (the setting was lowered), the farthest unowned one out of sight goes, one per frame.
   function manageTraffic() {
-    const f = X.focus();
-    let path = 0, parked = 0;
+    const f = X.focus(), mul = (PG.settings || {}).traffic || 1;
+    const tN = Math.round(TRAFFIC_N * mul), pN = Math.round(PARKED_N * mul);
+    let path = 0, parked = 0, farPath = null, farPark = null, dPath = 0, dPark = 0;
     for (const c of X.cars) {
       if (c.removed) continue;
       const d = Math.hypot(c.x - f.x, c.y - f.y);
       const mine = c === P.car || c.keep || c.owner;
       if (!mine && c.ctrl === 'path' && d > 440) { X.removeCar(c); continue; }
       if (!mine && c.ctrl !== 'path' && d > 470) { X.removeCar(c); continue; }
-      if (c.ctrl === 'path') path++;
-      else if (c.ctrl === 'parked' && d < 400) parked++;
+      if (c.ctrl === 'path') { path++; if (!mine && d > dPath && d > 60 && !X.inView(c.x, c.y, 10)) { dPath = d; farPath = c; } }
+      else if (c.ctrl === 'parked' && d < 400) { parked++; if (!mine && d > dPark && d > 60 && !X.inView(c.x, c.y, 10)) { dPark = d; farPark = c; } }
     }
+    if (path > tN + 2 && farPath) X.removeCar(farPath);
+    if (parked > pN + 2 && farPark) X.removeCar(farPark);
     if (X.scene) return;
-    for (let k = 0; k < 3 && path < TRAFFIC_N; k++) if (X.spawnTraffic(f.x, f.y, X.time < 1 ? 30 : 170, X.time < 1 ? 420 : 400)) path++;
-    for (let k = 0; k < 2 && parked < PARKED_N; k++) if (X.spawnParked(f.x, f.y, X.time < 1 ? 15 : 160, 380)) parked++;
+    for (let k = 0; k < 3 && path < tN; k++) if (X.spawnTraffic(f.x, f.y, X.time < 1 ? 30 : 170, X.time < 1 ? 420 : 400)) path++;
+    for (let k = 0; k < 2 && parked < pN; k++) if (X.spawnParked(f.x, f.y, X.time < 1 ? 15 : 160, 380)) parked++;
   }
 
   // ================= the player =================
   function newPlayerPed(x, y, th) {
+    if (P.entering) endSeq();
     if (P.ped) { P.ped.isPlayer = false; if (!P.ped.dead || P.ped.car) { if (P.ped.car && P.ped.car.driver === P.ped) P.ped.car.driver = null; P.ped.removed = true; } }
     P.ped = X.makePed({ x, y, th, isPlayer: true, team: 'player', look: { skin: '#e0ac7e', hair: '#1b1612', shirt: '#f2c230', pants: '#1f2a44', hat: null }, hp: 100, maxHp: 100 });
     return P.ped;
   }
   function footControl(dt) {
-    const p = P.ped; if (p.dead) { X.movePed(p, dt, 0, 0); return; }
+    const p = P.ped;
+    if (p.seqHidden && !(P.entering && P.entering.ped === p)) { p.seqHidden = false; p.hidden = false; p.car = null; }   // a sequence cut short elsewhere
+    if (p.dead) { X.movePed(p, dt, 0, 0); return; }
     let mx = 0, my = 0;
     const k = X.input;
     if (P.state === 'play' && !P.entering) {
@@ -837,16 +935,7 @@
     let len = Math.hypot(mx, my); if (len > 1) { mx /= len; my /= len; len = 1; }
     const sprint = k.any('ShiftLeft', 'ShiftRight');
     const spd = (sprint ? 7.2 : 4.3) * (p.speedMul || 1);
-    if (P.entering) {   // walking to the car door
-      const e = P.entering, c = e.car;
-      e.t += dt;
-      const door = doorPoint(c);
-      const dx = door.x - p.x, dy = door.y - p.y, dd = Math.hypot(dx, dy);
-      if (c.removed || c.wrecked || dd > 7 || e.t > 2.2) { P.entering = null; }
-      else if (dd < 0.75 || e.t > 1.4) { finishEnter(c); return; }
-      else { X.movePed(p, dt, dx / dd * 5.5, dy / dd * 5.5); p.th = Math.atan2(dy, dx); }
-      return;
-    }
+    if (P.entering) { seqStep(dt); return; }   // getting in or out (below)
     X.movePed(p, dt, mx * spd, my * spd);
     if (X.input.mouseActive() && !X.touch.move) { p.th = Math.atan2(mouse.wy - p.y, mouse.wx - p.x); }
     else if (X.touch.aim != null) p.th = X.touch.aim;
@@ -876,10 +965,6 @@
       const m = circlePoly(p.x, p.y, p.r, X.carPoly(c)); if (m) { p.x += m.x; p.y += m.y; }
     }
   };
-  function doorPoint(c) {
-    const fx = Math.cos(c.th), fy = Math.sin(c.th);
-    return { x: c.x + fy * (c.wid / 2 + 0.45) + fx * 0.3, y: c.y - fx * (c.wid / 2 + 0.45) + fy * 0.3 };
-  }
   X.nearestEnterableCar = function (maxD) {
     const p = P.ped; let best = null, bd = maxD || 2.6;
     for (const c of X.cars) {
@@ -891,35 +976,230 @@
     }
     return best;
   };
-  X.enterCar = function (c) { P.entering = { car: c, t: 0 }; };
+  // ================= getting in and out =================
+  // In: walk round the car to its door (X.pathAroundCar), the door swings open (doors.js answers 'doorOpen'
+  // with how long that takes; without it the rest is instant), a driver is yanked out, you step in and sit,
+  // the door shuts ('doorClose'). Out: P.car clears at once (the world sees you on foot), the door opens, you
+  // climb out beside it and it shuts behind you, unless you sprint off or the car is still rolling.
+  // P.entering = {car, ped, mode: 'enter'|'exit', phase: walk|open|jack|in|out, t, pt (s in phase), ent}.
+  // ent (an entry) = {side, stand, seat, via?, door, any?}: car-local points (x forward, y right).
+  const carLocal = (c, x, y) => { const cs = Math.cos(c.th), sn = Math.sin(c.th), dx = x - c.x, dy = y - c.y; return { x: dx * cs + dy * sn, y: -dx * sn + dy * cs }; };
+  const plainEntry = (c, side) => ({ side, stand: { x: 0.3, y: side * (c.wid / 2 + 0.45) }, seat: { x: 0, y: -c.wid * 0.22 }, door: null });
+  function entryFor(c, side) {
+    if (X.doors && X.doors.entry) return X.doors.entry(c, side);
+    return plainEntry(c, side);
+  }
+  // The driver's own door unless a wall or a car is in the way (or there is no way round to it): then the other
+  // side, and climb across.
+  function pickEntry(c, p, avoid) {
+    const a = entryFor(c, -1), b = entryFor(c, 1);
+    const free = e => !!e && spotFree(c, carWorld(c, e.stand), 0.3), reach = e => !X.pathAroundCar(p, c, carWorld(c, e.stand)).blocked;
+    let order = a && b && a.any && carLocal(c, p.x, p.y).y > 0 ? [b, a] : [a, b];   // either side will do (the tank): the near one
+    if (avoid && order[0] === avoid) order = [order[1], order[0]];   // stuck getting to that one: try the other
+    for (const e of order) if (free(e) && reach(e)) return e;
+    for (const e of order) if (free(e)) return e;
+    return order[0] || order[1] || plainEntry(c, -1);
+  }
+  const exitEntry = c => { const a = entryFor(c, -1), b = entryFor(c, 1); return a && spotFree(c, carWorld(c, a.stand), 0.3) ? a : b && spotFree(c, carWorld(c, b.stand), 0.3) ? b : null; };
+  function segBox(a, b, ex, ey) {   // does segment a-b cross the open box |x| < ex, |y| < ey?
+    const dx = b.x - a.x, dy = b.y - a.y, pk = [-dx, dx, -dy, dy], qk = [a.x + ex, ex - a.x, a.y + ey, ey - a.y];
+    let t0 = 0, t1 = 1;
+    for (let k = 0; k < 4; k++) {
+      if (Math.abs(pk[k]) < 1e-12) { if (qk[k] <= 0) return false; continue; }
+      const t = qk[k] / pk[k];
+      if (pk[k] < 0) { if (t > t0) t0 = t; } else if (t < t1) t1 = t;
+      if (t0 >= t1) return false;
+    }
+    return t1 - t0 > 1e-4;
+  }
+  // Next waypoint for a person walking to `target` beside car c without cutting through it: the shortest way
+  // round the corners of its footprint grown by the walker's radius and a margin (corners in walls or other
+  // cars are out). Returns {x, y, len (what is left of the path), direct}. Cheap; re-plan every frame.
+  X.pathAroundCar = function (p, c, target) {
+    const r = p.r || 0.32, hl = c.len / 2, hw = c.wid / 2, a = carLocal(c, p.x, p.y), b = carLocal(c, target.x, target.y);
+    const gap = q => Math.hypot(Math.max(0, Math.abs(q.x) - hl), Math.max(0, Math.abs(q.y) - hw));
+    const e = Math.max(0, Math.min(r + 0.05, gap(a) - 0.03, gap(b) - 0.03)), bx = hl + e, by = hw + e;
+    const direct = { x: target.x, y: target.y, len: Math.hypot(b.x - a.x, b.y - a.y), direct: true };
+    if (!segBox(a, b, bx, by)) return direct;
+    const m = r + 0.35, K = [[1, 1], [-1, 1], [-1, -1], [1, -1]].map(([sx, sy]) => {   // a tree or a post on the corner: go wider
+      for (const x of [0, 0.6]) { const k = { x: sx * (hl + m + x), y: sy * (hw + m + x) }; if (spotFree(c, carWorld(c, k), r * 0.9)) return k; }
+      return null;
+    });
+    // legs that would run into a neighbouring car (parked bumper to bumper) are out too
+    const near = X.cars.filter(o => o !== c && !o.removed && Math.abs(o.x - c.x) < (o.len + c.len) / 2 + 3 && Math.abs(o.y - c.y) < (o.len + c.len) / 2 + 3);
+    const clear = (q0, q1) => {
+      if (!near.length) return true;
+      const w0 = carWorld(c, q0), w1 = carWorld(c, q1);
+      return !near.some(o => segBox(carLocal(o, w0.x, w0.y), carLocal(o, w1.x, w1.y), o.len / 2 + r * 0.9, o.wid / 2 + r * 0.9));
+    };
+    const ring = [0, 1, 2, 3].map(j => !!(K[j] && K[(j + 1) % 4]) && clear(K[j], K[(j + 1) % 4]));   // leg j -> j+1
+    let best = null, bl = Infinity;
+    for (let i = 0; i < 4; i++) {
+      if (!K[i] || segBox(a, K[i], bx, by) || !clear(a, K[i])) continue;
+      const l0 = Math.hypot(K[i].x - a.x, K[i].y - a.y);
+      for (const d of [1, 3]) {   // round the ring either way
+        let L = l0, j = i;
+        for (let n = 0; n < 4; n++) {
+          if (n) { const nj = (j + d) % 4; if (!ring[d === 1 ? j : nj]) break; L += Math.hypot(K[nj].x - K[j].x, K[nj].y - K[j].y); j = nj; }
+          if (!segBox(K[j], b, bx, by) && clear(K[j], b)) { const tot = L + Math.hypot(b.x - K[j].x, b.y - K[j].y); if (tot < bl) { bl = tot; best = K[i]; } break; }
+        }
+      }
+    }
+    if (!best) return Object.assign(direct, { blocked: true });   // no way round (hemmed in): straight at it
+    const w = carWorld(c, best);
+    return { x: w.x, y: w.y, len: bl, direct: false };
+  };
+  X.enterCar = function (c) {
+    if (!c || c.removed) return;
+    if (P.entering) endSeq();
+    P.entering = { car: c, ped: P.ped, mode: 'enter', phase: 'walk', t: 0, pt: 0, stall: 0, ent: null, pickT: 0 };
+  };
+  function jackOut(c) {
+    const was = c.model.kind, ej = X.ejectOccupants(c, 'carjack');
+    X.emit('carjack', { car: c, victims: ej });
+    X.crime(was === 'police' || was === 'swat' ? 'stealCopCar' : 'carjack', c.x, c.y, { car: c });
+  }
   function finishEnter(c) {
+    const e = P.entering && P.entering.car === c ? P.entering : null;
     P.entering = null;
     const p = P.ped;
-    if (c.npcDriver || (c.driver && !c.driver.isPlayer)) {
-      const was = c.model.kind;
-      const ej = X.ejectOccupants(c, 'carjack');
-      X.emit('carjack', { car: c, victims: ej });
-      X.crime(was === 'police' || was === 'swat' ? 'stealCopCar' : 'carjack', c.x, c.y, { car: c });
-    } else if (c.model.kind === 'police' || c.model.kind === 'swat') X.crime('stealCopCar', c.x, c.y, { car: c });
+    p.seqHidden = false;
+    if (c.npcDriver || (c.driver && !c.driver.isPlayer)) jackOut(c);
+    else if (!(e && e.jacked) && (c.model.kind === 'police' || c.model.kind === 'swat')) X.crime('stealCopCar', c.x, c.y, { car: c });
     toPhys(c);
     c.driver = p; c.ai = null; c.keep = false; c.owner = c.owner === 'police' ? null : c.owner;
     p.car = c; p.hidden = true; p.vx = p.vy = 0;
     P.car = c;
     X.cam.mode = 'follow';
+    P.aimCar = c; P.aim = c.th; mouse.dx = mouse.dy = 0; mouse.quietUntil = performance.now() + 150;
+    if (mouseSteering()) lockPointer();
     if (c.dv) c.dv.gear = 1;
     X.popup(c.model.name);
     X.emit('enterCar', { car: c });
+    if (e && e.opened) { X.emit('doorClose', { car: c, side: e.ent.side, door: e.ent.door, by: p }); P.seatT = X.time + 0.3; }
+  }
+  // Pin the person to a car-local point (they ride along while the car rocks or rolls).
+  function hold(e, c, p, l) {
+    const w = carWorld(c, l), v = X.carVel(c);
+    p.x = w.x; p.y = w.y; p.vx = v.x; p.vy = v.y; p.speed = 0; e.px = p.x; e.py = p.y;
+  }
+  function along(pts, k) {   // point at fraction k along a polyline of car-local points
+    let tot = 0; for (let i = 1; i < pts.length; i++) tot += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+    let d = k * tot;
+    for (let i = 1; i < pts.length; i++) {
+      const L = Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+      if (d <= L || i === pts.length - 1) { const f = L ? Math.min(1, d / L) : 1; return { x: pts[i - 1].x + (pts[i].x - pts[i - 1].x) * f, y: pts[i - 1].y + (pts[i].y - pts[i - 1].y) * f }; }
+      d -= L;
+    }
+    return pts[pts.length - 1];
+  }
+  const ease = k => k * k * (3 - 2 * k);
+  // End whatever sequence is running, leaving the person standing beside the door if they were still inside.
+  function endSeq() {
+    const e = P.entering; P.entering = null;
+    if (!e) return;
+    const p = e.ped, c = e.car;
+    if (p && p.seqHidden) {
+      p.seqHidden = false; p.hidden = false; if (p.car === c && P.car !== c) p.car = null;
+      const l = carLocal(c, p.x, p.y);
+      if (e.ent && !c.removed && Math.abs(l.x) < c.len / 2 + 0.1 && Math.abs(l.y) < c.wid / 2 + 0.1) { const w = carWorld(c, e.ent.stand); p.x = w.x; p.y = w.y; }
+      if (c.wrecked && !e.wreck0 && !p.dead) { const a = Math.atan2(p.y - c.y, p.x - c.x); p.vx = Math.cos(a) * 6; p.vy = Math.sin(a) * 6; p.knock = Math.max(p.knock || 0, 0.9); p.spin = 8; }   // blown back out of the doorway
+    }
+    if (e.opened && !e.closed) X.emit('doorClose', { car: e.car, side: e.ent.side, door: e.ent.door, leave: true });
+  }
+  function arrive(e, c, p) {
+    const occ = !!(c.npcDriver || (c.driver && !c.driver.isPlayer));
+    if (occ && c.ctrl === 'path') toPhys(c);
+    const d = X.emit('doorOpen', { car: c, side: e.ent.side, door: e.ent.door, fast: occ, jack: occ, by: p });
+    if (d.wait == null) return finishEnter(c);   // nothing to animate: straight in
+    e.from = carLocal(c, p.x, p.y); e.phase = occ ? 'jack' : 'open'; e.pt = 0; e.wait = d.wait; e.opened = true;
+    e.dur = d.step || (e.ent.via ? 0.5 : 0.3);
+    hold(e, c, p, e.from);
+  }
+  const SEQ_RUN = 7;   // m/s: you hurry to a car
+  function walkStep(e, c, p, dt) {
+    if (!e.ent || e.avoid || (e.t - e.pickT > 0.5 && (e.stuck || !spotFree(c, carWorld(c, e.ent.stand), 0.3)))) { const n = pickEntry(c, p, e.avoid); if (n !== e.ent) { e.prog = Infinity; e.progT = e.t; } e.ent = n; e.avoid = null; e.pickT = e.t; }
+    if (!e.ent || X.input.anyPressed('KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight')) return endSeq();   // changed your mind
+    const T = carWorld(c, e.ent.stand), dT = Math.hypot(T.x - p.x, T.y - p.y);
+    if (dT > 16 || (c.speed > 6 && dT > 1.5)) return endSeq();   // it drove off
+    e.stall = p.speed < 0.5 && e.t > 0.3 ? e.stall + dt : 0;
+    if (dT < 0.35 || (dT < 0.9 && e.stall > 0.25)) return arrive(e, c, p);
+    const w = X.pathAroundCar(p, c, T), dx = w.x - p.x, dy = w.y - p.y, dd = Math.hypot(dx, dy) || 1;
+    // no headway for a second (pressed against another car, a post, a wall): try the other door once, then give up
+    // rather than sliding through whatever is in the way
+    if (w.len < e.prog - 0.25) { e.prog = w.len; e.progT = e.t; }
+    if (e.t - e.progT > 1 || e.t > 4.5) {
+      const l = carLocal(c, p.x, p.y), touch = Math.hypot(Math.max(0, Math.abs(l.x) - c.len / 2), Math.max(0, Math.abs(l.y) - c.wid / 2)) < 0.75;
+      if (dT < 1.2 || (touch && e.retried)) return arrive(e, c, p);   // right up against it (a tight alley): squeeze in
+      if (e.retried || e.t > 4.5) { X.popup('Can\'t get to the door'); return endSeq(); }
+      e.retried = true; e.avoid = e.ent; return;
+    }
+    e.stuck = !!w.blocked;
+    const sp = Math.min(SEQ_RUN * (p.speedMul || 1), 1.6 + w.len * 4.5);
+    X.movePed(p, dt, dx / dd * sp, dy / dd * sp);
+    p.th += wrap(Math.atan2(dy, dx) - p.th) * Math.min(1, dt * 16); p.aim = p.th;
+  }
+  function seqStep(dt) {
+    const e = P.entering, p = P.ped, c = e.car;
+    e.t += dt; e.pt += dt;
+    if (e.ped !== p || c.removed || e.t > 8) return endSeq();
+    if (e.px != null && (Math.hypot(p.x - e.px, p.y - e.py) > 0.6 || (p.knock > 0 && !p.seqHidden))) return endSeq();   // knocked or teleported away
+    if (e.mode === 'exit') return c.wrecked && !e.wreck0 ? endSeq() : exitStep(e, c, p, dt);
+    if (c.wrecked || P.state !== 'play') return endSeq();
+    if (e.phase === 'walk') return walkStep(e, c, p, dt);
+    if (c.speed > 7) return endSeq();
+    const seat = carWorld(c, e.ent.seat);
+    if (e.phase === 'open' || e.phase === 'jack') {
+      const tug = e.jacked ? Math.sin(Math.PI * Math.min(1, e.pt / e.wait)) * 0.3 : 0, out = e.ent.side;   // heave the driver out
+      hold(e, c, p, tug ? { x: e.from.x, y: e.from.y + out * tug } : e.from);
+      p.th += wrap(Math.atan2(seat.y - p.y, seat.x - p.x) - p.th) * Math.min(1, dt * 14);
+      if (e.phase === 'jack' && !e.jacked && e.pt >= e.wait) { e.jacked = true; e.pt = 0; e.wait = 0.16; jackOut(c); return; }   // yanked out, then a tug
+      if (e.pt >= e.wait && (e.phase === 'open' || e.jacked)) { e.phase = 'in'; e.pt = 0; p.hidden = true; p.seqHidden = true; p.car = c; }   // half in: as good as inside
+      return;
+    }
+    // 'in': step through the door into the seat (across the other one if needed), then sit
+    const k = Math.min(1, e.pt / e.dur);
+    hold(e, c, p, along(e.ent.via ? [e.from, e.ent.via, e.ent.seat] : [e.from, e.ent.seat], ease(k)));
+    p.th += wrap(c.th - p.th) * Math.min(1, dt * 10); p.speed = 1.6; p.walk += dt * 4;   // (legs still going)
+    if (k >= 1) finishEnter(c);
+  }
+  function exitStep(e, c, p, dt) {
+    if (e.phase === 'open') {
+      hold(e, c, p, e.ent.seat);
+      if (e.pt >= e.wait) { e.phase = 'out'; e.pt = 0; }
+      return;
+    }
+    const k = Math.min(1, e.pt / e.dur), out = c.th + e.ent.side * Math.PI / 2;
+    hold(e, c, p, along(e.ent.via ? [e.ent.seat, e.ent.via, e.ent.stand] : [e.ent.seat, e.ent.stand], ease(k)));
+    p.th = c.th + wrap(out - c.th) * ease(k); p.aim = p.th; p.speed = 1.6; p.walk += dt * 4;
+    if (k < 1) return;
+    P.entering = null; p.hidden = false; p.seqHidden = false; p.car = null; e.closed = true;
+    const v = X.carVel(c), sp = Math.hypot(v.x, v.y);
+    if (sp > 5) { p.knock = 0.45; p.spin = 3 * e.ent.side; }
+    X.emit('doorClose', { car: c, side: e.ent.side, door: e.ent.door, leave: X.input.any('ShiftLeft', 'ShiftRight') || sp > 1.5 || c.wrecked, by: p });
   }
   X.exitCar = function () {
     const c = P.car, p = P.ped; if (!c) return;
-    const fast = c.speed > 9;
-    const spot = doorSpot(c, -1);
+    const fast = c.speed > 9, ent = fast ? null : exitEntry(c);
+    const spot = ent ? carWorld(c, ent.stand) : doorSpot(c, -1);
     if (!spot && !fast) { X.popup('No room to get out'); return; }
     const s = spot || { x: c.x, y: c.y };
     c.driver = null; P.car = null;
     p.car = null; p.hidden = false; p.x = s.x; p.y = s.y; p.th = c.th;
     const vel = X.carVel(c);
-    if (fast) { p.vx = vel.x * 0.55; p.vy = vel.y * 0.55; p.knock = 0.9; p.spin = 6; X.damagePed(p, Math.min(40, (c.speed - 8) * 2.5), null, 'bail'); }
+    if (fast) {
+      p.vx = vel.x * 0.55; p.vy = vel.y * 0.55; p.knock = 0.9; p.spin = 6; X.damagePed(p, Math.min(40, (c.speed - 8) * 2.5), null, 'bail');
+      const side = spot && carLocal(c, s.x, s.y).y > 0.2 ? 1 : -1, a = entryFor(c, side);   // the door on the side you rolled out of
+      X.emit('doorOpen', { car: c, side, door: a && a.door, fast: true, bail: true, by: p });
+    } else if (ent) {
+      const hurry = c.burning > 0 || p.onFire > 0;
+      const d = X.emit('doorOpen', { car: c, side: ent.side, door: ent.door, fast: hurry, exit: true, by: p });
+      if (d.wait != null) {
+        const e = P.entering = { car: c, ped: p, mode: 'exit', phase: 'open', t: 0, pt: 0, ent, wait: d.wait, dur: d.step || (hurry ? 0.2 : ent.via ? 0.5 : 0.32), opened: true, wreck0: c.wrecked };
+        p.hidden = true; p.seqHidden = true; p.car = c;
+        hold(e, c, p, ent.seat);
+      }
+    }
     PG.audio.stopLoops();
     X.emit('exitCar', { car: c, bailed: fast });
   };
@@ -931,7 +1211,7 @@
     const c = X.nearestEnterableCar(); if (c) X.enterCar(c);
   }
   function currentHint() {
-    if (P.state !== 'play') return '';
+    if (P.state !== 'play' || P.entering) return '';
     if (P.car) return P.car.speed < 9 ? '' : '';
     let best = null;
     for (const it of X.interactions) { const r = safe(it, 'test', it.test, [P]); if (r && (!best || (r.priority || 0) > (best.priority || 0))) best = r; }
@@ -942,14 +1222,14 @@
   }
   X.wasted = function (kind) {
     if (P.state !== 'play') return;
-    P.state = 'wasted'; P.stateT = 0; P.entering = null;
+    P.state = 'wasted'; P.stateT = 0; endSeq();
     X.big('WASTED', '#e8402f', 3000);
     PG.audio.stopLoops(); PG.audio.trombone();
     X.emit('wasted', { kind });
   };
   X.bust = function () {
     if (P.state !== 'play') return;
-    P.state = 'busted'; P.stateT = 0; P.entering = null;
+    P.state = 'busted'; P.stateT = 0; endSeq();
     if (P.car && P.car.dv) { P.car.dv.vx *= 0.3; P.car.dv.vy *= 0.3; }
     X.big('BUSTED', '#5aa9ff', 3000);
     PG.audio.stopLoops();
@@ -986,10 +1266,10 @@
   // ================= drawing =================
   const PEDDRAW = {};
   X.drawPed = function (ctx, p, t) {
-    const lk = p.look || {};
+    const lk = p.look || {}, S = PG.settings || {}, shadows = S.shadows !== false, hi = S.detail !== 'low';
     ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.th);
     if (p.dead) {
-      ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.ellipse(0.05, 0.05, 0.75, 0.42, 0, 0, TAU); ctx.fill();
+      if (shadows) { ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.ellipse(0.05, 0.05, 0.75, 0.42, 0, 0, TAU); ctx.fill(); }
       ctx.fillStyle = lk.pants || '#333'; ctx.fillRect(-0.75, -0.2, 0.45, 0.14); ctx.fillRect(-0.75, 0.06, 0.45, 0.14);
       ctx.fillStyle = lk.shirt || '#888'; ctx.beginPath(); ctx.ellipse(0, 0, 0.32, 0.26, 0, 0, TAU); ctx.fill();
       ctx.fillRect(-0.05, -0.62, 0.14, 0.4); ctx.fillRect(-0.05, 0.22, 0.14, 0.4);
@@ -997,54 +1277,72 @@
       ctx.restore(); return;
     }
     const sw = Math.sin(p.walk * 3) * Math.min(1, p.speed / 2) * 0.24;
-    ctx.fillStyle = 'rgba(0,0,0,0.28)'; ctx.beginPath(); ctx.ellipse(0.05, 0.06, 0.26, 0.36, 0, 0, TAU); ctx.fill();
+    if (shadows) { ctx.fillStyle = 'rgba(0,0,0,0.28)'; ctx.beginPath(); ctx.ellipse(0.05, 0.06, 0.26, 0.36, 0, 0, TAU); ctx.fill(); }
     ctx.fillStyle = lk.pants || '#333';
     ctx.fillRect(sw - 0.1, -0.17, 0.22, 0.12); ctx.fillRect(-sw - 0.1, 0.05, 0.22, 0.12);
     const armed = p.weapon && p.weapon !== 'fists';
     ctx.fillStyle = lk.shirt || '#888'; ctx.beginPath(); ctx.ellipse(0, 0, 0.17, 0.31, 0, 0, TAU); ctx.fill();
     ctx.fillStyle = lk.skin || '#e0ac7e';
-    if (armed) { ctx.beginPath(); ctx.arc(0.3, 0.1, 0.07, 0, TAU); ctx.arc(0.26, -0.12, 0.07, 0, TAU); ctx.fill(); ctx.fillStyle = '#16181c'; ctx.fillRect(0.28, 0.02, 0.38, 0.08); }
-    else { ctx.beginPath(); ctx.arc(-sw * 0.8 + 0.02, -0.3, 0.07, 0, TAU); ctx.arc(sw * 0.8 + 0.02, 0.3, 0.07, 0, TAU); ctx.fill(); }
+    if (armed) { if (hi) { ctx.beginPath(); ctx.arc(0.3, 0.1, 0.07, 0, TAU); ctx.arc(0.26, -0.12, 0.07, 0, TAU); ctx.fill(); } ctx.fillStyle = '#16181c'; ctx.fillRect(0.28, 0.02, 0.38, 0.08); }
+    else if (hi) { ctx.beginPath(); ctx.arc(-sw * 0.8 + 0.02, -0.3, 0.07, 0, TAU); ctx.arc(sw * 0.8 + 0.02, 0.3, 0.07, 0, TAU); ctx.fill(); }
     ctx.fillStyle = lk.skin || '#e0ac7e'; ctx.beginPath(); ctx.arc(0.02, 0, 0.15, 0, TAU); ctx.fill();
     ctx.fillStyle = lk.hat || lk.hair || '#222'; ctx.beginPath(); ctx.arc(-0.03, 0, lk.hat ? 0.15 : 0.12, 0, TAU); ctx.fill();
     if (p.hurtT > 0) { ctx.fillStyle = 'rgba(255,40,30,0.45)'; ctx.beginPath(); ctx.arc(0, 0, 0.36, 0, TAU); ctx.fill(); }
     ctx.restore();
   };
+  // Markings by vehicle kind, in the car's own frame (x forward). With the fast renderer they are baked
+  // into the car's cached sprite; the key says which flash phase is showing.
+  const KIND_MARKS = {
+    police(ctx, c, on) {
+      const L = c.len, W = c.wid;
+      ctx.fillStyle = '#14161a'; ctx.fillRect(L / 2 - 1.0, -W / 2 + 0.05, 0.75, W - 0.1); ctx.fillRect(-L / 2 + 0.15, -W / 2 + 0.05, 0.7, W - 0.1);
+      ctx.fillStyle = c.siren ? (on ? '#ff2a2a' : '#5a1010') : '#7a2020'; ctx.fillRect(-0.15, -0.7, 0.28, 0.66);
+      ctx.fillStyle = c.siren ? (!on ? '#2a6bff' : '#10205a') : '#203070'; ctx.fillRect(-0.15, 0.04, 0.28, 0.66);
+    },
+    taxi(ctx) { ctx.fillStyle = '#1b1b1b'; ctx.fillRect(-0.25, -0.45, 0.36, 0.9); ctx.fillStyle = '#ffe680'; ctx.fillRect(-0.2, -0.38, 0.26, 0.76); },
+    ambulance(ctx, c, on) {
+      const L = c.len, fire = c.model.kind === 'fire';
+      ctx.fillStyle = fire ? '#f2f2f2' : '#d42a2a'; ctx.fillRect(-L / 2, -0.12, L * 0.68, 0.24);
+      ctx.fillStyle = c.siren ? (on ? '#ff3030' : '#3a5cff') : '#7a2020'; ctx.fillRect(L * 0.22, -0.6, 0.25, 1.2);
+    },
+    armored(ctx, c) { ctx.fillStyle = '#d4af37'; ctx.fillRect(-c.len / 2 + 0.1, -0.1, c.len * 0.66, 0.2); },
+    swat(ctx, c, on) {
+      ctx.fillStyle = '#f4f4f4'; ctx.font = '700 0.7px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.save(); ctx.rotate(Math.PI / 2); ctx.fillText('SWAT', 0, 0.6); ctx.restore();
+      ctx.fillStyle = c.siren ? (on ? '#ff2a2a' : '#2a6bff') : '#333'; ctx.fillRect(c.len * 0.25, -0.6, 0.25, 1.2);
+    },
+  };
+  KIND_MARKS.fire = KIND_MARKS.ambulance;
   X.drawCar = function (ctx, c, t) {
     const m = c.model;
     if (m.kind === 'bus') return drawBus(ctx, c, t);
     const def = c.def, mid = carMid(def), st = c.dv ? c.dv.steer * def.maxSteer : 0, hw = c.wid / 2 + 0.02;
     const wheels = [{ lx: def.wb - mid, ly: -hw, a: st }, { lx: def.wb - mid, ly: hw, a: st }, { lx: -mid, ly: -hw, a: 0 }, { lx: -mid, ly: hw, a: 0 }];
-    PG.drawCar(ctx, { x: c.x, y: c.y, th: c.th, len: c.len, wid: c.wid, color: c.color, truck: !!m.box, wheels, lights: c.lightsOn && !c.wrecked, brake: c.braking && !c.wrecked, reverse: c.reversing, charred: c.wrecked });
-    if (c.wrecked) return;
-    ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(c.th);
-    const L = c.len, W = c.wid;
-    if (m.kind === 'police') {
-      ctx.fillStyle = '#14161a'; ctx.fillRect(L / 2 - 1.0, -W / 2 + 0.05, 0.75, W - 0.1); ctx.fillRect(-L / 2 + 0.15, -W / 2 + 0.05, 0.7, W - 0.1);
-      const on = c.siren && Math.floor(t * 8) % 2 === 0;
-      ctx.fillStyle = c.siren ? (on ? '#ff2a2a' : '#5a1010') : '#7a2020'; ctx.fillRect(-0.15, -0.7, 0.28, 0.66);
-      ctx.fillStyle = c.siren ? (!on ? '#2a6bff' : '#10205a') : '#203070'; ctx.fillRect(-0.15, 0.04, 0.28, 0.66);
-    } else if (m.kind === 'taxi') {
-      ctx.fillStyle = '#1b1b1b'; ctx.fillRect(-0.25, -0.45, 0.36, 0.9); ctx.fillStyle = '#ffe680'; ctx.fillRect(-0.2, -0.38, 0.26, 0.76);
-    } else if (m.kind === 'ambulance' || m.kind === 'fire') {
-      const on = c.siren && Math.floor(t * 6) % 2 === 0;
-      ctx.fillStyle = m.kind === 'fire' ? '#f2f2f2' : '#d42a2a'; ctx.fillRect(-L / 2, -0.12, L * 0.68, 0.24);
-      ctx.fillStyle = c.siren ? (on ? '#ff3030' : '#3a5cff') : '#7a2020'; ctx.fillRect(L * 0.22, -0.6, 0.25, 1.2);
-    } else if (m.kind === 'armored') {
-      ctx.fillStyle = '#d4af37'; ctx.fillRect(-L / 2 + 0.1, -0.1, L * 0.66, 0.2);
-    } else if (m.kind === 'swat') {
-      ctx.fillStyle = '#f4f4f4'; ctx.font = '700 0.7px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.save(); ctx.rotate(Math.PI / 2); ctx.fillText('SWAT', 0, 0.6); ctx.restore();
-      const on = c.siren && Math.floor(t * 8) % 2 === 0;
-      ctx.fillStyle = c.siren ? (on ? '#ff2a2a' : '#2a6bff') : '#333'; ctx.fillRect(L * 0.25, -0.6, 0.25, 1.2);
+    const mk = !c.wrecked && KIND_MARKS[m.kind];
+    let overlay = null, overlayKey = '';
+    if (mk) {
+      const on = !!c.siren && Math.floor(t * (m.kind === 'ambulance' || m.kind === 'fire' ? 6 : 8)) % 2 === 0;
+      overlay = g => mk(g, c, on); overlayKey = m.kind + (c.siren ? (on ? 'A' : 'B') : '0');
     }
-    ctx.restore();
+    PG.drawCar(ctx, { x: c.x, y: c.y, th: c.th, len: c.len, wid: c.wid, color: c.color, truck: !!m.box, wheels, lights: c.lightsOn && !c.wrecked, brake: c.braking && !c.wrecked, reverse: c.reversing, charred: c.wrecked, overlay, overlayKey });
   };
   function drawBus(ctx, c, t) {
+    const S = PG.settings || {}, ppm = PG.renderPpm;
+    if (S.fastRender && PG.renderCaps && PG.renderCaps.cars && ctx === PG.mainCtx && ppm > 0) {
+      const lv = PG.spriteLevel(ppm), M = 0.6, hl = c.len / 2 + M, hw = c.wid / 2 + M;
+      if (ppm < lv * 1.25 && 2 * hl * lv <= 2048) {
+        const key = 'bus|' + c.len + '|' + c.wid + '|' + c.color + '|' + (c.wrecked ? 1 : 0) + (c.lightsOn ? 1 : 0) + (c.braking ? 1 : 0) + (S.shadows === false ? 0 : 1) + '|' + lv;
+        const spr = PG.sprites.get(key, 2 * hl * lv, 2 * hw * lv, g => { g.setTransform(lv, 0, 0, lv, hl * lv, hw * lv); busBody(g, c, S); });
+        ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(c.th); ctx.drawImage(spr, -hl, -hw, spr.width / lv, spr.height / lv); ctx.restore();
+        return;
+      }
+    }
+    ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(c.th); busBody(ctx, c, S); ctx.restore();
+  }
+  function busBody(ctx, c, S) {
     const L = c.len, W = c.wid;
-    ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(c.th);
-    ctx.fillStyle = 'rgba(0,0,0,0.35)'; PG.rr(ctx, -L / 2 + 0.2, -W / 2 + 0.25, L, W, 0.5); ctx.fill();
-    ctx.fillStyle = '#111'; for (const x of [L / 2 - 2.6, -L / 2 + 2.4]) { ctx.fillRect(x - 0.45, -W / 2 - 0.08, 0.9, 0.22); ctx.fillRect(x - 0.45, W / 2 - 0.14, 0.9, 0.22); }
+    if (S.shadows !== false) { ctx.fillStyle = 'rgba(0,0,0,0.35)'; PG.rr(ctx, -L / 2 + 0.2, -W / 2 + 0.25, L, W, 0.5); ctx.fill(); }
+    if (S.detail !== 'low') { ctx.fillStyle = '#111'; for (const x of [L / 2 - 2.6, -L / 2 + 2.4]) { ctx.fillRect(x - 0.45, -W / 2 - 0.08, 0.9, 0.22); ctx.fillRect(x - 0.45, W / 2 - 0.14, 0.9, 0.22); } }
     ctx.fillStyle = c.wrecked ? '#1b1b1b' : c.color; PG.rr(ctx, -L / 2, -W / 2, L, W, 0.45); ctx.fill();
     if (!c.wrecked) {
       ctx.fillStyle = '#e9e6dc'; PG.rr(ctx, -L / 2 + 0.4, -W / 2 + 0.3, L - 1.4, W - 0.6, 0.3); ctx.fill();
@@ -1055,7 +1353,6 @@
       ctx.fillStyle = c.lightsOn ? '#fff6c8' : '#d8d2b8'; ctx.fillRect(L / 2 - 0.1, -W / 2 + 0.15, 0.1, 0.4); ctx.fillRect(L / 2 - 0.1, W / 2 - 0.55, 0.1, 0.4);
       ctx.fillStyle = c.braking ? '#ff2a1a' : '#8e1d16'; ctx.fillRect(-L / 2, -W / 2 + 0.15, 0.1, 0.4); ctx.fillRect(-L / 2, W / 2 - 0.55, 0.1, 0.4);
     }
-    ctx.restore();
   }
 
   // ================= camera =================
@@ -1073,17 +1370,20 @@
     const k = 1 - Math.exp(-dt * (c ? 5 : 8));
     if (!isFinite(cam.x) || Math.hypot(cam.x - pos.x, cam.y - pos.y) > 120) { cam.x = pos.x; cam.y = pos.y; }
     cam.x += (pos.x + lx - cam.x) * k; cam.y += (pos.y + ly - cam.y) * k;
-    const follow = cam.mode === 'follow' && c && !X.scene;
+    // the view turns with the car once the door has shut behind you, and back only once you are out
+    const ex = P.entering && P.entering.mode === 'exit' ? P.entering.car : null, fc = c || ex;
+    const follow = cam.mode === 'follow' && fc && !X.scene && !(c && P.seatT > X.time);
     const ease = 1 - Math.exp(-dt * 3.2);
-    cam.yaw += wrap((follow ? c.th : -Math.PI / 2) - cam.yaw) * ease;
+    cam.yaw += wrap((follow ? fc.th : -Math.PI / 2) - cam.yaw) * ease;
     cam.lift += ((follow ? 0.6 : 0.5) - cam.lift) * ease;
     const scale = Math.min(cw, vh) / cam.span;
     let sx = 0, sy = 0;
-    if (g.shake > 0) { const q = g.shake * 12; sx = (Math.random() - 0.5) * q; sy = (Math.random() - 0.5) * q; }
+    if (g.shake > 0 && (PG.settings || {}).cameraShake !== false) { const q = g.shake * 12; sx = (Math.random() - 0.5) * q; sy = (Math.random() - 0.5) * q; }
     const rot = -cam.yaw - Math.PI / 2;
     const view = { scale, dpr, cw, ch, cx: cam.x, cy: cam.y, rot: Math.abs(rot) < 1e-4 ? 0 : rot, ax: cw / 2 + sx, ay: vh * cam.lift + sy, r: Math.hypot(cw, ch) / scale * 0.62 + 4, bottomPad: pad || 0 };
     X.lastView = view;
     const w = X.toWorld(mouse.sx, mouse.sy); mouse.wx = w.x; mouse.wy = w.y;
+    updateAim(view); syncCursor();
     return view;
   };
   X.toWorld = function (sx, sy) {
@@ -1124,11 +1424,13 @@
     layer('props', ctx, view, t);
     if (S) { if (S.drawWalls) S.drawWalls(ctx, view, t); } else CD.buildings(ctx, C, view, t);
     layer('buildings', ctx, view, t);
-    for (const p of X.peds) if (p.dead && !p.removed && !p.hidden && X.inView(p.x, p.y, 2)) X.drawPed(ctx, p, t);
+    let nCars = 0, nPeds = 0;
+    for (const p of X.peds) if (p.dead && !p.removed && !p.hidden && X.inView(p.x, p.y, 2)) { X.drawPed(ctx, p, t); nPeds++; }
     layer('bodies', ctx, view, t);
-    if (!S) for (const c of X.cars) if (!c.removed && X.inView(c.x, c.y, c.len)) X.drawCar(ctx, c, t);
+    if (!S) for (const c of X.cars) if (!c.removed && X.inView(c.x, c.y, c.len)) { X.drawCar(ctx, c, t); nCars++; }
     layer('cars', ctx, view, t);
-    for (const p of X.peds) if (!p.dead && !p.removed && !p.hidden && !p.car && X.inView(p.x, p.y, 2)) X.drawPed(ctx, p, t);
+    for (const p of X.peds) if (!p.dead && !p.removed && !p.hidden && !p.car && X.inView(p.x, p.y, 2)) { X.drawPed(ctx, p, t); nPeds++; }
+    const RS = PG.renderStats; if (RS) { RS.cars = nCars; RS.peds = nPeds; RS.particles = g.particles.length; RS.decals = X.decals.length; }
     layer('peds', ctx, view, t);
     if (!S) CD.canopies(ctx, C, view); else if (S.drawTop) S.drawTop(ctx, view, t);
     layer('air', ctx, view, t);
@@ -1147,7 +1449,46 @@
       ctx.fillStyle = P.state === 'wasted' ? `rgba(120,0,0,${0.35 * k})` : `rgba(0,30,90,${0.3 * k})`; ctx.fillRect(0, 0, view.cw, view.ch);
     }
   };
+  // Fast renderer: each decal is one blit of a cached sprite of its kind (canonical size 1, centred),
+  // placed with a single setTransform; broken glass stays a small batched path.
+  const DB = 1.15;
+  function decalShape(g, kind, color) {
+    if (kind === 'blood') {
+      g.fillStyle = color || 'rgba(110,8,10,0.78)';
+      g.beginPath(); g.ellipse(0, 0, 1, 0.7, 0, 0, TAU); g.fill();
+      g.beginPath(); g.arc(0.8, 0.3, 0.25, 0, TAU); g.arc(-0.6, -0.5, 0.18, 0, TAU); g.fill();
+    } else if (kind === 'scorch') {
+      const gr = g.createRadialGradient(0, 0, 0, 0, 0, 1); gr.addColorStop(0, 'rgba(8,8,8,0.85)'); gr.addColorStop(0.6, 'rgba(20,18,16,0.5)'); gr.addColorStop(1, 'rgba(20,18,16,0)');
+      g.fillStyle = gr; g.beginPath(); g.arc(0, 0, 1, 0, TAU); g.fill();
+    } else if (kind === 'oil') { g.fillStyle = 'rgba(12,12,16,0.7)'; g.beginPath(); g.ellipse(0, 0, 1, 0.6, 0, 0, TAU); g.fill(); }
+    else { g.fillStyle = color || 'rgba(255,255,255,0.4)'; g.beginPath(); g.arc(0, 0, 1, 0, TAU); g.fill(); }
+  }
   function drawDecals(ctx, view) {
+    const S = PG.settings || {}, cap = PG.DECAL_CAP[S.decals] || 400;
+    if (X.decals.length > cap) X.decals.splice(0, X.decals.length - cap);
+    if (!S.fastRender || ctx !== PG.mainCtx || !PG.sprites) return drawDecalsClassic(ctx, view);
+    const m = PG.cityDraw.worldMatrix(view), ppm = view.scale * view.dpr, sprites = !!(PG.renderCaps && PG.renderCaps.decals);
+    let moved = false;
+    for (const d of X.decals) {
+      if (!X.inView(d.x, d.y, d.size + 2)) continue;
+      const s = d.size, k = d.kind === 'blood' ? s * Math.min(1, 0.4 + (X.time - d.t) * 0.8) : d.kind === 'glass' ? 1 : s;
+      const c = Math.cos(d.rot) * k, sn = Math.sin(d.rot) * k;
+      ctx.setTransform(m[0] * c + m[2] * sn, m[1] * c + m[3] * sn, m[2] * c - m[0] * sn, m[3] * c - m[1] * sn, m[0] * d.x + m[2] * d.y + m[4], m[1] * d.x + m[3] * d.y + m[5]);
+      moved = true;
+      if (d.kind === 'glass') {
+        ctx.fillStyle = 'rgba(200,225,240,0.5)'; ctx.beginPath();
+        for (let q = 0; q < 7; q++) { const a = q * 2.4 + d.seed * 6, r = s * ((q * 37 % 10) / 10); ctx.rect(Math.cos(a) * r, Math.sin(a) * r, 0.12, 0.08); }
+        ctx.fill();
+        continue;
+      }
+      if (!sprites && d.kind !== 'scorch') { decalShape(ctx, d.kind, d.color); continue; }   // plain fills: cheaper as vector in software
+      const lv = Math.pow(2, Math.max(2, Math.min(17, Math.ceil(Math.log2(Math.max(1e-3, ppm * s)) * 2 - 0.12))) / 2);
+      const spr = PG.sprites.get('decal|' + d.kind + '|' + (d.color || '') + '|' + lv, 2 * DB * lv, 2 * DB * lv, g => { g.setTransform(lv, 0, 0, lv, DB * lv, DB * lv); decalShape(g, d.kind, d.color); });
+      ctx.drawImage(spr, -DB, -DB, spr.width / lv, spr.height / lv);
+    }
+    if (moved) ctx.setTransform(m[0], m[1], m[2], m[3], m[4], m[5]);
+  }
+  function drawDecalsClassic(ctx, view) {
     for (const d of X.decals) {
       if (!X.inView(d.x, d.y, d.size + 2)) continue;
       ctx.save(); ctx.translate(d.x, d.y); ctx.rotate(d.rot);
@@ -1210,7 +1551,23 @@
       ctx.restore();
     }
   }
-  function drawCrosshair(ctx) {
+  // In a car, while the right mouse button is held: the steering marker. A circle 400 px from the car in the world direction P.aim, joined to the car by a faint line;
+  // orange while the wheels are at full lock.
+  function drawSteerGuide(ctx, view) {
+    const c = P.car; if (!c || c.wrecked || P.state !== 'play' || !mouseSteering() || keySteer() || X.scene) return;
+    const o = X.toScreen(c.x, c.y), r = aimRadius(c, view), a = P.aim + view.rot, ca = Math.cos(a), sa = Math.sin(a);
+    const r0 = c.len / 2 * view.scale + 8, full = Math.abs(c.mouseSteer || 0) >= 0.999;
+    const mx = o.x + ca * r, my = o.y + sa * r;
+    ctx.save();
+    ctx.setLineDash([5, 7]); ctx.lineWidth = 1.5; ctx.strokeStyle = full ? 'rgba(255,190,70,0.45)' : 'rgba(255,255,255,0.3)';
+    ctx.beginPath(); ctx.moveTo(o.x + ca * r0, o.y + sa * r0); ctx.lineTo(mx - ca * 10, my - sa * 10); ctx.stroke(); ctx.setLineDash([]);
+    ctx.lineWidth = 2; ctx.strokeStyle = full ? 'rgba(255,190,70,0.9)' : 'rgba(255,255,255,0.75)';
+    ctx.beginPath(); ctx.arc(mx, my, 9, 0, TAU); ctx.stroke();
+    ctx.fillStyle = ctx.strokeStyle; ctx.beginPath(); ctx.arc(mx, my, 2, 0, TAU); ctx.fill();
+    ctx.restore();
+  }
+  function drawCrosshair(ctx, view) {
+    drawSteerGuide(ctx, view);
     if (P.car || P.state !== 'play' || !X.input.mouseActive()) return;
     const w = P.weapon; if (!w || w === 'fists') return;
     ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.lineWidth = 1.5;
@@ -1232,6 +1589,7 @@
 body.gta .hud-top { justify-content: flex-end; }
 #gta-hud .g-clock { font-weight: 700; font-size: 16px; color: #c9cdd6; text-shadow: 0 2px 0 #000; font-variant-numeric: tabular-nums; }
 #gta-hud .g-tl { position: absolute; left: 12px; top: calc(12px + env(safe-area-inset-top, 0px)); display: flex; flex-direction: column; gap: 6px; }
+body.fps-on #gta-hud .g-tl { top: calc(40px + env(safe-area-inset-top, 0px)); }
 #gta-hud .g-bar { width: 150px; height: 10px; border-radius: 3px; background: rgba(0,0,0,0.6); border: 1px solid rgba(255,255,255,0.25); overflow: hidden; }
 #gta-hud .g-bar i { display: block; height: 100%; background: linear-gradient(90deg, #e8402f, #ff7a5a); width: 100%; transition: width .15s; }
 #gta-hud .g-bar.armor i { background: linear-gradient(90deg, #4f8cff, #9ec2ff); }
@@ -1307,6 +1665,22 @@ body.gta .hud-top { justify-content: flex-end; }
     hook('hud', g);
     X.blips.length = 0;
   };
+  // The map's streets, blocks and places, drawn once per city and scale (fast renderer).
+  const mapCache = {};
+  function mapBase(c, C, f, range) {
+    c.fillStyle = '#5b606c'; c.fillRect(-8, -8, C.W + 16, C.H + 16);
+    for (const b of C.blocks) { if (f && (Math.abs((b.x0 + b.x1) / 2 - f.x) > range * 1.5 || Math.abs((b.y0 + b.y1) / 2 - f.y) > range * 1.5)) continue; c.fillStyle = b.kind === 'park' ? '#1f3b27' : b.kind === 'plaza' ? '#3b3733' : '#1a1d24'; c.fillRect(b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0); }
+    for (const id in X.places) { const pl = X.places[id], b = pl.b; c.fillStyle = pl.color; c.fillRect(b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0); }
+  }
+  function staticMap(C, sc) {
+    const key = sc.toFixed(4), sig = Object.keys(X.places).map(id => X.places[id].color).join();
+    let m = mapCache[key];
+    if (m && m.city === C && m.sig === sig) return m;
+    const pad = 12, cv = document.createElement('canvas');
+    cv.width = Math.ceil((C.W + 2 * pad) * sc); cv.height = Math.ceil((C.H + 2 * pad) * sc);
+    const g = cv.getContext('2d'); g.setTransform(sc, 0, 0, sc, pad * sc, pad * sc); mapBase(g, C);
+    return (mapCache[key] = { cv, pad, sc, city: C, sig });
+  }
   function drawMap() {
     const cv = H.map, c = cv.getContext('2d'), S = cv.width, C = X.city, f = X.focus();
     const big = X.input.down('Tab');
@@ -1315,12 +1689,8 @@ body.gta .hud-top { justify-content: flex-end; }
     c.fillStyle = '#0d0f14'; c.fillRect(0, 0, S, S);
     const rot = X.lastView ? X.lastView.rot : 0;
     c.save(); c.translate(S / 2, S / 2); c.rotate(rot); c.scale(sc, sc); c.translate(-f.x, -f.y);
-    c.fillStyle = '#5b606c'; c.fillRect(-8, -8, C.W + 16, C.H + 16);
-    for (const b of C.blocks) {
-      if (Math.abs((b.x0 + b.x1) / 2 - f.x) > range * 1.5 || Math.abs((b.y0 + b.y1) / 2 - f.y) > range * 1.5) continue;
-      c.fillStyle = b.kind === 'park' ? '#1f3b27' : b.kind === 'plaza' ? '#3b3733' : '#1a1d24'; c.fillRect(b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0);
-    }
-    for (const id in X.places) { const pl = X.places[id], b = pl.b; c.fillStyle = pl.color; c.fillRect(b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0); }
+    if ((PG.settings || {}).fastRender && PG.renderCaps && PG.renderCaps.minimap) { const m = staticMap(C, sc); c.drawImage(m.cv, -m.pad, -m.pad, m.cv.width / m.sc, m.cv.height / m.sc); }
+    else mapBase(c, C, f, range);
     const r = 1 / sc;
     for (const b of X.blips) {
       c.fillStyle = b.color; c.beginPath();
@@ -1354,7 +1724,7 @@ body.gta .hud-top { justify-content: flex-end; }
     X.districtNames = DISTRICTS.slice().sort(() => R() - 0.5);
     X.places = makePlaces(R);
     X.skid = PG.makeCitySkid();
-    Object.assign(P, { loot: 0, car: null, money: X.save.money || 0, wanted: 0, wantedFlash: false, state: 'play', stateT: 0, inv: { fists: Infinity }, weapon: 'fists', entering: null, kills: 0 });
+    Object.assign(P, { loot: 0, car: null, money: X.save.money || 0, wanted: 0, wantedFlash: false, state: 'play', stateT: 0, inv: { fists: Infinity }, weapon: 'fists', entering: null, kills: 0, seatT: 0 });
     P.ped = null;
     const home = X.places.hideout || X.places.bank;
     newPlayerPed(home.door.x + home.door.nx * 1.4, home.door.y + home.door.ny * 1.4, Math.atan2(home.door.ny, home.door.nx));
@@ -1378,6 +1748,7 @@ body.gta .hud-top { justify-content: flex-end; }
     if (!X.active) return;
     hook('stop');
     X.active = false; X.scene = null;
+    { const cv = document.getElementById('game'); if (cv) cv.style.cursor = ''; if (document.pointerLockElement && document.exitPointerLock) document.exitPointerLock(); }
     PG.audio.stopLoops();
     if (H) { H.pager.hidden = true; H.big.hidden = true; }
   };
