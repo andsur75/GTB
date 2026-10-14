@@ -337,7 +337,8 @@
   // ================= state =================
   const P = X.player = { ped: null, car: null, money: 0, wanted: 0, state: 'play', stateT: 0, inv: { fists: Infinity }, weapon: 'fists', entering: null, kills: 0 };
   X.cars = []; X.peds = []; X.lights = []; X.blips = []; X.floats = []; X.interactions = [];
-  X.cam = { x: 0, y: 0, span: 30, yaw: -Math.PI / 2, mode: 'fixed' };
+  // yaw: the view's heading (-PI/2 = north up). mode 'follow' turns it to the car while driving; lift: screen height of the focus (0..1), eased too.
+  X.cam = { x: 0, y: 0, span: 30, yaw: -Math.PI / 2, mode: 'follow', lift: 0.5 };
   X.scene = null;    // null = the city; an interior scene object while inside (see interiors.js)
   X.playerPos = () => P.car ? { x: P.car.x, y: P.car.y } : { x: P.ped.x, y: P.ped.y };
   X.playerVel = () => P.car ? X.carVel(P.car) : { x: P.ped.vx, y: P.ped.vy };
@@ -898,6 +899,7 @@
     c.driver = p; c.ai = null; c.keep = false; c.owner = c.owner === 'police' ? null : c.owner;
     p.car = c; p.hidden = true; p.vx = p.vy = 0;
     P.car = c;
+    X.cam.mode = 'follow';
     if (c.dv) c.dv.gear = 1;
     X.popup(c.model.name);
     X.emit('enterCar', { car: c });
@@ -1065,12 +1067,14 @@
     if (!isFinite(cam.x) || Math.hypot(cam.x - pos.x, cam.y - pos.y) > 120) { cam.x = pos.x; cam.y = pos.y; }
     cam.x += (pos.x + lx - cam.x) * k; cam.y += (pos.y + ly - cam.y) * k;
     const follow = cam.mode === 'follow' && c && !X.scene;
-    cam.yaw += wrap((follow ? c.th : -Math.PI / 2) - cam.yaw) * (1 - Math.exp(-dt * 3.2));
+    const ease = 1 - Math.exp(-dt * 3.2);
+    cam.yaw += wrap((follow ? c.th : -Math.PI / 2) - cam.yaw) * ease;
+    cam.lift += ((follow ? 0.6 : 0.5) - cam.lift) * ease;
     const scale = Math.min(cw, vh) / cam.span;
     let sx = 0, sy = 0;
     if (g.shake > 0) { const q = g.shake * 12; sx = (Math.random() - 0.5) * q; sy = (Math.random() - 0.5) * q; }
     const rot = -cam.yaw - Math.PI / 2;
-    const view = { scale, dpr, cw, ch, cx: cam.x, cy: cam.y, rot: Math.abs(rot) < 1e-4 ? 0 : rot, ax: cw / 2 + sx, ay: vh * (follow ? 0.6 : 0.5) + sy, r: Math.hypot(cw, ch) / scale * 0.62 + 4, bottomPad: pad || 0 };
+    const view = { scale, dpr, cw, ch, cx: cam.x, cy: cam.y, rot: Math.abs(rot) < 1e-4 ? 0 : rot, ax: cw / 2 + sx, ay: vh * cam.lift + sy, r: Math.hypot(cw, ch) / scale * 0.62 + 4, bottomPad: pad || 0 };
     X.lastView = view;
     const w = X.toWorld(mouse.sx, mouse.sy); mouse.wx = w.x; mouse.wy = w.y;
     return view;
@@ -1379,7 +1383,7 @@ body.gta .hud-top { justify-content: flex-end; }
     X.clock = (X.clock + dt * 2) % 1440;
     if (P.state === 'play') {
       if (X.input.anyPressed('KeyF', 'Enter') && !P.entering) handleUse();
-      if (X.input.pressed('KeyC')) { X.cam.mode = X.cam.mode === 'fixed' ? 'follow' : 'fixed'; X.popup(X.cam.mode === 'follow' ? 'Camera: follow car' : 'Camera: fixed north'); }
+      if (P.car && X.input.pressed('KeyC')) { X.cam.mode = X.cam.mode === 'fixed' ? 'follow' : 'fixed'; X.popup(X.cam.mode === 'follow' ? 'Camera: follow car' : 'Camera: fixed north'); }
       if (X.input.pressed('KeyH') && P.car) { PG.audio.honk(0); X.emit('horn', { car: P.car }); }
     } else {
       P.stateT += dt;
