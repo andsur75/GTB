@@ -74,7 +74,7 @@
   let S = null;
   function fresh() {
     return {
-      doors: [], scenes: new Map(), free: [], nslot: 0, cur: null, gmin: 0, rob: null, warn: null, fade: null, padIn: null,
+      doors: [], scenes: new Map(), free: [], nslot: 0, cur: null, gmin: 0, rob: null, warn: null, fade: null, padIn: null, doorArmed: true,
       bubbles: [], tracers: [], mus: { song: null, next: 0, step: 0, on: false }, ringT: 0, drillT: 0, beepT: 0, lastHurt: 0,
       stats: { entered: 0, left: 0, robberies: 0, tellers: 0, vaults: 0, loot: 0, bought: 0, healed: 0, slept: 0, fines: 0, drinks: 0, safes: 0, crates: 0 },
     };
@@ -783,6 +783,7 @@
     const sc = X.scene; if (!sc || !sc._int) return false;
     const d = sc.cityDoor;
     X.leaveScene(d.x + d.nx * 1.3, d.y + d.ny * 1.3, Math.atan2(d.ny, d.nx));
+    S.doorArmed = false;
     return true;
   }
   function cleanup(sc) {
@@ -1522,13 +1523,15 @@
     for (const d of S.doors) { const dx = d.x - x, dy = d.y - y; if (Math.abs(dx) > r || Math.abs(dy) > r) continue; const dd = Math.hypot(dx, dy); if (dd < bd) { bd = dd; best = d; } }
     return best;
   }
-  const doorUse = {
-    test() {
-      if (!live() || X.scene || P.car || P.state !== 'play' || !P.ped || P.ped.dead) return null;
-      const d = nearestDoor(P.ped.x, P.ped.y, 1.8); if (!d) return null;
-      return { text: 'F: Enter ' + d.name, priority: 3, run: () => enterDoor(d) };
-    },
-  };
+  // Walking into a doorway enters the building, no key. Like leaving, it re-arms only after you step away from
+  // the door, so the spot you come out on does not pull you straight back in.
+  function doorTick() {
+    const p = P.ped;
+    if (!p || p.dead || X.scene || P.car || P.entering || P.state !== 'play' || (S.fade && S.fade.mode === 'sleep')) return;
+    const near = nearestDoor(p.x, p.y, 1.6);
+    if (!near) { S.doorArmed = true; return; }
+    if (S.doorArmed && Math.hypot(near.x - p.x, near.y - p.y) < 0.9) enterDoor(near);
+  }
   const insideUse = {
     test() {
       const sc = X.scene;
@@ -2337,7 +2340,7 @@
     init() {
       S = fresh();
       S.doors = buildDoors();
-      X.interactions.push(doorUse, insideUse);
+      X.interactions.push(insideUse);
       const bd = S.doors.find(d => d.place === 'bank'); if (bd) sceneFor(bd);   // missions can read the bank right away
     },
     stop() { silence(); if (S) for (const sc of S.scenes.values()) despawn(sc); S = null; },
@@ -2348,7 +2351,7 @@
       if (S.drinks > 0) { S.drinkT = (S.drinkT || 0) + dt; if (S.drinkT > 60) { S.drinkT = 0; S.drinks--; } }
       for (const sc of S.scenes.values()) if (sc.st.robbedAt != null) recover(sc);
       const sc = X.scene && X.scene._int ? X.scene : null;
-      if (sc) sceneTick(sc, dt, t); else if (!X.scene) cityTick(t);
+      if (sc) sceneTick(sc, dt, t); else if (!X.scene) { cityTick(t); doorTick(); }
       if (S.bubbles.length) { let gone = false; for (const b of S.bubbles) { b.t += dt; if (b.t >= b.life || b.p.removed || b.p.dead) gone = true; } if (gone) S.bubbles = S.bubbles.filter(b => b.t < b.life && !b.p.removed && !b.p.dead); }
       if (S.tracers.length) { for (const r of S.tracers) r.t -= dt; S.tracers = S.tracers.filter(r => r.t > 0); }
       if (S.fade) {
