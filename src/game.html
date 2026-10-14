@@ -670,7 +670,7 @@ body.city .not-city { display: none !important; }
       let g = veh.gear, vi = d.vg[g - 1], rpm = au / vi * d.red;
       if (rpm > d.red * 0.985 && g < d.n && veh.shiftT <= 0) { veh.gear = ++g; veh.shiftT = d.shift; veh.shifted++; vi = d.vg[g - 1]; rpm = au / vi * d.red; }
       else if (rpm < d.red * 0.42 && g > 1) { veh.gear = --g; vi = d.vg[g - 1]; rpm = au / vi * d.red; }
-      if (g === 1 && thr > 0) rpm = Math.max(rpm, 1900 + thr * 1400);  // clutch slip at launch
+      if (g === 1 && thr > 0) rpm = Math.max(rpm, Math.min(1900 + thr * 1400, d.red * 0.9));  // clutch slip at launch, never past the redline (buses and fire trucks redline under 3000)
       rpm = Math.max(d.idle, rpm);
       if (veh.spinR > 0.2 || veh.spinF > 0.2) rpm = Math.min(d.red, rpm + (d.red - rpm) * 0.6 * Math.max(veh.spinR, veh.spinF));
       veh.rpm += (rpm - veh.rpm) * Math.min(1, h * 25);
