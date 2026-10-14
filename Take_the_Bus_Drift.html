@@ -10100,7 +10100,7 @@ body.fps-on #gta-hud .g-tl { top: calc(40px + env(safe-area-inset-top, 0px)); }
 // ---- gta/carsound.js ----
 // Car sound lab: a title-menu screen for tuning the engine sound. Hold W (or ArrowUp, or the on-screen
 // GAS button) to accelerate a simulated car through its gears; every slider changes the synth live.
-// The engine voice is its own Web Audio graph (firing-rate saw + square, sub octave, 2nd harmonic,
+// The engine voice is its own Web Audio graph (firing-rate saw + square, sub octave, deep subs, half-order and 2nd-4th harmonics, bass shelf,
 // intake noise, waveshaper drive, low-pass that opens with rpm and load, roughness LFO, lift-off pops,
 // rev-limiter cut). Settings are saved on this device and can be copied out as JSON.
 // Adds PG.carSound { P (current params), DEFAULTS, PRESETS, sim, freqOf, step }.
@@ -10129,6 +10129,17 @@ body.fps-on #gta-hud .g-tl { top: calc(40px + env(safe-area-inset-top, 0px)); }
       ['drive', 'Distortion', 0, 1, 0.01, '', 'Waveshaper grit.'],
       ['rough', 'Roughness', 0, 1, 0.01, '', 'Uneven firing, loudest at idle.'],
     ]],
+    ['Harmonics & sub bass', [
+      ['sub2', 'Deep sub (2 oct down)', 0, 1, 0.01, '', 'Sine two octaves below: chest rumble.'],
+      ['subTri', 'Sub growl', 0, 1, 0.01, '', 'Triangle an octave below: rougher sub.'],
+      ['sub3', 'Third sub (1/3)', 0, 1, 0.01, '', 'Odd undertone: lumpy, cammy idle.'],
+      ['halfOrd', 'Half order (1.5x)', 0, 1, 0.01, '', 'Between-firing tone of uneven exhausts.'],
+      ['harm3', '3rd harmonic', 0, 1, 0.01, '', 'Brassy, raspy edge.'],
+      ['harm4', '4th harmonic', 0, 1, 0.01, '', 'High whine two octaves up.'],
+      ['subFollow', 'Sub vs rpm', -1, 1, 0.01, '', 'Below 0 the sub fades as rpm rises; above 0 it grows.'],
+      ['bassBoost', 'Bass boost', -12, 18, 0.5, 'dB', 'Low-shelf EQ after the filter.'],
+      ['bassFreq', 'Bass boost below', 40, 400, 5, 'Hz', 'Where the bass shelf starts.'],
+    ]],
     ['Filter', [
       ['cutLo', 'Cutoff at idle', 100, 3000, 10, 'Hz', 'Low-pass with the throttle off at idle.'],
       ['cutHi', 'Cutoff at redline', 300, 12000, 10, 'Hz', 'Low-pass at full rpm.'],
@@ -10147,13 +10158,14 @@ body.fps-on #gta-hud .g-tl { top: calc(40px + env(safe-area-inset-top, 0px)); }
   ];
   const DEFAULTS = { cyl: 8, idle: 800, redline: 6800, shift: 92, gears: 6, revUp: 1, revDown: 1, drop: 32, shiftTime: 0.18,
     pitch: 1, saw: 0.6, square: 0.25, sub: 0.5, harm2: 0.15, detune: 12, drive: 0.35, rough: 0.35,
-    cutLo: 380, cutHi: 3200, cutLoad: 1400, res: 2.5, vol: 0.7, volIdle: 0.35, volRpm: 0.35, volLoad: 0.3, noise: 0.15, pops: 0.5, limiter: 0.6 };
+    cutLo: 380, cutHi: 3200, cutLoad: 1400, res: 2.5, sub2: 0, subTri: 0, sub3: 0, halfOrd: 0, harm3: 0, harm4: 0, subFollow: 0, bassBoost: 0, bassFreq: 120, vol: 0.7, volIdle: 0.35, volRpm: 0.35, volLoad: 0.3, noise: 0.15, pops: 0.5, limiter: 0.6 };
   const PRESETS = {
     'V8 muscle': {},
     'Inline-4': { cyl: 4, idle: 850, redline: 7200, pitch: 1.4, saw: 0.45, square: 0.4, sub: 0.2, harm2: 0.35, detune: 6, drive: 0.25, rough: 0.15, cutLo: 600, cutHi: 4500, res: 4, pops: 0.25, noise: 0.25 },
     'V12 exotic': { cyl: 12, idle: 950, redline: 8800, gears: 7, revUp: 1.6, revDown: 1.4, pitch: 1, saw: 0.7, square: 0.15, sub: 0.25, harm2: 0.4, detune: 18, drive: 0.2, rough: 0.05, cutLo: 700, cutHi: 7000, res: 1.5, pops: 0.2 },
     'Diesel truck': { cyl: 6, idle: 600, redline: 3400, gears: 8, revUp: 0.5, revDown: 0.6, drop: 25, shiftTime: 0.35, pitch: 0.8, saw: 0.4, square: 0.6, sub: 0.8, harm2: 0.05, drive: 0.6, rough: 0.6, cutLo: 200, cutHi: 1200, cutLoad: 600, res: 1, noise: 0.35, pops: 0, limiter: 0.3 },
     'Bus': { cyl: 6, idle: 550, redline: 2800, gears: 5, revUp: 0.4, revDown: 0.5, drop: 30, shiftTime: 0.45, pitch: 0.7, saw: 0.3, square: 0.5, sub: 1, harm2: 0, drive: 0.5, rough: 0.7, cutLo: 160, cutHi: 900, cutLoad: 400, res: 0.8, noise: 0.45, pops: 0, limiter: 0.2 },
+    'Test Engine': { cyl: 4, idle: 1150, redline: 9300, shift: 87, gears: 6, revUp: 0.75, revDown: 1, drop: 24, shiftTime: 0.18, pitch: 0.8, saw: 0.63, square: 0.36, sub: 0.5, harm2: 0.89, detune: 17, drive: 0.43, rough: 0.49, cutLo: 500, cutHi: 2030, cutLoad: 690, res: 2.5, vol: 0.7, volIdle: 0.35, volRpm: 1, volLoad: 0.25, noise: 0.15, pops: 0.5, limiter: 0.6 },
     'Superbike': { cyl: 4, idle: 1300, redline: 12000, gears: 6, revUp: 3, revDown: 2.5, drop: 22, shiftTime: 0.06, pitch: 1.2, saw: 0.7, square: 0.3, sub: 0.1, harm2: 0.5, detune: 4, drive: 0.4, rough: 0.1, cutLo: 900, cutHi: 9000, res: 5, pops: 0.7 },
   };
   const P = Object.assign({}, DEFAULTS);
@@ -10212,9 +10224,11 @@ body.fps-on #gta-hud .g-tl { top: calc(40px + env(safe-area-inset-top, 0px)); }
     const lp = ctx.createBiquadFilter(); lp.type = 'lowpass';
     const ws = ctx.createWaveShaper(); ws.oversample = '2x';
     const pre = ctx.createGain();
-    pre.connect(ws); ws.connect(lp); lp.connect(out);
+    const shelf = ctx.createBiquadFilter(); shelf.type = 'lowshelf';
+    pre.connect(ws); ws.connect(lp); lp.connect(shelf); shelf.connect(out);
     const osc = (type) => { const o = ctx.createOscillator(), g = ctx.createGain(); o.type = type; o.connect(g); g.connect(pre); o.start(); return { o, g }; };
-    const v = { ctx, out, lp, ws, pre, saw: osc('sawtooth'), sq: osc('square'), sub: osc('sine'), h2: osc('sawtooth'), lastDrive: -1 };
+    const v = { ctx, out, lp, ws, pre, saw: osc('sawtooth'), sq: osc('square'), sub: osc('sine'), h2: osc('sawtooth'), shelf,
+      sub2: osc('sine'), subTri: osc('triangle'), sub3: osc('sine'), half: osc('sawtooth'), h3: osc('sawtooth'), h4: osc('sine'), lastDrive: -1 };
     // roughness: noise-ish LFO on amplitude
     v.lfo = ctx.createOscillator(); v.lfoG = ctx.createGain(); v.lfo.type = 'triangle';
     v.lfo.connect(v.lfoG); v.lfoG.connect(pre.gain); v.lfo.start();
@@ -10256,8 +10270,14 @@ body.fps-on #gta-hud .g-tl { top: calc(40px + env(safe-area-inset-top, 0px)); }
     V.h2.o.frequency.setTargetAtTime(f * 2, t, k);
     V.saw.g.gain.setTargetAtTime(P.saw * 0.5, t, 0.05);
     V.sq.g.gain.setTargetAtTime(P.square * 0.3, t, 0.05);
-    V.sub.g.gain.setTargetAtTime(P.sub * 0.9, t, 0.05);
+    V.sub.g.gain.setTargetAtTime(P.sub * 0.9 * cl(1 + P.subFollow * (rf * 2 - 1), 0, 2), t, 0.05);
     V.h2.g.gain.setTargetAtTime(P.harm2 * 0.25, t, 0.05);
+    const sf = cl(1 + P.subFollow * (rf * 2 - 1), 0, 2);
+    [[V.sub2, f / 4, P.sub2 * 1.1 * sf], [V.subTri, f / 2, P.subTri * 0.8 * sf], [V.sub3, f / 3, P.sub3 * 0.8 * sf],
+     [V.half, f * 1.5, P.halfOrd * 0.18], [V.h3, f * 3, P.harm3 * 0.15], [V.h4, f * 4, P.harm4 * 0.2]].forEach(([v, fr, g]) => {
+      v.o.frequency.setTargetAtTime(fr, t, k); v.g.gain.setTargetAtTime(g, t, 0.05);
+    });
+    V.shelf.frequency.setTargetAtTime(P.bassFreq, t, 0.05); V.shelf.gain.setTargetAtTime(P.bassBoost, t, 0.05);
     if (V.lastDrive !== P.drive) { V.ws.curve = curve(P.drive); V.lastDrive = P.drive; }
     const rough = P.rough * (1 - 0.7 * rf);
     V.lfo.frequency.setTargetAtTime(Math.max(2, f / P.cyl * (0.9 + Math.random() * 0.2)), t, 0.05);
