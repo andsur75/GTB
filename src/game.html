@@ -782,6 +782,10 @@ body.city .not-city { display: none !important; }
     let rr = r + tq / d.Iz * h;
     // driving-school assist (training wheels): catches the slide before it becomes a spin
     if (env.assist && speed > 4 && Math.abs(beta) > 0.75) rr += Math.sign(beta) * (Math.abs(beta) - 0.75) * 9 * h;
+    // yaw damping (rotational friction): bleeds spin only while the car is sliding or the handbrake holds the
+    // rear, so straight driving is untouched and a slide that is not fed by the driver dies out quickly
+    const slideK = Math.min(1, Math.abs(beta) / 0.25);
+    rr -= rr * (2.5 * slideK + (hand ? 1.5 : 0)) * h;
     veh.r = rr;
     veh.ax += ((axc + dragX / d.mTot * cs + dragY / d.mTot * sn) - veh.ax) * Math.min(1, h * 12);
     // standstill: static friction holds the car
