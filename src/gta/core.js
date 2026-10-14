@@ -564,10 +564,21 @@
     return X.steerCtl(c, rp.x, rp.y, { speed: 6, dt });
   }
 
+  // Mouse steering: the front wheels turn to point at the cursor, clamped to full lock. With the follow camera a cursor held
+  // to the right keeps the car turning right; with north up the car steers round to the direction you point.
+  const mouseUsed = () => mouse.t > 0;
+  function mouseSteer(c) {
+    const def = c.def, fx = Math.cos(c.th), fy = Math.sin(c.th), front = def.wb - carMid(def);
+    const dx = mouse.wx - (c.x + fx * front), dy = mouse.wy - (c.y + fy * front);
+    if (dx * dx + dy * dy < 2.5 * 2.5) return c.mouseSteer || 0;   // cursor on the bonnet: keep the wheels where they are
+    const ahead = dx * fx + dy * fy, right = dx * -fy + dy * fx;
+    return (c.mouseSteer = cl(Math.atan2(right, ahead) / (def.maxSteer * 0.85), -1, 1));
+  }
+  X.steerTarget = c => mouseSteer(c);
   function playerCarCtl(c) {
     const T = X.touch, k = X.input;
     let fwd = k.any('KeyW', 'ArrowUp'), rev = k.any('KeyS', 'ArrowDown'), boost = k.any('ShiftLeft', 'ShiftRight');
-    let steer = (k.any('KeyD', 'ArrowRight') ? 1 : 0) - (k.any('KeyA', 'ArrowLeft') ? 1 : 0), steerAbs = null;
+    let steer = 0, steerAbs = mouseUsed() ? mouseSteer(c) : null;   // A/D and the arrows do not steer for now: the mouse does
     if (T.move) { if (T.move.y < -0.3) fwd = true; if (T.move.y > 0.3) rev = true; steerAbs = cl(T.move.x * 1.3, -1, 1); boost = boost || T.move.y < -0.85; }
     const ctl = { fwd: fwd || boost ? 1 : 0, rev: rev ? 1 : 0, hand: k.down('Space') || !!T.hand, steerDir: steer, steerAbs, thrMax: boost ? 1 : 0.78 };
     if (P.state !== 'play') { ctl.fwd = 0; ctl.rev = 0; ctl.hand = true; ctl.steerDir = 0; ctl.steerAbs = null; }
@@ -1210,7 +1221,23 @@
       ctx.restore();
     }
   }
+  // In a car: a faint line from the nose to the cursor and a steering reticle, so you can see where the wheels are pointing.
+  function drawSteerGuide(ctx) {
+    const c = P.car; if (!c || c.wrecked || P.state !== 'play' || !mouseUsed() || X.scene) return;
+    const def = c.def, front = def.wb - carMid(def) + def.fo * 0.9, n = X.toScreen(c.x + Math.cos(c.th) * front, c.y + Math.sin(c.th) * front);
+    const st = c.mouseSteer || 0, full = Math.abs(st) >= 0.999;
+    ctx.save();
+    ctx.setLineDash([5, 7]); ctx.lineWidth = 1.5; ctx.strokeStyle = full ? 'rgba(255,190,70,0.4)' : 'rgba(255,255,255,0.28)';
+    ctx.beginPath(); ctx.moveTo(n.x, n.y); ctx.lineTo(mouse.sx, mouse.sy); ctx.stroke(); ctx.setLineDash([]);
+    ctx.lineWidth = 2; ctx.strokeStyle = full ? 'rgba(255,190,70,0.85)' : 'rgba(255,255,255,0.7)';
+    ctx.beginPath(); ctx.arc(mouse.sx, mouse.sy, 9, 0, TAU); ctx.stroke();
+    // a little steering bar: centre tick plus a marker for the wheel angle
+    ctx.beginPath(); ctx.moveTo(mouse.sx - 14, mouse.sy + 17); ctx.lineTo(mouse.sx + 14, mouse.sy + 17); ctx.stroke();
+    ctx.fillStyle = ctx.strokeStyle; ctx.fillRect(mouse.sx + st * 14 - 2, mouse.sy + 13, 4, 8);
+    ctx.restore();
+  }
   function drawCrosshair(ctx) {
+    drawSteerGuide(ctx);
     if (P.car || P.state !== 'play' || !X.input.mouseActive()) return;
     const w = P.weapon; if (!w || w === 'fists') return;
     ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.lineWidth = 1.5;
