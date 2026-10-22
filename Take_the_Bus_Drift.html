@@ -19030,15 +19030,15 @@ body.gta.touch #gta-hud .s-pick, body.gta.touch #gta-hud .s-offer { bottom: calc
       const reach = c === P.car ? 23 : kind === 'police' || kind === 'swat' ? 19 : c.len > 7 ? 18 : 16;
       const hk = c.maxHp ? c.hp / c.maxHp : 1, twin = c === P.car || hk < 0.35;
       // traffic gets one wide beam; your car and the battered ones get a beam per lamp
-      if (!twin) cone(c.x + cs * (L2 - 2.2), c.y + sn * (L2 - 2.2), reach, c.th, 0.4, HEAD, 1, 0.15 * em);
+      if (!twin) cone(c.x + cs * (L2 + 0.25), c.y + sn * (L2 + 0.25), reach, c.th, 0.4, HEAD, 1, 0.15 * em);
       for (let s = -1; s <= 1; s += 2) {
         if (s < 0 && hk < 0.35) continue;   // a battered car is down to one eye
         const on = s > 0 && hk < 0.18 ? (Math.sin(t * 23 + c.id) > -0.2 ? 1 : 0.1) : 1;
         const lx = L2 - 0.15, ly = s * (W2 - 0.32), hx = c.x + lx * cs - ly * sn, hy = c.y + lx * sn + ly * cs;
-        if (twin) cone(hx - cs * 0.6, hy - sn * 0.6, reach, c.th + s * 0.05, 0.36, HEAD, on, 0.13 * on * em);
-        pt(hx, hy, 1.1, HEAD, 0, 0.7 * on * em);
+        if (twin) cone(hx + cs * 0.25, hy + sn * 0.25, reach, c.th + s * 0.05, 0.36, HEAD, on, 0.13 * on * em);
+        pt(hx + cs * 0.55, hy + sn * 0.55, 0.7, HEAD, 0, 0.7 * on * em);
       }
-      if (kind === 'taxi') pt(c.x - cs * 0.07, c.y - sn * 0.07, 1.4, '#ffe680', 0.15, 0.55 * em);
+      if (kind === 'taxi') pt(c.x - cs * 0.07, c.y - sn * 0.07, 0.5, '#ffe680', 0, 0.35 * em);
       if (kind === 'bus' && (c.driver || c.npcDriver)) {
         ell(c.x, c.y, L2 + 0.5, W2 + 0.8, c.th, '#ffeec0', 0.22, 0.07 * em);
         pt(c.x + cs * (L2 - 0.85), c.y + sn * (L2 - 0.85), 1.5, '#ffb02e', 0, 0.55 * em);
@@ -19047,8 +19047,8 @@ body.gta.touch #gta-hud .s-pick, body.gta.touch #gta-hud .s-offer { bottom: calc
     if (c.lightsOn || c.braking) {
       const br = c.braking;
       for (let s = -1; s <= 1; s += 2) {
-        const lx = -L2 + 0.1, ly = s * (W2 - 0.3);
-        pt(c.x + lx * cs - ly * sn, c.y + lx * sn + ly * cs, br ? 2.6 : 1.5, TAIL, br ? 0.3 : 0.12, (br ? 0.85 : 0.4) * em);
+        const lx = -L2 - (br ? 1.0 : 0.55), ly = s * (W2 - 0.3);
+        pt(c.x + lx * cs - ly * sn, c.y + lx * sn + ly * cs, br ? 1.8 : 1.0, TAIL, br ? 0.3 : 0.12, (br ? 0.85 : 0.4) * em);
       }
     }
     if (c.reversing) pt(c.x - cs * (L2 + 0.9), c.y - sn * (L2 + 0.9), 3.6, '#f4f6ff', 0.5, 0.3 * em);
