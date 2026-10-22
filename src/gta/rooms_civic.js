@@ -272,7 +272,7 @@
     'P.E.: Today we run to the bus. Again. It left.',
   ];
   I.define('school', {
-    size: [30, 24], weight: 1, minSide: 15,
+    size: [30, 24], weight: 0.4, minSide: 15,
     names: ['Bussby Skole', 'Holdeplassen Ungdomsskole', 'Fjordvik Barneskole'],
     greet: ['NO RUNNING IN THE HALLWAY!', 'ARE YOU A PARENT? YOU LOOK LIKE A PARENT.', 'THE BELL DOES NOT DISMISS YOU. I DO.'],
     style: { w: 2.4, door: '#2f5a8a', frame: '#e8e2d0', plate: '#2f5a8a', text: '#ffffff', light: '#fff1d6' },
@@ -387,7 +387,7 @@
 
   // ================= CHURCH =================
   I.define('church', {
-    size: [22, 30], weight: 1, minSide: 13,
+    size: [22, 30], weight: 0.4, minSide: 13,
     names: ['Bussby Kirke', 'St. Olav Holdeplass', 'Fjordvik Kapell'],
     greet: ['VELKOMMEN, MY CHILD. WIPE YOUR FEET.', 'MASS IS AT ELEVEN. THE BUS IS AT TEN TO.', 'THE LORD SEES ALL. SO DO THE SPEED CAMERAS.'],
     style: { w: 2.4, door: '#4a2a1a', frame: '#c9c2b0', plate: '#3a3f4a', text: '#f2e2b8', light: '#ffd9a0' },

@@ -1550,7 +1550,7 @@
     if (J.mgr && J.mgrAim > 0 && !J.card) ring(ctx, J.mgr.x, J.mgr.y, J.mgrAim / 1.6, '#7dd0ff', 'KEYCARD...');
     if (J.spot && !st.alarm) { const s = X.toScreen(p.x, p.y); ctx.font = '800 14px ' + FONT; ctx.textAlign = 'center'; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.8)'; const tx = 'CAMERA! ' + Math.round(J.camSeen / CAM_T * 100) + '%'; ctx.strokeText(tx, s.x, s.y - 46); ctx.fillStyle = '#ff5a4a'; ctx.fillText(tx, s.x, s.y - 46); }
     // the checklist, top right under the clock
-    const k = view.cw < 900 ? 0.78 : 1, W = 250, x0 = view.cw - (W + 14) * k, y0 = 168 * k;
+    const k = view.cw < 900 ? 0.78 : 1, W = 250, x0 = view.cw - (W + 14) * k, y0 = 196 * k;
     const ok = '#7dff9a', no = '#c9ccd1', bad = '#ff6b5a', gold = '#ffd23a';
     const dr = st.drill ? st.drill.prog : 0, boxes = J.boxes.reduce((s, b) => s + b, 0);
     const rows = [
@@ -2036,6 +2036,8 @@
   // World-space text: drawn at 20 px and scaled, so tiny sizes render the same everywhere.
   function wtext(c, s, x, y, size, col, weight, align) {
     c.save(); c.translate(x, y); c.scale(size / 20, size / 20);
+    // never upside down on screen: in a turned room (or a turned camera) flip text that would read backwards
+    if (c.getTransform) { const m = c.getTransform(); if (m.a < -Math.abs(m.b) * 0.3) c.rotate(Math.PI); }
     c.font = (weight || 700) + ' 20px ' + FONT; c.textAlign = align || 'center'; c.textBaseline = 'middle'; c.fillStyle = col; c.fillText(s, 0, 0);
     c.restore();
   }

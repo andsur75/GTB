@@ -201,6 +201,33 @@ await t.eval(() => { window.__out(); PG.gta.interiors.bank.reset(); });
 const reset = await t.eval(() => { const B = PG.gta.interiors.bank; return { alarm: B.alarm, open: B.vaultOpen, cash: B.cashLeft }; });
 check('bank.reset() closes the vault and refills it', !reset.alarm && !reset.open && reset.cash > 10000, reset);
 
+// ---------- 10b. the full program: cameras, keycard, security door, hostages, deposit boxes, waves, service exit ----------
+await t.eval(() => { const X = PG.gta, W = window; X.interiors.enter('bank'); W.__god(true); X.player.loot = 0; W.__ev.score = null; X.on('heistScore', e => { W.__ev.score = { take: e.take, back: e.back, hostages: e.hostages }; }); });
+const pj0 = await t.eval(() => { const sc = PG.gta.scene, g = sc.st.secGap; return { locked: g.locked && !!PG.gta.blocked(g.x, g.y, 0.2), hint: window.__act(/Security door/) }; });
+await t.eval(() => { const X = PG.gta, sc = X.scene, g = sc.peds.find(q => q.ai.sp && q.ai.sp.sec); window.__at(g.x - sc.ox, g.y - sc.oy + 0.9); X.damagePed(g, 8, X.player.ped, 'melee'); });
+await t.wait(300);
+const pj1 = await t.eval(() => { const J = PG.gta.interiors.bank.job; return { cams: J.camsOff, alarm: PG.gta.interiors.bank.alarm }; });
+check('the security door starts locked; a quiet punch on the security guard blinds the cameras', pj0.locked && /locked/i.test(pj0.hint) && pj1.cams && !pj1.alarm, { pj0, pj1 });
+await t.eval(() => { window.__arm(); window.__at(7.2, 15.6); });
+const pjCard = await until(() => { const P = PG.gta.player, m = PG.gta.scene.peds.find(q => q.ai.sp && q.ai.sp.keycard); P.ped.th = Math.atan2(m.y - P.ped.y, m.x - P.ped.x); return PG.gta.interiors.bank.job.card; }, 4000);
+await t.eval(() => window.__act(/Swipe the keycard/)); await t.wait(120); await t.press('KeyF'); await t.wait(200);
+const pj2 = await t.eval(() => { const g = PG.gta.scene.st.secGap; return { open: PG.gta.interiors.bank.job.secOpen, free: !PG.gta.blocked(g.x, g.y, 0.2) }; });
+check('the manager hands over his keycard at gunpoint and it opens the security door', pjCard && pj2.open && pj2.free, pj2);
+await t.eval(() => window.__at(18, 27, Math.PI / 2)); await t.wait(150); await t.press('KeyF'); await t.wait(300);
+const pj3 = await t.eval(() => ({ h: PG.gta.interiors.bank.job.hostages, alarm: PG.gta.interiors.bank.alarm }));
+check('"Everybody down!" takes hostages (blind cameras: no alarm)', pj3.h >= 2 && !pj3.alarm, pj3);
+await t.eval(() => window.__act(/Crack deposit box 3/)); await t.wait(120); await t.press('KeyF');
+const pjBox = await until(() => PG.gta.interiors.bank.job.boxes[2] === 1, 4000);
+check('a deposit box cracks open for loot', pjBox && (await t.eval(() => PG.gta.player.loot)) > 0);
+await t.eval(() => window.__act(/Drill the vault/)); await t.wait(100); await t.press('KeyF'); await t.wait(300);
+await t.eval(() => { PG.gta.interiors.bank.job.copT = 0.2; });
+const pjWave = await until(() => PG.gta.scene && PG.gta.scene.peds.filter(q => q.ai.wave && q.ai.st === 'fight').length >= 2, 3000);
+check('after the alarm the police storm in through the front door', !!pjWave);
+await t.eval(() => window.__act(/Service exit/)); await t.wait(120); await t.press('KeyF'); await t.wait(400);
+const pj4 = await t.eval(() => { const X = PG.gta, p = X.player.ped; return { scene: !!X.scene, free: !X.blocked(p.x, p.y, p.r), score: window.__ev.score, heists: X.interiors.stats.heists }; });
+check('the service exit leads outside with a heist score', !pj4.scene && pj4.free && pj4.score && pj4.score.take > 0 && pj4.score.back && pj4.heists >= 1, pj4);
+await t.eval(() => { window.__out(); PG.gta.interiors.bank.reset(); PG.gta.player.loot = 0; });
+
 // ---------- 11. safehouse sleep ----------
 await t.eval(() => { const X = PG.gta; X.interiors.enter('apartment'); X.clock = 22 * 60; window.__clearStars(); X.player.ped.hp = 40; window.__act(/Sleep \(save\)/); });
 await t.press('KeyF');
