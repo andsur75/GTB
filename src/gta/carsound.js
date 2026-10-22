@@ -338,7 +338,7 @@
   window.addEventListener('keydown', e => {
     if (!active()) return;
     if (GAS.includes(e.code)) { keyGas = true; e.preventDefault(); }
-    if (e.code === 'Escape') { e.preventDefault(); close(); }
+    if (e.code === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); close(); }
   }, { capture: true });
   window.addEventListener('keyup', e => { if (GAS.includes(e.code)) keyGas = false; });
   window.addEventListener('blur', () => { keyGas = btnGas = false; });
@@ -380,11 +380,13 @@
   function open() {
     if (PG.audio.click) PG.audio.click();
     PG.carSound.reset();
+    back = PG.ui.screen && PG.ui.screen() === 'settings' ? 'settings' : 'title';
     PG.ui.show('carsound');
     scr.scrollTop = 0;
     if (!running) { running = true; last = 0; requestAnimationFrame(loop); }
   }
-  function close() { if (PG.audio.click) PG.audio.click(); silence(); PG.ui.show('title'); }
+  let back = 'title';
+  function close() { if (PG.audio.click) PG.audio.click(); silence(); PG.ui.show(back); }
   PG.carSound.open = open; PG.carSound.close = close;
   $('cs-back').onclick = close;
   const btn = $('btn-carsound');

@@ -1328,7 +1328,9 @@
   function exitTick(sc) {
     const ex = sc.exit, p = P.ped; if (!ex || p.dead || P.state !== 'play') return;
     const on = inRect(ex, p.x, p.y, 0);
-    if (!sc.exitArmed) { if (!on && Math.hypot(p.x - (ex.x0 + ex.x1) / 2, p.y - (ex.y0 + ex.y1) / 2) > 1.5) sc.exitArmed = true; }
+    // Same rule as the street doors: after walking in, the exit stays off until you have stepped clear of it.
+    const dx = Math.max(ex.x0 - p.x, 0, p.x - ex.x1), dy = Math.max(ex.y0 - p.y, 0, p.y - ex.y1);
+    if (!sc.exitArmed) { if (Math.hypot(dx, dy) > 1.6) sc.exitArmed = true; }
     else if (on && !(S.fade && S.fade.mode === 'sleep')) leave();
   }
   // Staff-only areas: a warning, then the guards (or cops) stop being polite.

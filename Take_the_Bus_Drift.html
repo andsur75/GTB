@@ -365,7 +365,6 @@ body.fps-on .screen:not(.clear) { padding-top: max(44px, env(safe-area-inset-top
       <div class="btns">
         <button class="btn gta" id="btn-gta"><span>Play</span></button>
         <button class="btn" id="btn-settings">Settings</button>
-        <button class="btn" id="btn-carsound">Car sound</button>
       </div>
       <p class="whoami" id="whoami"><span id="whoami-label">Driving as</span> <b id="whoami-name"></b> <button class="btn link" id="btn-rename">Change name</button></p>
       <div class="controls" aria-label="Controls">
@@ -495,7 +494,7 @@ body.fps-on .screen:not(.clear) { padding-top: max(44px, env(safe-area-inset-top
     <div class="panel">
       <div class="row-head"><div><p class="eyebrow">Options</p><h2 class="head" id="set-head">Settings</h2></div><button class="btn small" id="set-back">Back</button></div>
       <div id="set-body"></div>
-      <div class="set-foot"><p class="fine">Changes apply at once and are saved on this device. O or Esc closes this screen.</p><button class="btn primary" id="set-done">Done</button></div>
+      <div class="set-foot"><p class="fine">Changes apply at once and are saved on this device. O or Esc closes this screen.</p><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="btn-carsound">Car sound</button><button class="btn primary" id="set-done">Done</button></div></div>
     </div>
   </section>
 
@@ -10441,7 +10440,7 @@ body.fps-on #gta-hud .g-tl { top: calc(40px + env(safe-area-inset-top, 0px)); }
   window.addEventListener('keydown', e => {
     if (!active()) return;
     if (GAS.includes(e.code)) { keyGas = true; e.preventDefault(); }
-    if (e.code === 'Escape') { e.preventDefault(); close(); }
+    if (e.code === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); close(); }
   }, { capture: true });
   window.addEventListener('keyup', e => { if (GAS.includes(e.code)) keyGas = false; });
   window.addEventListener('blur', () => { keyGas = btnGas = false; });
@@ -10483,11 +10482,13 @@ body.fps-on #gta-hud .g-tl { top: calc(40px + env(safe-area-inset-top, 0px)); }
   function open() {
     if (PG.audio.click) PG.audio.click();
     PG.carSound.reset();
+    back = PG.ui.screen && PG.ui.screen() === 'settings' ? 'settings' : 'title';
     PG.ui.show('carsound');
     scr.scrollTop = 0;
     if (!running) { running = true; last = 0; requestAnimationFrame(loop); }
   }
-  function close() { if (PG.audio.click) PG.audio.click(); silence(); PG.ui.show('title'); }
+  let back = 'title';
+  function close() { if (PG.audio.click) PG.audio.click(); silence(); PG.ui.show(back); }
   PG.carSound.open = open; PG.carSound.close = close;
   $('cs-back').onclick = close;
   const btn = $('btn-carsound');
@@ -15422,7 +15423,9 @@ body.gta.touch #gta-hud .s-pick, body.gta.touch #gta-hud .s-offer { bottom: calc
   function exitTick(sc) {
     const ex = sc.exit, p = P.ped; if (!ex || p.dead || P.state !== 'play') return;
     const on = inRect(ex, p.x, p.y, 0);
-    if (!sc.exitArmed) { if (!on && Math.hypot(p.x - (ex.x0 + ex.x1) / 2, p.y - (ex.y0 + ex.y1) / 2) > 1.5) sc.exitArmed = true; }
+    // Same rule as the street doors: after walking in, the exit stays off until you have stepped clear of it.
+    const dx = Math.max(ex.x0 - p.x, 0, p.x - ex.x1), dy = Math.max(ex.y0 - p.y, 0, p.y - ex.y1);
+    if (!sc.exitArmed) { if (Math.hypot(dx, dy) > 1.6) sc.exitArmed = true; }
     else if (on && !(S.fade && S.fade.mode === 'sleep')) leave();
   }
   // Staff-only areas: a warning, then the guards (or cops) stop being polite.
