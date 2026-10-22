@@ -2884,10 +2884,9 @@ body.fps-on .screen:not(.clear) { padding-top: max(44px, env(safe-area-inset-top
     while (TC.map.size > max) { const k = TC.map.keys().next().value; dropTile(k, TC.map.get(k)); }
   }
   CD.ground = function (ctx, C, view) {
-    if (capOn('tiles')) { groundTiled(ctx, C, view); lampHeads(ctx, C, view); return; }
+    if (capOn('tiles')) return groundTiled(ctx, C, view);
     if (TC.map.size) CD.invalidate();   // tiles switched off (or a software canvas): free them
     groundRaw(ctx, C, view);
-    lampHeads(ctx, C, view);
   };
   // A structural solid added to or removed from the city (a building, a wall: anything but the small props
   // modules scatter about) may change what is drawn there: drop those tiles.
@@ -3011,17 +3010,14 @@ body.fps-on .screen:not(.clear) { padding-top: max(44px, env(safe-area-inset-top
       }
       canopy(ctx, tr.x, tr.y, r, tr.burnt, shadows);
     }
-  };
-  // Street-lamp heads: part of the ground layer, so cars and people pass over them.
-  function lampHeads(ctx, C, view) {
-    const X = view.cx, Y = view.cy, R = view.r;
-    ctx.fillStyle = '#ffe6b0'; ctx.beginPath();
+    ctx.fillStyle = '#ffe6b0';
+    if (fast) ctx.beginPath();
     for (const l of C.lamps) if (!l.broken && Math.abs(l.x - X) < R && Math.abs(l.y - Y) < R) {
       const x = l.x + l.nx * 1.2, y = l.y + l.ny * 1.2;
-      ctx.moveTo(x + 0.3, y); ctx.arc(x, y, 0.3, 0, 7);
+      if (fast) { ctx.moveTo(x + 0.3, y); ctx.arc(x, y, 0.3, 0, 7); } else { ctx.beginPath(); ctx.arc(x, y, 0.3, 0, 7); ctx.fill(); }
     }
-    ctx.fill();
-  }
+    if (fast) ctx.fill();
+  };
   function canopy(ctx, x, y, r, burnt, shadows) {
     if (shadows) { ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.arc(x + 0.6, y + 0.6, r, 0, 7); ctx.fill(); }
     ctx.fillStyle = burnt ? '#2a2622' : '#25472d'; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill();
