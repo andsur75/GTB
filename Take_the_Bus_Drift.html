@@ -14973,6 +14973,7 @@ body.gta.touch #gta-hud .s-pick, body.gta.touch #gta-hud .s-offer { bottom: calc
   function makeLook(kind) {
     const L0 = X.randomLook(); L0.scale = rand(0.95, 1.06);
     const A = o => Object.assign(L0, o);
+    if (LOOKS[kind]) return A(LOOKS[kind](L0, KIT));
     switch (kind) {
       case 'guard': return A({ outfit: 'guard', shirt: '#59606b', pants: '#23272e', hat: '#1d2026', hatType: 'cap', scale: rand(1.02, 1.1) });
       case 'cop': case 'sergeant': return A({ outfit: 'cop', shirt: '#22376b', pants: '#1a2440', hat: '#141c33', hatType: 'police' });
@@ -15630,6 +15631,8 @@ body.gta.touch #gta-hud .s-pick, body.gta.touch #gta-hud .s-offer { bottom: calc
     else if (sc.type === 'gunshop') padTick(sc);
     else if (sc.type === 'police') policeTick(sc, 2);
     else if (sc.type === 'office') safeTick(sc, dt);
+    else { if (sc.st.safe) safeTick(sc, dt); if (sc.pads.length) padTick(sc); }
+    const ext = EXT[sc.type]; if (ext && ext.tick) { try { ext.tick(sc, dt, t, KIT); } catch (e) { if (!ext.err) { ext.err = true; console.error('[interiors] ' + sc.type + ' tick failed:', e); } } }
     doorsTick(sc, dt); critterTick(sc, dt); poolTick(sc, dt);
     lightsTick(sc, t);
     if (sc.st.bellT > 0) sc.st.bellT -= dt;
@@ -15653,6 +15656,15 @@ body.gta.touch #gta-hud .s-pick, body.gta.touch #gta-hud .s-offer { bottom: calc
     club: { w: 1.6, door: '#1b1426', frame: '#c25cff', plate: '#14101c', text: '#e9a8ff', light: '#c25cff', neon: '#c25cff', rope: 1 },
     diner: { w: 1.6, door: '#5c2b2b', frame: '#e9e4d8', plate: '#14262a', text: '#5af0e0', light: '#ffd9a0', neon: '#5af0e0', awning: ['#2f7d6d', '#f2f2f2'] },
   };
+  // Which theme a building gets: weighted by each type's weight, only types whose minSide fits the footprint.
+  const WEIGHT = { store: 3, lobby: 4, office: 3, warehouse: 2, club: 1, diner: 2 }, MIN_SIDE = {};
+  function pickType(b, u) {
+    const side = Math.min(b.x1 - b.x0, b.y1 - b.y0);
+    const list = GEN_TYPES.filter(t => !MIN_SIDE[t] || side >= MIN_SIDE[t]);
+    let tot = 0; for (const t of list) tot += WEIGHT[t] || 1;
+    let v = u * tot; for (const t of list) { v -= WEIGHT[t] || 1; if (v <= 0) return t; }
+    return list[list.length - 1] || 'store';
+  }
   function buildDoors() {
     const C = X.city, out = [], seed = (C.seed || 1) % 10007;
     for (const id in X.places) {
@@ -15660,13 +15672,20 @@ body.gta.touch #gta-hud .s-pick, body.gta.touch #gta-hud .s-offer { bottom: calc
       if (pl.pad || !L[id]) continue;
       out.push({ key: 'place:' + id, place: id, type: id, b: pl.b, x: pl.door.x, y: pl.door.y, nx: pl.door.nx, ny: pl.door.ny, name: pl.name });
     }
+    // Every building that faces a street gets a door: try each side until one is clear.
     C.buildings.forEach((b, i) => {
-      if (b.deco || b.place || hr(seed, i) >= 0.25) return;
-      if (b.x1 - b.x0 < 8 || b.y1 - b.y0 < 8) return;
-      const dr = X.buildingDoor(b, Math.floor(hr(seed, i + 7) * 4)); if (!dr) return;
-      if (X.blocked(dr.x, dr.y, 0.5) || X.blocked(dr.x + dr.nx * 1.3, dr.y + dr.ny * 1.3, 0.4)) return;
-      if (out.some(o => Math.abs(o.x - dr.x) < 8 && Math.abs(o.y - dr.y) < 8)) return;
-      const type = GEN_TYPES[Math.floor(hr(seed, i + 3) * GEN_TYPES.length)], nm = NAMES[type];
+      if (b.deco || b.place) return;
+      if (b.x1 - b.x0 < 5 || b.y1 - b.y0 < 5) return;
+      const p0 = Math.floor(hr(seed, i + 7) * 4);
+      let dr = null;
+      for (let k = 0; k < 4 && !dr; k++) {
+        const q = X.buildingDoor(b, p0 + k); if (!q) break;
+        if (X.blocked(q.x, q.y, 0.5) || X.blocked(q.x + q.nx * 1.3, q.y + q.ny * 1.3, 0.4)) continue;
+        if (out.some(o => Math.abs(o.x - q.x) < 4 && Math.abs(o.y - q.y) < 4)) continue;
+        dr = q;
+      }
+      if (!dr) return;
+      const type = pickType(b, hr(seed, i + 3)), nm = NAMES[type];
       out.push({ key: 'b:' + i, bi: i, type, b, x: dr.x, y: dr.y, nx: dr.nx, ny: dr.ny, name: nm[Math.floor(hr(seed, i + 11) * nm.length)], gen: true });
     });
     for (const d of out) { const st = DS[d.type] || DS.store; d.tw = 0; d.st = st; }
@@ -16704,7 +16723,37 @@ body.gta.touch #gta-hud .s-pick, body.gta.touch #gta-hud .s-offer { bottom: calc
     get vault() { const sc = S && bankScene(); return sc ? { x: sc.st.vault.x, y: sc.st.vault.y } : null; },
     reset() { const sc = S && bankScene(); if (sc) resetBank(sc); },
   };
+  // ================= themes from other modules =================
+  // X.interiors.define(type, def) adds a building theme. def: { size: [w, h] (metres, door in the bottom wall),
+  // names: [...], layout(sc, b, R, K) (as the layouts above), style: city-door look (keys as DS), greet: [...],
+  // weight (how common, default 2), minSide (smallest building footprint side it fits), furn: { name:
+  // (c, f, hw, hh, t, sc) => draw }, looks: { name: (base, K) => overrides }, tick(sc, dt, t, K), place: true
+  // (a named city place, not a random building) }. K is KIT: the helpers layouts and ticks need.
+  const EXT = {}, LOOKS = {};
+  const KIT = {
+    get S() { return S; }, P, X, mine, say, panic, provoke, alarm: alarmScene, sfx, buyFood, heal, scratch, crackSafe, safeHint,
+    inRect, sightClear, freeAt, navPath, LINES, pick, rand, cl, TAU, day, night, hour,
+    rect, rr, disc, oval, ln, wtext, wmeasure, shade, rgba, sh, PRODUCTS, SUIT, TIE, JACK, NEONS,
+    money: (n, why, x, y) => X.money(n, why, x, y), popup: m => X.popup(m), crime: (k, x, y, o) => X.crime(k, x, y, o),
+  };
+  function define(type, def) {
+    if (!type || !def || typeof def.layout !== 'function' || !def.size) throw new Error('interiors.define: needs a type, size and layout');
+    EXT[type] = def;
+    L[type] = (sc, b, R) => def.layout(sc, b, R, KIT);
+    LAYOUT_SIZE[type] = def.size;
+    NAMES[type] = def.names && def.names.length ? def.names : [type];
+    if (def.greet) GREET[type] = def.greet;
+    DS[type] = Object.assign({ w: 1.8, door: '#2d3a48', frame: '#8a8f99', plate: '#2b2f3a', text: '#e9e4d8', light: '#ffe2a0' }, def.style || {});
+    if (def.furn) Object.assign(FD, def.furn);
+    if (def.looks) Object.assign(LOOKS, def.looks);
+    WEIGHT[type] = def.weight == null ? 2 : def.weight;
+    if (def.minSide) MIN_SIDE[type] = def.minSide;
+    if (!def.place && !GEN_TYPES.includes(type)) GEN_TYPES.push(type);
+  }
   X.interiors = {
+    define,
+    get types() { return GEN_TYPES.slice(); },
+    kit: KIT,
     // placeId ('bank'), a generic type ('store', 'club'... the nearest one), a building, or a door from .doors
     enter(arg) { return live() ? enterDoor(findDoor(arg)) : null; },
     leave,
