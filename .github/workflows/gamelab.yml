@@ -1,0 +1,18 @@
+name: Publish to GameLab
+on:
+  workflow_dispatch:
+    inputs:
+      notes:
+        description: Patch notes for this upload
+        required: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node tools/gamelab.mjs ${{ inputs.notes && format('--notes "{0}"', inputs.notes) || '' }}
+        env:
+          GAMELAB_TOKEN: ${{ secrets.GAMELAB_TOKEN }}
