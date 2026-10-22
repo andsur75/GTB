@@ -64,7 +64,15 @@
       dyn: { m: 14000, ff: 0.4, h: 1.3, drive: 'R', type: 'ice', kw: 300, nm: 1500, red: 2400, n: 6, v1: 18, vN: 105, cyl: 6, vmax: 110, z100: 22, cda: 8, shift: 0.5, mu: 0.85 } },
     securicar: { name: 'Securicar', kind: 'armored', box: true, len: 5.6, wid: 2.2, wb: 3.4, turn: 13, hp: 3500, value: 4000, weight: 0, color: '#5f6b5a',
       dyn: { m: 6000, ff: 0.5, h: 1.0, drive: 'R', type: 'ice', kw: 220, nm: 700, red: 4000, n: 6, v1: 32, vN: 140, cyl: 6, vmax: 130, z100: 14, cda: 4.2, shift: 0.3 } },
+    // the army's (never in traffic: they live at Camp Bussby, rooms_military.js; the tank is police.js's)
+    jeep: { name: 'Army Jeep', kind: 'jeep', len: 4.3, wid: 1.95, wb: 2.6, turn: 11.2, hp: 2200, value: 1800, weight: 0, color: '#4f5a36',
+      dyn: { m: 1900, ff: 0.5, h: 0.75, drive: 'A', type: 'ice', kw: 190, nm: 460, red: 5200, n: 5, v1: 45, vN: 175, cyl: 6, vmax: 165, z100: 8.5, cda: 1.1, shift: 0.2, mu: 1.05 } },
+    armytruck: { name: 'Army Truck', kind: 'armytruck', box: true, len: 8.2, wid: 2.55, wb: 4.7, turn: 16.5, hp: 4500, value: 2600, weight: 0, color: '#4a5634',
+      dyn: { m: 9500, ff: 0.45, h: 1.3, drive: 'A', type: 'ice', kw: 260, nm: 1300, red: 2800, n: 6, v1: 22, vN: 110, cyl: 6, vmax: 105, z100: 20, cda: 7, shift: 0.45, mu: 0.95 } },
+    apc: { name: 'Pansarvogn APC', kind: 'apc', box: true, len: 6.9, wid: 2.8, wb: 3.9, turn: 15, hp: 7500, value: 5000, weight: 0, color: '#55603e',
+      dyn: { m: 14000, ff: 0.5, h: 1.2, drive: 'A', type: 'ice', kw: 330, nm: 1600, red: 2800, n: 6, v1: 20, vN: 100, cyl: 8, vmax: 100, z100: 17, cda: 6.5, shift: 0.45, mu: 1.05 } },
   };
+  X.worldHooks = [];   // fn(city, seededRandom, places) after the places are picked, before any module's init
   const DEFS = {};
   X.modelDef = function (id) {
     if (DEFS[id]) return DEFS[id];
@@ -1312,6 +1320,33 @@
       ctx.fillStyle = c.siren ? (on ? '#ff2a2a' : '#2a6bff') : '#333'; ctx.fillRect(c.len * 0.25, -0.6, 0.25, 1.2);
     },
   };
+  // army green: a white star on the bonnet, canvas ribs on the truck bed, hatches and a gun on the APC
+  const star = (ctx, x, y, r) => { ctx.beginPath(); for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, q = i % 2 ? r * 0.42 : r; ctx.lineTo(x + Math.cos(a) * q, y + Math.sin(a) * q); } ctx.closePath(); ctx.fill(); };
+  Object.assign(KIND_MARKS, {
+    jeep(ctx, c) {
+      const L = c.len, W = c.wid;
+      ctx.fillStyle = '#2f3622'; ctx.fillRect(-L / 2 + 0.25, -W / 2 + 0.2, L * 0.42, W - 0.4);   // open back, benches
+      ctx.fillStyle = '#5d4a32'; ctx.fillRect(-L / 2 + 0.35, -W / 2 + 0.25, L * 0.36, 0.3); ctx.fillRect(-L / 2 + 0.35, W / 2 - 0.55, L * 0.36, 0.3);
+      ctx.fillStyle = '#1b1d1f'; ctx.beginPath(); ctx.arc(-L / 2 - 0.05, 0, 0.36, 0, TAU); ctx.fill();   // spare wheel on the tailgate
+      ctx.fillStyle = '#e9e4d8'; star(ctx, L / 2 - 0.75, 0, 0.32);
+    },
+    armytruck(ctx, c) {
+      const L = c.len, W = c.wid;
+      ctx.fillStyle = '#5b6740'; ctx.fillRect(-L / 2 + 0.1, -W / 2 + 0.08, L * 0.7, W - 0.16);
+      ctx.strokeStyle = '#3b4429'; ctx.lineWidth = 0.1; ctx.beginPath();
+      for (let i = 1; i < 7; i++) { const x = -L / 2 + 0.1 + i * L * 0.7 / 7; ctx.moveTo(x, -W / 2 + 0.12); ctx.lineTo(x, W / 2 - 0.12); }
+      ctx.stroke();
+      ctx.fillStyle = '#e9e4d8'; star(ctx, L / 2 - 0.9, 0, 0.36);
+    },
+    apc(ctx, c) {
+      const L = c.len, W = c.wid;
+      ctx.fillStyle = '#48522f'; ctx.beginPath(); ctx.moveTo(L / 2, -W / 2 + 0.5); ctx.lineTo(L / 2 - 1.1, -W / 2 + 0.05); ctx.lineTo(L / 2 - 1.1, W / 2 - 0.05); ctx.lineTo(L / 2, W / 2 - 0.5); ctx.closePath(); ctx.fill();   // sloped glacis
+      ctx.fillStyle = '#3a4227'; ctx.fillRect(-L / 2 + 0.4, -0.55, 1.1, 1.1); ctx.fillRect(-L / 2 + 0.4, W / 2 - 0.75, 1.6, 0.5); ctx.fillRect(-L / 2 + 0.4, -W / 2 + 0.25, 1.6, 0.5);
+      ctx.fillStyle = '#2e3420'; ctx.beginPath(); ctx.arc(0.4, 0, 0.62, 0, TAU); ctx.fill();   // turret ring, gun forward
+      ctx.fillStyle = '#1c1f16'; ctx.fillRect(0.4, -0.08, 2.2, 0.16);
+      ctx.fillStyle = '#e9e4d8'; star(ctx, -1.4, 0, 0.3);
+    },
+  });
   KIND_MARKS.fire = KIND_MARKS.ambulance;
   X.drawCar = function (ctx, c, t) {
     const m = c.model;
@@ -1723,6 +1758,8 @@ body.fps-on #gta-hud .g-tl { top: calc(40px + env(safe-area-inset-top, 0px)); }
     const R = (() => { let s = seed % 2147483647; return () => (s = (s * 16807) % 2147483647) / 2147483647; })();
     X.districtNames = DISTRICTS.slice().sort(() => R() - 0.5);
     X.places = makePlaces(R);
+    // modules that rebuild a block of the new city (rooms_military.js's compounds) and add places of their own
+    for (const f of X.worldHooks) { try { f(X.city, R, X.places); } catch (e) { console.error('[gta] world hook failed:', e); } }
     X.skid = PG.makeCitySkid();
     Object.assign(P, { loot: 0, car: null, money: X.save.money || 0, wanted: 0, wantedFlash: false, state: 'play', stateT: 0, inv: { fists: Infinity }, weapon: 'fists', entering: null, kills: 0, seatT: 0 });
     P.ped = null;

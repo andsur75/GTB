@@ -173,7 +173,7 @@
       const u = c.pol; if (!u || c.removed) continue;
       if (u.role === 'pursuit') { u.role = c.npcDriver ? 'patrol' : 'empty'; c.siren = false; if (c.ai && c.ai.owner === 'police') c.ai = null; }
     }
-    for (const p of S.cops) { const a = p.ai; if (a && (a.state === 'chase' || a.state === 'board' || (a.state === 'guard' && !a.station))) a.state = 'calm'; }
+    for (const p of S.cops) { const a = p.ai; if (a && (a.state === 'chase' || a.state === 'board' || (a.state === 'guard' && !a.station && !a.post))) a.state = 'calm'; }
     if (S.heli && S.heli.state === 'chase') S.heli.state = 'leave';
   }
   // Stars flash once nobody has seen the suspect for a while, then fade one by one (fast when far away).
@@ -758,7 +758,7 @@
       }
       case 'calm': {
         if (a.patrol) a.state = 'patrol';
-        else if (a.station) a.state = 'guard';
+        else if (a.station || a.post) a.state = 'guard';   // (a.post: a sentry at Camp Bussby or SWAT Command)
         else if (usable(a.car) && Math.hypot(a.car.x - p.x, a.car.y - p.y) < 80) a.state = 'board';
         else { a.state = 'leave'; pickLeave(p, a); }
         X.movePed(p, dt, 0, 0);
@@ -827,9 +827,9 @@
     }
     return null;
   }
-  function stationSpawn() {
-    const st = X.places && X.places.police; if (!st) return null;
-    const d = st.door, rp = X.nearestRoadPoint(d.x + d.nx * 8, d.y + d.ny * 8);
+  function stationSpawn(gate) {
+    const st = X.places && X.places.police; if (!st && !gate) return null;
+    const d = gate || st.door, rp = X.nearestRoadPoint(d.x + d.nx * 8, d.y + d.ny * 8);
     if (Math.hypot(rp.x - S.fx, rp.y - S.fy) < 30) return null;
     const th = rp.horiz ? (S.fx > rp.x ? 0 : Math.PI) : (S.fy > rp.y ? Math.PI / 2 : -Math.PI / 2);
     if (X.cars.some(o => !o.removed && Math.abs(o.x - rp.x) < 8 && Math.abs(o.y - rp.y) < 8)) return null;
@@ -841,11 +841,14 @@
     let heavy = 0; for (const c of S.cars) if (c.pol.role === 'pursuit' && c.pol.kind !== 'cop') heavy++;
     const tanks = S.cars.reduce((n, c) => n + (c.pol.tank && !c.wrecked && c.pol.role === 'pursuit' ? 1 : 0), 0);
     if (lvl >= 6 && !tanks && Math.random() < 0.4) { model = 'tank'; kind = 'army'; }
-    else if (lvl >= 6 && Math.random() < 0.6) { model = 'swat'; kind = 'army'; }
+    else if (lvl >= 6 && Math.random() < 0.6) { model = X.MODELS.apc ? pick(['apc', 'armytruck', 'jeep']) : 'swat'; kind = 'army'; }
     else if (lvl >= 4 && heavy < (lvl >= 5 ? 2 : 1)) { model = 'swat'; kind = 'swat'; }
     let sp = null;
     const st = X.places && X.places.police;
-    if (st && lvl >= 2 && Math.random() < 0.35 && Math.hypot(st.door.x - S.fx, st.door.y - S.fy) < 380) sp = stationSpawn();
+    // the heavy units roll out of their own gates: SWAT Command and Camp Bussby (rooms_military.js)
+    const hq = X.places && (kind === 'army' ? X.places.armybase : kind === 'swat' ? X.places.swathq : null);
+    if (hq && hq.gate && Math.random() < 0.6 && Math.hypot(hq.gate.x - S.fx, hq.gate.y - S.fy) < 420) sp = stationSpawn(hq.gate);
+    if (!sp && st && lvl >= 2 && Math.random() < 0.35 && Math.hypot(st.door.x - S.fx, st.door.y - S.fy) < 380) sp = stationSpawn();
     if (!sp) sp = roadSpawnPoint(85, 150, lvl >= 3 && Math.random() < 0.5);
     if (!sp && force) sp = roadSpawnPoint(50, 200, false);
     if (!sp) return null;
@@ -934,7 +937,7 @@
     for (const p of S.cops) {
       if (p.removed || p.dead || !p.ai || p.ai.owner !== 'police') continue;
       const a = p.ai, d = a.indoor ? 0 : Math.hypot(p.x - S.fx, p.y - S.fy), seen = a.indoor || X.inView(p.x, p.y, 3);
-      const lim = a.state === 'leave' ? 40 : a.blockRef ? 1e9 : purge && a.state !== 'patrol' && !a.station ? 40 : a.station ? 240 : 190;
+      const lim = a.state === 'leave' ? 40 : a.blockRef ? 1e9 : a.post ? 320 : purge && a.state !== 'patrol' && !a.station ? 40 : a.station ? 240 : 190;
       if (d > lim && !seen) { p.removed = true; continue; }
       S.cops[keep++] = p;
     }

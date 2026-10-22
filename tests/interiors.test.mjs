@@ -44,18 +44,17 @@ check('about one building in four gets a generic door of all six kinds', gens.ev
 check('doors stand on free pavement', api.bad === 0, api.bad);
 check('X.interiors.bank ready from the start', api.bank && api.cash > 10000 && !api.alarm && !api.open, api);
 
-// ---------- 2. F at the bank door ----------
+// ---------- 2. walk into the bank door ----------
 await t.eval(() => { const X = PG.gta, d = X.interiors.doors.find(q => q.place === 'bank'), p = X.player.ped; p.x = d.x + d.nx * 1.2; p.y = d.y + d.ny * 1.2; p.th = Math.atan2(-d.ny, -d.nx); X.cam.x = p.x; X.cam.y = p.y; });
-await t.wait(500);
-const hint = await t.eval(() => document.querySelector('#gta-hud .g-hint').textContent);
-check('standing at a door shows the enter hint', /Enter Fjord Savings Bank/.test(hint), hint);
+await t.wait(300);
 await t.shot('int-01-bank-door');
-await t.press('KeyF'); await t.wait(350);
+await t.eval(() => { const X = PG.gta, d = X.interiors.doors.find(q => q.place === 'bank'), p = X.player.ped; p.x = d.x + d.nx * 0.4; p.y = d.y + d.ny * 0.4; });
+await t.wait(350);
 const inBank = await t.eval(() => {
   const X = PG.gta, sc = X.scene, p = X.player.ped, f = X.focus();
   return { id: sc && sc.id, name: sc && sc.name, inside: !!sc && p.x > sc.x0 && p.x < sc.x1 && p.y > sc.y0 && p.y < sc.y1, free: !X.blocked(p.x, p.y, p.r), focus: sc && Math.hypot(f.x - sc.cityPos.x, f.y - sc.cityPos.y) < 0.1, enter: window.__ev.enter, peds: sc ? sc.peds.length : 0, guards: sc ? sc.peds.filter(q => q.team === 'guard').length : 0 };
 });
-check('F at the door walks into the bank', inBank.id === 'bank' && inBank.inside && inBank.free && inBank.focus && inBank.enter === 1, inBank);
+check('walking into the door enters the bank', inBank.id === 'bank' && inBank.inside && inBank.free && inBank.focus && inBank.enter === 1, inBank);
 check('the bank has tellers, customers and 3 armed guards', inBank.guards === 3 && inBank.peds >= 6, inBank);
 await t.wait(500); await t.shot('int-02-bank-lobby');
 

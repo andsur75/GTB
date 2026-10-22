@@ -76,7 +76,8 @@
     return {
       doors: [], scenes: new Map(), free: [], nslot: 0, cur: null, gmin: 0, rob: null, warn: null, fade: null, padIn: null, doorArmed: true,
       bubbles: [], tracers: [], mus: { song: null, next: 0, step: 0, on: false }, ringT: 0, drillT: 0, beepT: 0, lastHurt: 0,
-      stats: { entered: 0, left: 0, robberies: 0, tellers: 0, vaults: 0, loot: 0, bought: 0, healed: 0, slept: 0, fines: 0, drinks: 0, safes: 0, crates: 0 },
+      stats: { entered: 0, left: 0, robberies: 0, tellers: 0, vaults: 0, loot: 0, bought: 0, healed: 0, slept: 0, fines: 0, drinks: 0, safes: 0, crates: 0, heists: 0, heistTake: 0, heistBest: 0, heistTime: 0, hostages: 0, boxes: 0, keycards: 0, camsOff: 0, waves: 0 },
+      gold: 0, goldMul: 1, bankTold: false,
     };
   }
   const live = () => X.active && !!S;
@@ -359,7 +360,7 @@
     // manager's office behind glass
     b.vwall(10.2, 11.25, 16.85, [], 'glass'); b.hwall(16.6, 0.25, 10.2, [[7.2, 1.7]], 'glass');
     b.f('desk', 4.5, 13.4, 2.6, 1.2, { solid: 'low', c: '#5a3a24', pc: 1, face: 's' }); b.f('chair', 4.5, 12.4, 0.6, 0.6, { rot: Math.PI / 2 });
-    b.ped('clerk', 4.5, 12.4, Math.PI / 2, { look: 'suit', sit: true });
+    b.ped('clerk', 4.5, 12.4, Math.PI / 2, { look: 'suit', sit: true, keycard: true });
     b.f('fishtank', 0.95, 14.2, 0.8, 2.6, { solid: 'tall', fragile: true });
     b.f('plant', 9.3, 12.0, 0.9, 0.9, { solid: 'low' }); b.f('plant', 1.3, 21.4, 1, 1, { solid: 'low' }); b.f('plant', 34.7, 21.4, 1, 1, { solid: 'low' });
     b.f('plant', 1.3, 32.6, 1, 1, { solid: 'low' }); b.f('plant', 34.7, 32.6, 1, 1, { solid: 'low' });
@@ -369,6 +370,7 @@
     b.zone(0, 0.5, 36, 19.2);
     // the vault: a 1.2 m wall with a round door, cash inside
     b.hwall(11, 0.25, 35.75, [[31.6, 2.2]]);
+    sc.st.secGap = sc.gaps[sc.gaps.length - 1];   // the security door to the vault corridor: keycard only
     b.wall(13.2, 0.5, 14.4, 3.5); b.wall(13.2, 7.1, 14.4, 10.75);
     sc.st.plug = b.wall(13.2, 3.5, 14.4, 7.1, 'plug');
     sc.st.vault = b.f('vault', 13.8, 5.3, 3.5, 3.5, { layer: 3 });
@@ -392,7 +394,7 @@
     b.act(24.5, 32.0, 1.3, () => 'F: Use the ATM', () => atm());
     b.act(16.3, 5.6, 2.4, () => vaultHint(sc), () => startDrill(sc));
     b.ped('guard', 3.2, 22.6, 0.4, { weapon: 'pistol', armor: 50 }); b.ped('guard', 32.8, 22.6, Math.PI - 0.4, { weapon: 'pistol', armor: 50 });
-    b.ped('guard', 33.4, 14.2, -Math.PI / 2, { weapon: 'pistol', armor: 50, sit: true });
+    b.ped('guard', 33.4, 14.2, -Math.PI / 2, { weapon: 'pistol', armor: 50, sit: true, sec: true });
     b.ped('customer', 7.6, 21.9, -Math.PI / 2, { chance: 0.85 }); b.ped('customer', 12.5, 22, -Math.PI / 2, { chance: 0.6 }); b.ped('customer', 17.5, 22.1, -Math.PI / 2, { chance: 0.5 });
     b.ped('customer', 11.5, 31.8, Math.PI / 2, { chance: 0.5 }); b.ped('customer', 20, 28.5, 0, { chance: 0.6 }); b.ped('sitter', 34.0, 25, Math.PI, { chance: 0.5 });
     b.browse(11.5, 31.8, Math.PI / 2); b.browse(24.5, 31.8, Math.PI / 2); b.browse(6, 28, 0); b.browse(30, 29, Math.PI); b.browse(13, 25, -1); b.browse(23, 25.5, -2);
@@ -400,6 +402,14 @@
     b.light(6, 14, 7, '#ffe6c0', 0.6, { fix: 'panel' }); b.light(19, 15.5, 8, '#ffe6c0', 0.6, { fix: 'panel' }); b.light(31, 15.5, 7, '#ffe6c0', 0.6, { fix: 'panel' });
     b.light(25, 5, 10, '#d8ecff', 0.75, { fix: 'panel' }); b.light(6.5, 5.5, 8, '#cfe4ff', 0.8, { fix: 'panel' });
     b.win(4, 33.5, 14, 34); b.win(22, 33.5, 32, 34); b.win(35.5, 22, 36, 32); b.win(0, 22, 0.5, 32);
+    // the full program: camera monitors, the manager's desk drawer, the security door, hostages, deposit boxes, the service exit
+    b.act(31.1, 14.4, 1.4, () => monHint(sc), () => smashMonitors(sc));
+    b.act(4.5, 14.9, 1.3, () => drawerHint(sc), () => startDrawer(sc));
+    b.act(31.6, 12.1, 1.3, () => secHint(sc), () => swipeCard(sc));
+    b.act(18, 26.5, 12, () => shoutHint(sc), () => shout(sc));
+    for (let i = 0; i < BOXES_N; i++) b.act(BOX_X0 + i * BOX_DX, 2.2, 1.2, () => boxHint(sc, i), () => startBox(sc, i));
+    b.act(35.0, 7.5, 1.4, () => backHint(sc), () => backExit(sc));
+    jobFresh(sc);
   };
   L.police = (sc, b) => {
     Object.assign(sc, { camSpan: 26, ambient: 0.8, wallTop: '#2c3646', wallLo: '#1a2029', wallHi: '#56657d' });
@@ -866,6 +876,7 @@
     if (!st.plug.q) st.plug.q = addSolid(sc, st.plug, 'tall');
     if (st.doorQ) { removeSolid(sc, st.doorQ); st.doorQ = null; }
     for (const l of sc.loot) { l.taken = false; l.amount = l.a0; }
+    jobFresh(sc);
     buildNav(sc);
     if (X.scene === sc) populate(sc);
   }
@@ -1162,7 +1173,8 @@
     X.crime('heist', p.x, p.y, { place: 'bank', reason });
     X.emit('heistAlarm', { x: d.x, y: d.y, level: 3, reason, scene: sc });
     alarmScene(sc);
-    X.pager(reason === 'vault' ? 'The drill tripped every alarm in the building. Seven seconds. Stay next to the vault and stay alive.' : 'The alarm is ringing at Fjord Savings Bank. Every cop in Bussby is on the way.', 6000);
+    alarmJob(sc, reason);
+    X.pager(reason === 'vault' ? 'The drill tripped every alarm in the building. Seven seconds. Stay next to the vault and stay alive.' : reason === 'camera' ? 'Artur: The cameras saw your gun, genius. Silent alarm. The police are on the way.' : reason === 'witness' ? 'Artur: Somebody ran out the front door screaming. The police are on the way.' : 'The alarm is ringing at Fjord Savings Bank. Every cop in Bussby is on the way.', 6000);
   }
   function vaultHint(sc) {
     const st = sc.st;
@@ -1177,6 +1189,7 @@
     st.drill.on = true; st.drill.away = 0;
     sfx('clunk');
     X.popup('Thermal drill on. Stay close!');
+    jobStart(sc);
     bankAlarm(sc, 'vault');
   }
   const VAULT_HINGE = [14.5, 3.55], VAULT_SWING = -1.9;
@@ -1200,6 +1213,7 @@
         buildNav(sc);
       }
     }
+    jobTick(sc, dt);
     if (st.vaultOpen && st.doorA > 0.3 && !p.dead) for (const l of sc.loot) if (!l.taken && Math.abs(l.x - p.x) < 1.1 && Math.abs(l.y - p.y) < 1.1 && Math.hypot(l.x - p.x, l.y - p.y) < 1.05) takeLoot(sc, l);
   }
   function openVault(sc) {
@@ -1214,10 +1228,376 @@
   function takeLoot(sc, l) {
     l.taken = true;
     X.addLoot(l.amount, l.x, l.y);
+    sc.st.job.take += l.amount;
+    if (l.kind === 'gold') addGold(2);
     S.stats.loot += l.amount;
     sfx('cash');
     PG.burst(l.x, l.y, 'confetti', 8, 2.5, 0.8, 0.18, l.kind === 'gold' ? ['#ffd23a', '#d4af37'] : ['#3fae6a', '#7dff9a']);
     if (!cashLeft(sc)) X.popup('Vault cleaned out. Now get it home!');
+  }
+
+  // ---- the full program: casing, keycard, hostages, vault, deposit boxes, escape, the score ----
+  // All of it lives in sc.st.job (fresh again on resetBank). The police timer starts with the alarm: disabled
+  // cameras buy time, hostages on the floor slow the clock, people who run out the door speed it up; then the
+  // police storm in through the front door in waves (SWAT from the third).
+  const BOXES_N = 6, BOX_X0 = 16.5, BOX_DX = 3.4, DRAWER_T = 6, BOX_T = 2.5, CAM_T = 2.5, WAVES = 5;
+  const CIV = { customer: 1, sitter: 1, teller: 1 };
+  const BOX_ITEMS = [
+    ['A jar of pickled herring. Artur will love it.', 60], ["Grandma Solberg's secret lefse recipe.", 250], ['A signed photo of the 1987 Bussby Bus Driver of the Year.', 120],
+    ["Forty-two unpaid parking tickets. All of them Artur's.", 40], ['A Viking helmet. Plastic. Made in Bergen.', 80], ['A whole brunost. Aged. Very aged.', 90],
+    ['A rubber duck in a tiny suit.', 150], ['Love letters to the city council. Unsent. Thank god.', 70], ['A gold-plated bus ticket. Single fare.', 400],
+  ];
+  function jobFresh(sc) {
+    sc.st.job = { t0: null, card: false, cardHow: null, camsOff: false, camsEarly: false, monBroken: false, secOpen: false, drawer: 0, drawerOn: false, mgrAim: 0, mgrSaid: false,
+      hostages: 0, hostMax: 0, nerve: 0, nerveWarn: false, boltT: 0, fled: 0, runners: new Set(), shouted: false, copT: 0, wave: 0, boxes: new Array(BOXES_N).fill(0), boxOn: -1, boxP: 0,
+      take: 0, items: [], camSeen: 0, spot: null, scored: false, mgr: null };
+    lockSec(sc);
+  }
+  function jobStart(sc) { const J = sc.st.job; if (J && J.t0 == null) J.t0 = X.time; }
+  function alarmJob(sc, reason) {
+    const J = sc.st.job; if (!J) return;
+    jobStart(sc);
+    J.copT = 30 + (J.camsEarly ? 20 : 0); J.wave = 0;
+    if (J.camsEarly) X.popup('No camera footage: the police take their time. Use it!', 3000);
+  }
+  const camAng = (f, t) => f.a + Math.sin(t * 0.6 + f.x) * 0.55;
+  function lockSec(sc) {
+    const g = sc.st.secGap; if (!g) return;
+    g.door = false; g.a = 0; g.open = false; g.locked = true;
+    if (!g.q) g.q = addSolid(sc, { x0: g.x - g.w / 2, y0: g.y - TW / 2, x1: g.x + g.w / 2, y1: g.y + TW / 2 }, 'tall');
+  }
+  function unlockSec(sc, how) {
+    const g = sc.st.secGap, J = sc.st.job; if (!g || !g.locked) return;
+    g.locked = false; g.door = true; removeSolid(sc, g.q); g.q = null; J.secOpen = true;
+    buildNav(sc); jobStart(sc);
+    if (how === 'blown') { PG.burst(g.x, g.y, 'debris', 14, 5, 0.9, 0.14, ['#6f757d', '#9aa0a8']); X.popup('The security door is scrap metal now. Subtle.'); }
+    else { sfx('beep'); X.popup('Beep. Green light. The vault corridor is open.'); }
+    X.emit('bankDoorOpen', { scene: sc, how });
+  }
+  function camsOff(sc, why) {
+    const J = sc.st.job; if (J.camsOff) return;
+    J.camsOff = true; J.spot = null; if (!sc.st.alarm) J.camsEarly = true;
+    S.stats.camsOff++; jobStart(sc);
+    X.popup(why === 'guard' ? 'Security guard asleep. Nobody is watching the cameras.' : 'Monitors smashed. The cameras are blind.', 3000);
+    X.emit('bankCamsOff', { scene: sc, why });
+  }
+  function giveCard(sc, from, how) {
+    const J = sc.st.job; if (J.card) return;
+    J.card = true; J.cardHow = how; S.stats.keycards++; jobStart(sc);
+    sfx('beep'); if (from) X.floatText(from.x, from.y, 'KEYCARD', '#7dd0ff');
+    X.popup(how === 'drawer' ? 'Drawer open: a keycard under the biscuits. The security door is yours.' : 'Got the manager\'s keycard. The security door is yours.', 3000);
+    X.emit('bankKeycard', { scene: sc, how });
+  }
+  // A punch on the unsuspecting manager or the security guard puts them to sleep without a fuss.
+  function quietKO(sc, p, e) {
+    const a = p.ai, sp = a.sp || {};
+    if (e.kind !== 'melee' || !(sp.keycard || sp.sec) || a.st === 'fight' || a.out) return false;
+    if (p.sitting) standUp(sc, p);
+    Object.assign(a, { out: true, role: 'ko', armed: false, melee: false, st: 'cower', t: 1e6, hostage: false });
+    p.pose = 'lie'; p.holster = true;
+    if (S.warn && S.warn.who === p) S.warn = null;
+    say(p, pick(['ZZZ...', 'MAMMA?', 'UFF...']), '#9aa0a8');
+    if (sp.keycard) giveCard(sc, p, 'ko');
+    if (sp.sec) camsOff(sc, 'guard');
+    else X.popup('Out cold. Quietly.');
+    return true;
+  }
+  function monHint(sc) { return sc.st.job.monBroken ? null : 'F: Smash the camera monitors'; }
+  function smashMonitors(sc) {
+    const J = sc.st.job; if (J.monBroken) return;
+    J.monBroken = true;
+    const f = sc.furn.find(q => q.t === 'monitors'); if (f) { f.broken = true; PG.burst(f.x, f.y, 'spark', 18, 5, 0.5, 0.1); PG.burst(f.x, f.y, 'debris', 10, 3, 0.7, 0.1, ['#1d3a52', '#c8d8e8']); }
+    sfx('glass'); G().shake = Math.max(G().shake, 0.15);
+    const g = sc.peds.find(q => mine(q) && q.ai.sp && q.ai.sp.sec && !q.dead && !q.ai.out); if (g) provoke(sc, g);
+    camsOff(sc, 'monitors');
+  }
+  function drawerHint(sc) {
+    const J = sc.st.job; if (J.card) return null;
+    return J.drawerOn ? 'Picking the drawer lock: ' + Math.round(J.drawer * 100) + '%' : 'F: Pick the desk drawer lock';
+  }
+  function startDrawer(sc) {
+    const J = sc.st.job; if (J.card || J.drawerOn) return;
+    J.drawerOn = true; sfx('clunk'); jobStart(sc);
+    const m = sc.peds.find(q => mine(q) && q.ai.sp && q.ai.sp.keycard && !q.dead && !q.ai.out && q.ai.st !== 'flee');
+    if (m && m.ai.st !== 'cower') { say(m, 'THAT IS MY DESK!', '#ff6b5a'); panic(sc, m); }
+  }
+  function secHint(sc) { const J = sc.st.job; if (J.secOpen) return null; return J.card ? 'F: Swipe the keycard' : 'Security door: locked (the manager has a keycard)'; }
+  function swipeCard(sc) {
+    const J = sc.st.job; if (J.secOpen) return;
+    if (!J.card) { sfx('deny'); X.popup('Red light. The manager carries the keycard: hold him up, punch him, or pick his desk drawer.', 3200); return; }
+    unlockSec(sc, 'card');
+  }
+  function civsInSight(sc) {
+    const p = P.ped, out = [];
+    for (const q of sc.peds) {
+      const a = q.ai;
+      if (!mine(q) || q.dead || q.removed || a.out || a.hostage || !(CIV[a.role] || (a.sp && a.sp.keycard))) continue;
+      if (Math.hypot(q.x - p.x, q.y - p.y) > 15 || !sightClear(sc, p.x, p.y, q.x, q.y)) continue;
+      out.push(q);
+    }
+    return out;
+  }
+  function shoutHint(sc) {
+    if (!isGun(P.weapon) || P.ped.dead) return null;
+    const J = sc.st.job;
+    if (civsInSight(sc).length) return 'F: "Everybody down!"';
+    return J.hostages && J.nerve < 0.6 ? 'F: "Stay down!"' : null;
+  }
+  function shout(sc) {
+    const J = sc.st.job, p = P.ped, list = civsInSight(sc);
+    J.nerve = 1; J.nerveWarn = false; J.boltT = 0; jobStart(sc);
+    X.floatText(p.x, p.y - 0.6, list.length ? 'EVERYBODY DOWN!' : 'STAY DOWN!', '#ffd23a');
+    G().shake = Math.max(G().shake, 0.12);
+    for (const q of list) {
+      const a = q.ai; if (q.sitting) standUp(sc, q);
+      Object.assign(a, { hostage: true, st: 'cower', t: 1e6, path: null }); q.pose = 'cower';
+      if (Math.random() < 0.5) say(q, pick(['OKAY OKAY!', 'DON\'T SHOOT!', 'I AM DOWN! I AM DOWN!', 'UFF DA!', 'NOT THE FACE!']), '#ffd23a');
+    }
+    if (!list.length) return;
+    if (!J.shouted) {
+      J.shouted = true;
+      X.crime('robbery', p.x, p.y, { place: 'bank' });
+      if (!sc.st.alarm && !J.camsOff) { X.popup('The cameras saw that. Security hit the silent alarm!'); bankAlarm(sc, 'camera'); }
+      else hostileAll(sc, 'guard');
+    }
+    sfx('punch');
+  }
+  function boxHint(sc, i) {
+    const J = sc.st.job; if (J.boxes[i]) return null;
+    return J.boxOn === i ? 'Cracking box ' + (i + 1) + ': ' + Math.round(J.boxP * 100) + '%' : 'F: Crack deposit box ' + (i + 1);
+  }
+  function startBox(sc, i) { const J = sc.st.job; if (J.boxes[i] || J.boxOn === i) return; J.boxOn = i; J.boxP = 0; sfx('clunk'); jobStart(sc); }
+  function openBox(sc, i) {
+    const J = sc.st.job, x = sc.ox + BOX_X0 + i * BOX_DX, y = sc.oy + 1.6, r = Math.random();
+    J.boxes[i] = 1; J.boxOn = -1; S.stats.boxes++; sfx('cash');
+    let amt, msg;
+    if (r < 0.5) { amt = Math.round(rand(300, 1100) / 10) * 10; msg = 'Box ' + (i + 1) + ': $' + amt + ' in old kroner. Close enough.'; }
+    else if (r < 0.75) { amt = 900; addGold(1); msg = 'Box ' + (i + 1) + ': a gold bar! Heavy. You walk slower.'; }
+    else { const it = pick(BOX_ITEMS); amt = it[1]; J.items.push(it[0]); msg = 'Box ' + (i + 1) + ': ' + it[0] + ' ($' + amt + ')'; }
+    X.addLoot(amt, x, y); J.take += amt; S.stats.loot += amt;
+    PG.burst(x, y, 'confetti', 8, 2.5, 0.8, 0.18, r >= 0.5 && r < 0.75 ? ['#ffd23a', '#d4af37'] : ['#3fae6a', '#7dff9a']);
+    X.popup(msg, 3200);
+    X.emit('bankBox', { scene: sc, box: i, amount: amt });
+  }
+  function backHint(sc) { return 'F: Service exit (back alley)'; }
+  // Out of the back: a free spot on the far side of the bank building (or a side of it), else the front door.
+  function backSpot(sc) {
+    const pl = X.places && X.places.bank, b = pl && pl.b, d = sc.cityDoor; if (!b) return null;
+    const cx = (b.x0 + b.x1) / 2, cy = (b.y0 + b.y1) / 2, hw = (b.x1 - b.x0) / 2, hh = (b.y1 - b.y0) / 2;
+    for (const n of [[-d.nx, -d.ny], [d.ny, -d.nx], [-d.ny, d.nx]]) {
+      const ext = Math.abs(n[0]) * hw + Math.abs(n[1]) * hh + 1.4, tx = -n[1], ty = n[0], span = Math.abs(tx) * hw + Math.abs(ty) * hh - 1;
+      for (const o of [0, 3, -3, 6, -6, 9, -9]) {
+        if (Math.abs(o) > span) continue;
+        const x = cx + n[0] * ext + tx * o, y = cy + n[1] * ext + ty * o;
+        if (!X.blocked(x, y, 0.7)) return { x, y, th: Math.atan2(n[1], n[0]) };
+      }
+    }
+    return null;
+  }
+  function backExit(sc) {
+    const q = backSpot(sc);
+    if (!q) { X.popup('The service door is blocked from outside. Front door it is.'); sfx('deny'); return; }
+    sc.st.job.back = true;
+    sfx('door');
+    X.leaveScene(q.x, q.y, q.th);
+    S.doorArmed = false;
+    X.popup('Out the back. Nobody saw that. Probably.');
+  }
+  function addGold(n) {
+    S.gold += n;
+    if (S.gold === n) X.pager('Artur: Gold is heavy, kid. You will walk like my uncle after Christmas. Get it home.', 5000);
+  }
+  // Gold slows you down until the loot is home (or lost).
+  function heavyTick() {
+    const p = P.ped; if (!p) return;
+    if (S.gold && !(P.loot > 0)) S.gold = 0;
+    const m = S.gold ? Math.max(0.6, 1 - 0.07 * S.gold) : 1;
+    if (S.goldMul !== m || (S.gold && p.speedMul !== m)) { p.speedMul = m; S.goldMul = m; }
+  }
+  function spawnWave(sc, w) {
+    const J = sc.st.job, swat = w >= 3, live = sc.peds.filter(q => mine(q) && !q.dead && q.ai.wave).length, n = Math.min(2 + w, 9 - live);
+    if (!LOOKS.swat) LOOKS.swat = () => ({ outfit: 'swat', shirt: '#262a31', pants: '#1b1e24', hat: '#0b0d10', hair: '#111111' });
+    const s = sc.spawn, gun = swat && X.WEAPONS && X.WEAPONS.uzi ? 'uzi' : 'pistol';
+    let k = 0;
+    for (let i = 0; i < n; i++) {
+      const x = s.x + ((i % 3) - 1) * 1.3, y = s.y + 0.4 - Math.floor(i / 3) * 1.1;
+      if (!freeAt(sc, x, y, 0.4)) continue;
+      const q = spawnPed(sc, { role: 'cop', team: 'cop', look: swat ? 'swat' : 'cop', weapon: gun, armor: swat ? 60 : 20, hp: swat ? 130 : 100, x, y, th: -Math.PI / 2 });
+      q.ai.wave = w; if (swat) q.dmgMul = 0.32;
+      provoke(sc, q); if (!k++) say(q, swat ? 'SWAT! EVERYBODY ON THE FLOOR!' : 'POLITI! NOBODY MOVE!', '#7dd0ff');
+    }
+    S.stats.waves++; sfx('door'); G().shake = Math.max(G().shake, 0.25);
+    X.big(swat ? 'SWAT!' : 'POLITI!', '#ff4a3a', 1800, w === 1 ? 'the police are storming the bank' : 'wave ' + w + ' through the front door');
+    if (w === 1) X.pager('Artur: They are coming in the front. The service door at the back of the vault corridor is yours, if you have the keycard.', 6000);
+    X.emit('bankWave', { scene: sc, wave: w, n: k, swat });
+  }
+  function jobTick(sc, dt) {
+    const st = sc.st, J = st.job, p = P.ped; if (!J) return;
+    const play = !p.dead && P.state === 'play';
+    // the security office
+    if (!J.camsOff) {
+      const g = sc.peds.find(q => q.ai && q.ai.sp && q.ai.sp.sec);
+      if (!g || g.dead || g.ai.out) camsOff(sc, 'guard');
+    }
+    J.spot = null;
+    if (!J.camsOff && !st.alarm && play && isGun(P.weapon)) {
+      const t = X.renderT || X.time;
+      for (const f of sc.furn) {
+        if (f.t !== 'camera') continue;
+        const dx = p.x - f.x, dy = p.y - f.y;
+        if (dx * dx + dy * dy > 56 || Math.abs(wrap(Math.atan2(dy, dx) - camAng(f, t))) > 0.4 || !sightClear(sc, f.x, f.y, p.x, p.y)) continue;
+        J.spot = f; break;
+      }
+    }
+    if (J.spot) { J.camSeen += dt; if (J.camSeen > CAM_T) { X.popup('A camera saw your gun. Security hit the silent alarm!', 3000); bankAlarm(sc, 'camera'); } }
+    else J.camSeen = Math.max(0, J.camSeen - dt * 0.5);
+    // the manager: point a gun at him and he hands over the keycard
+    if (!J.card) {
+      const m = sc.peds.find(q => mine(q) && q.ai.sp && q.ai.sp.keycard && !q.removed);
+      J.mgr = m && !m.dead && !m.ai.out && m.ai.st !== 'flee' ? m : null;
+      let aim = false;
+      if (J.mgr && play && isGun(P.weapon) && !P.car) {
+        const dx = m.x - p.x, dy = m.y - p.y, d = Math.hypot(dx, dy);
+        aim = d < 9 && d > 0.3 && Math.abs(wrap(Math.atan2(dy, dx) - p.th)) < 0.34 && sightClear(sc, p.x, p.y, m.x, m.y);
+      }
+      if (aim) {
+        J.mgrAim += dt; const a = m.ai;
+        if (a.st !== 'hands') { if (m.sitting) standUp(sc, m); a.st = 'hands'; m.pose = 'hands'; }
+        a.t = 1.2;
+        if (!J.mgrSaid) { J.mgrSaid = true; say(m, pick(['OKAY! THE CARD! TAKE THE CARD!', 'I AM JUST THE MANAGER!', 'PLEASE! I HAVE A CAT!']), '#ffd23a'); }
+        if (J.mgrAim >= 1.6) { giveCard(sc, m, 'gunpoint'); say(m, 'THE CODE IS 1234. IT IS ALWAYS 1234.', '#ffd23a'); X.crime('robbery', m.x, m.y, { place: 'bank' }); }
+      } else J.mgrAim = Math.max(0, J.mgrAim - dt);
+      if (J.drawerOn) {
+        const dx = sc.ox + 4.5 - p.x, dy = sc.oy + 14.9 - p.y;
+        if (play && Math.hypot(dx, dy) < 1.7) { J.drawer = Math.min(1, J.drawer + dt / DRAWER_T); if (Math.random() < dt * 6) PG.burst(sc.ox + 4.5, sc.oy + 14, 'spark', 1, 3, 0.25, 0.06); }
+        if (J.drawer >= 1) { J.drawerOn = false; giveCard(sc, null, 'drawer'); }
+      }
+    }
+    // deposit boxes
+    if (J.boxOn >= 0) {
+      const bx = sc.ox + BOX_X0 + J.boxOn * BOX_DX, by = sc.oy + 2.2;
+      if (play && Math.hypot(bx - p.x, by - p.y) < 1.6) { J.boxP += dt / BOX_T; if (Math.random() < dt * 14) PG.burst(bx, by - 0.7, 'spark', 1, 4, 0.3, 0.07); if (J.boxP >= 1) openBox(sc, J.boxOn); }
+      else if (Math.hypot(bx - p.x, by - p.y) > 4) J.boxOn = -1;
+    }
+    // hostages
+    let n = 0;
+    for (const q of sc.peds) {
+      if (!mine(q) || q.dead || q.removed) continue;
+      const a = q.ai;
+      if (a.out) { a.st = 'cower'; a.t = 1e6; q.pose = 'lie'; a.path = null; continue; }
+      if (a.hostage) { if (a.st !== 'cower') { a.st = 'cower'; a.path = null; } a.t = 1e6; q.pose = 'cower'; n++; }
+      else if (a.st === 'flee' && !a.wave) J.runners.add(q);
+    }
+    for (const q of J.runners) {
+      if (q.removed && !q.dead) { J.runners.delete(q); J.fled++; witness(sc); }
+      else if (q.dead || q.removed || q.ai.st !== 'flee') J.runners.delete(q);
+    }
+    J.hostages = n; J.hostMax = Math.max(J.hostMax, n);
+    if (n) {
+      const away = p.y < sc.oy + 19.4;   // behind the counter: nobody is watching them
+      J.nerve = Math.max(0, J.nerve - dt / (away ? 26 : 45));
+      if (J.nerve < 0.35 && !J.nerveWarn) { J.nerveWarn = true; X.popup('The hostages are getting brave. Back to the lobby and shout!', 3000); }
+      if (J.nerve <= 0) {
+        J.boltT -= dt;
+        if (J.boltT <= 0) {
+          J.boltT = rand(3, 6);
+          const hs = sc.peds.filter(q => mine(q) && !q.dead && q.ai.hostage), q = hs.length && pick(hs);
+          if (q) { Object.assign(q.ai, { hostage: false, st: 'flee', path: null }); q.pose = null; say(q, pick(['I AM OUT OF HERE!', 'RUN!', 'HJELP! POLITI!']), '#ffd23a'); }
+        }
+      }
+    }
+    // the police clock
+    if (st.alarm && J.wave < WAVES) {
+      J.copT -= dt / (1 + 0.18 * Math.min(n, 8));
+      if (J.copT <= 0) { J.wave++; spawnWave(sc, J.wave); J.copT = 24; }
+    }
+  }
+  function witness(sc) {
+    const J = sc.st.job;
+    if (!sc.st.alarm) { X.popup('Somebody ran out the front door. They will call the police!', 3000); bankAlarm(sc, 'witness'); J.copT = Math.max(12, J.copT - 10); }
+    else if (J.wave < WAVES) { J.copT = Math.max(3, J.copT - 8); X.popup('A hostage got away: the police come sooner!', 2500); }
+  }
+  // The score when you walk out with something.
+  function scoreJob(sc) {
+    const J = sc.st.job; if (!J || J.scored || !J.take) return;
+    J.scored = true;
+    const secs = Math.max(0, Math.round(X.time - (J.t0 == null ? X.time : J.t0))), mm = Math.floor(secs / 60) + ':' + String(secs % 60).padStart(2, '0');
+    const boxes = J.boxes.reduce((s, b) => s + b, 0);
+    const grade = !sc.st.alarm ? 'GHOST' : J.wave === 0 ? 'CLEAN GETAWAY' : J.wave < 3 ? 'HOT EXIT' : 'WAR ZONE';
+    S.stats.heists++; S.stats.heistTake += J.take; S.stats.heistBest = Math.max(S.stats.heistBest, J.take); S.stats.hostages += J.hostMax; S.stats.heistTime = secs;
+    X.big('$' + J.take, '#ffd23a', 5200, grade + ' · ' + mm + ' · ' + J.hostMax + ' hostage' + (J.hostMax === 1 ? '' : 's') + ' · ' + boxes + '/' + BOXES_N + ' boxes' + (J.back ? ' · out the back' : ''));
+    const said = J.take > 15000 ? 'That is a car park. A BIG car park.' : J.take > 5000 ? 'Not bad. Not a car park, but not bad.' : 'That is it? I have more in my sofa.';
+    X.pager('Artur: ' + said + ' $' + J.take + ' in ' + mm + (J.items.length ? ', plus ' + J.items.length + ' weird thing' + (J.items.length > 1 ? 's' : '') + ' from the boxes' : '') + '. Now get it home before the police take it back.', 8000);
+    X.emit('heistScore', { scene: sc, take: J.take, time: secs, hostages: J.hostMax, boxes, waves: J.wave, grade, back: !!J.back });
+  }
+  function jobSteps(sc) {
+    const st = sc.st, J = st.job, cash = cashLeft(sc);
+    let next;
+    if (!J.camsOff && !st.alarm) next = 'Blind the cameras: security office, behind the counter on the right';
+    else if (!J.card) next = 'Get the manager\'s keycard: his office, behind the counter on the left';
+    else if (!J.secOpen) next = 'Swipe the keycard at the security door';
+    else if (!st.vaultOpen) next = st.drill && st.drill.on ? 'Stay by the drill!' : 'Drill the vault (F at the vault door)';
+    else if (cash) next = 'Grab the cash. Gold is heavy';
+    else if (J.boxes.some(b => !b)) next = 'Crack the deposit boxes, or get out';
+    else next = 'Get out: the front door or the service exit';
+    return next;
+  }
+  function drawJob(ctx, view, sc, t) {
+    const st = sc.st, J = st.job; if (!J) return;
+    const p = P.ped;
+    if (J.drawerOn && !J.card) ring(ctx, sc.ox + 4.5, sc.oy + 13.6, J.drawer, '#7dd0ff', 'DRAWER ' + Math.round(J.drawer * 100) + '%');
+    if (J.boxOn >= 0) ring(ctx, sc.ox + BOX_X0 + J.boxOn * BOX_DX, sc.oy + 1.4, J.boxP, '#ffd23a', 'BOX ' + Math.round(J.boxP * 100) + '%');
+    if (J.mgr && J.mgrAim > 0 && !J.card) ring(ctx, J.mgr.x, J.mgr.y, J.mgrAim / 1.6, '#7dd0ff', 'KEYCARD...');
+    if (J.spot && !st.alarm) { const s = X.toScreen(p.x, p.y); ctx.font = '800 14px ' + FONT; ctx.textAlign = 'center'; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.8)'; const tx = 'CAMERA! ' + Math.round(J.camSeen / CAM_T * 100) + '%'; ctx.strokeText(tx, s.x, s.y - 46); ctx.fillStyle = '#ff5a4a'; ctx.fillText(tx, s.x, s.y - 46); }
+    // the checklist, top right under the clock
+    const k = view.cw < 900 ? 0.78 : 1, W = 250, x0 = view.cw - (W + 14) * k, y0 = 168 * k;
+    const ok = '#7dff9a', no = '#c9ccd1', bad = '#ff6b5a', gold = '#ffd23a';
+    const dr = st.drill ? st.drill.prog : 0, boxes = J.boxes.reduce((s, b) => s + b, 0);
+    const rows = [
+      ['Cameras', J.camsOff ? 'OFF' : st.alarm ? 'ALARM' : 'WATCHING', J.camsOff ? ok : bad, J.camsOff],
+      ['Keycard', J.card ? 'GOT IT' : 'manager', J.card ? ok : no, J.card],
+      ['Security door', J.secOpen ? 'OPEN' : 'LOCKED', J.secOpen ? ok : no, J.secOpen],
+      ['Vault', st.vaultOpen ? 'OPEN' : dr > 0 ? 'DRILL ' + Math.round(dr * 100) + '%' : 'CLOSED', st.vaultOpen ? ok : dr > 0 ? '#ff8a3a' : no, st.vaultOpen],
+      ['Deposit boxes', boxes + '/' + BOXES_N, boxes === BOXES_N ? ok : no, boxes === BOXES_N],
+      ['Hostages', J.hostages ? J.hostages + ' down' : '-', J.hostages ? (J.nerve < 0.35 ? bad : gold) : no, false],
+      ['Police', !st.alarm ? 'not called' : J.wave >= WAVES ? 'EVERYWHERE' : J.wave ? 'WAVE ' + J.wave + ' · ' + Math.ceil(J.copT) + 's' : Math.ceil(J.copT) + 's', !st.alarm ? ok : bad, false],
+      ['Take', '$' + J.take + (S.gold ? ' · ' + S.gold + ' gold' : ''), gold, false],
+    ];
+    const next = jobSteps(sc), H = 34 + rows.length * 19 + 40;
+    ctx.save(); ctx.translate(x0, y0); ctx.scale(k, k);
+    ctx.fillStyle = 'rgba(12,13,16,0.78)'; PG.rr(ctx, 0, 0, W, H, 8); ctx.fill();
+    ctx.fillStyle = '#d4af37'; ctx.fillRect(0, 0, 4, H);
+    ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+    ctx.font = '900 15px ' + FONT; ctx.fillStyle = gold; ctx.fillText('THE JOB · FJORD SAVINGS', 14, 17);
+    ctx.font = '700 14px ' + FONT;
+    rows.forEach((r, i) => {
+      const y = 40 + i * 19;
+      ctx.textAlign = 'left'; ctx.fillStyle = r[3] ? ok : '#e9e4d8'; ctx.fillText((r[3] ? '✓ ' : '· ') + r[0], 14, y);
+      ctx.textAlign = 'right'; ctx.fillStyle = r[2]; ctx.fillText(r[1], W - 12, y);
+    });
+    if (J.hostages) { const y = 40 + 5 * 19 + 8; ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(14, y, W - 26, 3); ctx.fillStyle = J.nerve < 0.35 ? bad : gold; ctx.fillRect(14, y, (W - 26) * J.nerve, 3); }
+    ctx.textAlign = 'left'; ctx.font = '800 13px ' + FONT; ctx.fillStyle = gold;
+    const words = ('NEXT: ' + next).split(' '); let line = '', ly = 40 + rows.length * 19 + 6;
+    for (const w of words) { const tr = line ? line + ' ' + w : w; if (ctx.measureText(tr).width > W - 26 && line) { ctx.fillText(line, 14, ly); line = w; ly += 16; } else line = tr; }
+    ctx.fillText(line, 14, ly);
+    ctx.restore();
+  }
+  function drawJobWorld(ctx, sc, t) {
+    const st = sc.st, J = st.job, g = st.secGap, ox = sc.ox, oy = sc.oy; if (!J) return;
+    if (g && X.inView(g.x, g.y, 3)) {
+      if (g.locked) { rect(ctx, g.x - g.w / 2, g.y - 0.2, g.w, 0.4, '#4a5058'); rect(ctx, g.x - g.w / 2, g.y - 0.2, g.w, 0.08, '#7b8189'); for (let i = 1; i < 4; i++) rect(ctx, g.x - g.w / 2 + i * g.w / 4, g.y - 0.2, 0.04, 0.4, '#3a3f46'); }
+      rect(ctx, g.x + g.w / 2 + 0.15, g.y + 0.28, 0.32, 0.22, '#1b1f27'); disc(ctx, g.x + g.w / 2 + 0.31, g.y + 0.39, 0.06, g.locked ? (J.card && Math.sin(t * 6) > 0 ? '#ffd23a' : '#ff3a2a') : '#3fff7a');
+    }
+    for (let i = 0; i < BOXES_N; i++) {
+      const x = ox + BOX_X0 + i * BOX_DX, y = oy + 1.25; if (!X.inView(x, y, 1)) continue;
+      if (J.boxes[i]) { rect(ctx, x - 0.35, y - 0.25, 0.7, 0.45, '#15171b'); rect(ctx, x - 0.35, y + 0.2, 0.7, 0.12, '#9aa0a8'); }
+      else { ctx.strokeStyle = J.boxOn === i ? '#ff8a3a' : 'rgba(255,210,58,' + (0.45 + 0.3 * Math.sin(t * 3 + i)).toFixed(2) + ')'; ctx.lineWidth = 0.06; ctx.strokeRect(x - 0.35, y - 0.25, 0.7, 0.45); disc(ctx, x + 0.2, y, 0.05, '#d4af37'); }
+    }
+    if (J.monBroken) { const f = sc.furn.find(q => q.t === 'monitors'); if (f && X.inView(f.x, f.y, 3)) { rect(ctx, f.x - f.w / 2 + 0.15, f.y - f.h / 2 + 0.1, f.w - 0.3, 0.5, '#0a0b0d'); for (let i = 0; i < 4; i++) ln(ctx, f.x - f.w / 2 + 0.3 + i * 0.8, f.y - f.h / 2 + 0.12, f.x - f.w / 2 + 0.6 + i * 0.8, f.y - f.h / 2 + 0.55, '#5a6878', 0.03); if (Math.random() < 0.08) disc(ctx, f.x + rand(-1.4, 1.4), f.y - 0.2, 0.06, '#fff2b0'); } }
+    if (X.inView(ox + 35.6, oy + 7.5, 2)) {   // the service exit in the east wall
+      rect(ctx, ox + 35.45, oy + 6.6, 0.32, 1.8, '#7a1e1e'); rect(ctx, ox + 35.45, oy + 6.6, 0.32, 0.08, '#b0352a'); disc(ctx, ox + 35.55, oy + 7.8, 0.06, '#d4af37');
+      rect(ctx, ox + 34.95, oy + 6.0, 0.5, 0.26, '#1f6a3a'); wtext(ctx, 'EXIT', ox + 35.2, oy + 6.13, 0.16, '#d8ffe0', 900);
+    }
   }
 
   // ================= other in-building actions =================
@@ -2232,16 +2612,16 @@
       ctx.restore();
     }
     for (const f of sc.furn) if (f.layer === 2 && X.inView(f.x, f.y, Math.max(f.w, f.h) / 2 + 1)) drawFurn(ctx, f, t, sc);
-    if (sc.type === 'bank') drawVault(ctx, sc, t);
+    if (sc.type === 'bank') { drawVault(ctx, sc, t); drawJobWorld(ctx, sc, t); }
   }
   function drawTop(sc, ctx, view, t) {
     readSettings();
     for (const f of sc.furn) {
       if (f.layer !== 3 || f.t === 'vault' || !X.inView(f.x, f.y, 6)) continue;
       if (f.t === 'camera') {
-        const a = f.a + Math.sin(t * 0.6 + f.x) * 0.55;
-        ctx.fillStyle = sc.st.alarm ? 'rgba(255,60,40,0.10)' : 'rgba(255,255,200,0.06)'; ctx.beginPath(); ctx.moveTo(f.x, f.y); ctx.arc(f.x, f.y, 7, a - 0.35, a + 0.35); ctx.closePath(); ctx.fill();
-        ctx.save(); ctx.translate(f.x, f.y); ctx.rotate(a); rect(ctx, -0.12, -0.12, 0.42, 0.24, '#2b2d33'); disc(ctx, 0.3, 0, 0.08, '#111'); disc(ctx, -0.05, -0.05, 0.035, Math.sin(t * 4) > 0 ? '#ff3a2a' : '#5a1010'); ctx.restore();
+        const J = sc.type === 'bank' && sc.st.job, off = J && J.camsOff, a = off ? f.a : camAng(f, t);
+        if (!off) { ctx.fillStyle = sc.st.alarm ? 'rgba(255,60,40,0.10)' : J && J.spot === f ? 'rgba(255,60,40,' + (0.12 + 0.1 * Math.sin(t * 20)).toFixed(3) + ')' : 'rgba(255,255,200,0.06)'; ctx.beginPath(); ctx.moveTo(f.x, f.y); ctx.arc(f.x, f.y, 7, a - 0.35, a + 0.35); ctx.closePath(); ctx.fill(); }
+        ctx.save(); ctx.translate(f.x, f.y); ctx.rotate(a); rect(ctx, -0.12, -0.12, 0.42, 0.24, '#2b2d33'); disc(ctx, 0.3, 0, 0.08, '#111'); disc(ctx, -0.05, -0.05, 0.035, off ? '#2a2a2a' : Math.sin(t * 4) > 0 ? '#ff3a2a' : '#5a1010'); ctx.restore();
       } else if (f.t === 'mirror') { disc(ctx, f.x, f.y, 0.38, '#9aa0a8'); disc(ctx, f.x, f.y, 0.32, '#c9d4de'); disc(ctx, f.x - 0.08, f.y - 0.08, 0.1, 'rgba(255,255,255,0.7)'); }
     }
     if (sc.type === 'club') drawClubTop(sc, ctx, t);
@@ -2350,6 +2730,7 @@
     if (sc) {
       if (S.rob && S.rob.ped && !S.rob.ped.dead && !(S.rob.ped.ai.rob && S.rob.ped.ai.rob.done)) ring(ctx, S.rob.ped.x, S.rob.ped.y, S.rob.prog / 2, '#ffd23a', S.rob.ped.ai.role === 'owner' ? '' : 'HOLD IT...');
       const st = sc.st;
+      if (sc.type === 'bank') drawJob(ctx, view, sc, t);
       if (sc.type === 'bank' && st.drill && !st.vaultOpen && st.drill.prog > 0) ring(ctx, st.vault.x + 1.6, st.vault.y, st.drill.prog, st.drill.on ? '#ff8a3a' : '#9aa0a8', 'DRILL ' + Math.round(st.drill.prog * 100) + '%', 30);
       if (sc.type === 'office' && st.cracking && !st.safeOpen) ring(ctx, st.safe.x, st.safe.y, st.safeProg || 0, '#7dd0ff', 'SAFE ' + Math.round((st.safeProg || 0) * 100) + '%');
       if (sc.pads.length) {
@@ -2556,6 +2937,7 @@
         }
         if (f.t >= f.dur) S.fade = null;
       }
+      heavyTick();
       musicTick(); loopsTick(dt);
     },
     hud() { if (live() && (G().status !== 'play' || PG.audio.muted)) silence(); },
@@ -2599,6 +2981,7 @@
     const sc = curScene(), p = e && e.ped; if (!sc || !mine(p) || p.ai.sc !== sc) return;
     if (p.ai.role === 'artur') { if (X.byPlayer(e.by) && X.time - S.lastHurt > 1) { S.lastHurt = X.time; say(p, pick(LINES.arturHit), '#ffd23a'); } p.hp = p.maxHp; return; }
     if (!X.byPlayer(e.by) || p.dead) return;
+    if (sc.type === 'bank' && quietKO(sc, p, e)) return;
     if (e.kind === 'melee' && (sc.type === 'bar' || sc.type === 'club')) { brawl(sc, p); return; }
     provoke(sc, p);
     if (e.kind === 'melee' && sc.type !== 'bank' && sc.type !== 'police') { for (const q of sc.peds) if (mine(q) && q !== p && !q.dead && (q.ai.armed || q.ai.melee) && Math.hypot(q.x - p.x, q.y - p.y) < 12) provoke(sc, q); }
@@ -2615,6 +2998,32 @@
     if (sc.type === 'bank') bankAlarm(sc, 'murder');
   });
 
+  // the bank job: shots at the monitors, C4 on the doors, the manager's last words, the score on the way out
+  X.on('gunfire', e => {
+    const sc = curScene(); if (!sc || sc.type !== 'bank' || !e || !X.byPlayer(e.by) || !sc.st.job || sc.st.job.monBroken) return;
+    const f = sc.furn.find(q => q.t === 'monitors'), sh = e.by; if (!f || !sh) return;
+    const a = sh.aim != null ? sh.aim : sh.th || 0, dx = f.x - sh.x, dy = f.y - sh.y, along = dx * Math.cos(a) + dy * Math.sin(a), off = Math.abs(-dx * Math.sin(a) + dy * Math.cos(a));
+    if (along > 0 && along < 20 && off < 0.9 && sightClear(sc, sh.x, sh.y, f.x, f.y)) smashMonitors(sc);
+  });
+  X.on('explosion', e => {
+    const sc = curScene(); if (!sc || sc.type !== 'bank' || !e || !sc.st.job) return;
+    const st = sc.st, g = st.secGap;
+    if (g && g.locked && Math.hypot(e.x - g.x, e.y - g.y) < 3.5) unlockSec(sc, 'blown');
+    if (!st.vaultOpen && Math.hypot(e.x - (st.vault.x + 1.6), e.y - st.vault.y) < 3.5) { st.drill = st.drill || { prog: 0 }; st.drill.prog = 1; openVault(sc); X.popup('BOOM. That is one way to open a vault.'); }
+    const f = sc.furn.find(q => q.t === 'monitors'); if (f && Math.hypot(e.x - f.x, e.y - f.y) < 4) smashMonitors(sc);
+  });
+  X.on('pedKilled', e => {
+    const sc = curScene(), p = e && e.ped; if (!sc || sc.type !== 'bank' || !mine(p) || !sc.st.job || !p.ai.sp) return;
+    if (p.ai.sp.keycard) giveCard(sc, p, 'dead');
+  });
+  X.on('tellerRobbed', e => { if (live() && e && e.scene && e.scene.st.job) { e.scene.st.job.take += e.amount || 0; jobStart(e.scene); } });
+  X.on('interiorLeave', e => { if (live() && e && e.scene && e.scene.type === 'bank') scoreJob(e.scene); });
+  X.on('interiorEnter', e => {
+    if (!live() || !e || !e.scene || e.scene.type !== 'bank' || S.bankTold) return;
+    S.bankTold = true;
+    X.pager('Artur: The full program, kid. 1) Blind the cameras: smash the monitors in the security office, or put the guard to sleep. 2) The manager has the keycard for the security door: point, punch or pick his drawer. 3) "Everybody down!" Hostages on the floor slow the police. 4) Drill the vault, crack the deposit boxes. 5) Out the front, or the service exit at the back.', 16000);
+  });
+
   // ================= public API =================
   const bankApi = {
     get scene() { return S ? bankScene() : null; },
@@ -2625,6 +3034,8 @@
     get robbed() { const sc = S && bankScene(); return !!(sc && sc.st.robbedAt != null); },
     get vault() { const sc = S && bankScene(); return sc ? { x: sc.st.vault.x, y: sc.st.vault.y } : null; },
     reset() { const sc = S && bankScene(); if (sc) resetBank(sc); },
+    get job() { const sc = S && bankScene(); return sc ? sc.st.job : null; },
+    get gold() { return S ? S.gold : 0; },
   };
   // ================= themes from other modules =================
   // X.interiors.define(type, def) adds a building theme. def: { size: [w, h] (metres, door in the bottom wall),
