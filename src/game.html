@@ -2040,13 +2040,13 @@ body.fps-on .screen:not(.clear) { padding-top: max(44px, env(safe-area-inset-top
   const SPEC = PG.SETTINGS_SPEC = {
     quality: ['enum', ['low', 'medium', 'high', 'ultra', 'custom']],
     renderScale: ['num', [0.5, 1, 0.05]], maxDpr: ['enum', [1, 1.5, 2]], adaptive: ['bool'], fpsCap: ['enum', [0, 30, 60]], showFps: ['bool'],
-    lighting: ['enum', ['off', 'low', 'medium', 'high']], lightEngine: ['enum', ['auto', 'webgl', 'canvas']], shadows: ['bool'],
+    lighting: ['enum', ['off', 'low', 'medium', 'high']], lightEngine: ['enum', ['webgl', 'canvas']], shadows: ['bool'],
     particles: ['enum', ['low', 'medium', 'high']], decals: ['enum', ['low', 'high']], skidMarks: ['bool'], weather: ['bool'], ambientLife: ['bool'],
     detail: ['enum', ['low', 'high']], screenFx: ['bool'], cameraShake: ['bool'],
     traffic: ['num', [0.5, 1.25, 0.05]], pedDensity: ['num', [0.5, 1.25, 0.05]], policeMax: ['num', [3, 10, 1]],
     wheel: ['enum', ['zoom', 'weapon']], radio: ['bool'],
   };
-  PG.SETTINGS_DEFAULTS = Object.assign({ quality: 'high' }, PG.QUALITY_PRESETS.high, { showFps: true, fpsCap: 0, wheel: 'zoom', radio: true, cameraShake: true, lightEngine: 'auto' });
+  PG.SETTINGS_DEFAULTS = Object.assign({ quality: 'high' }, PG.QUALITY_PRESETS.high, { showFps: true, fpsCap: 0, wheel: 'zoom', radio: true, cameraShake: true, lightEngine: 'webgl' });
   // The sprite/tile "fast renderer" halved the frame rate: it is gone. Not a setting any more (saves cannot turn it
   // back on), and every module that still checks fastRender takes its classic drawing path.
   PG.SETTINGS_DEFAULTS.fastRender = false;
@@ -3976,7 +3976,7 @@ body.fps-on .screen:not(.clear) { padding-top: max(44px, env(safe-area-inset-top
     ] },
     { title: 'Effects', rows: [
       { key: 'lighting', name: 'Night lighting', desc: 'Street lights, headlights and the dark between them. Off shows the city flat and fully lit.', type: 'seg', opts: [['off', 'Off'], ['low', 'Low'], ['medium', 'Medium'], ['high', 'High']] },
-      { key: 'lightEngine', name: 'Lighting engine', desc: 'Auto uses the graphics card (WebGL) when the browser offers one, and plain canvas drawing otherwise.', type: 'seg', opts: [['auto', 'Auto'], ['webgl', 'WebGL'], ['canvas', 'Canvas']] },
+      { key: 'lightEngine', name: 'Lighting engine', desc: 'WebGL draws the night on the graphics card. Canvas draws it on the processor (only if WebGL does not work here).', type: 'seg', opts: [['webgl', 'WebGL'], ['canvas', 'Canvas']] },
       { key: 'shadows', name: 'Shadows', desc: 'Drop shadows under buildings, trees, cars and people.', type: 'bool' },
       { key: 'particles', name: 'Particles', desc: 'Smoke, sparks, fire and flying debris: at most 80, 250 or 600 at once.', type: 'seg', opts: [['low', 'Low'], ['medium', 'Medium'], ['high', 'High']] },
       { key: 'decals', name: 'Ground marks', desc: 'Blood, scorch marks, oil and broken glass left on the ground: the last 80 or 400.', type: 'seg', opts: [['low', 'Low'], ['high', 'High']] },

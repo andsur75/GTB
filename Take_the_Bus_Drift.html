@@ -2040,13 +2040,13 @@ body.fps-on .screen:not(.clear) { padding-top: max(44px, env(safe-area-inset-top
   const SPEC = PG.SETTINGS_SPEC = {
     quality: ['enum', ['low', 'medium', 'high', 'ultra', 'custom']],
     renderScale: ['num', [0.5, 1, 0.05]], maxDpr: ['enum', [1, 1.5, 2]], adaptive: ['bool'], fpsCap: ['enum', [0, 30, 60]], showFps: ['bool'],
-    lighting: ['enum', ['off', 'low', 'medium', 'high']], lightEngine: ['enum', ['auto', 'webgl', 'canvas']], shadows: ['bool'],
+    lighting: ['enum', ['off', 'low', 'medium', 'high']], lightEngine: ['enum', ['webgl', 'canvas']], shadows: ['bool'],
     particles: ['enum', ['low', 'medium', 'high']], decals: ['enum', ['low', 'high']], skidMarks: ['bool'], weather: ['bool'], ambientLife: ['bool'],
     detail: ['enum', ['low', 'high']], screenFx: ['bool'], cameraShake: ['bool'],
     traffic: ['num', [0.5, 1.25, 0.05]], pedDensity: ['num', [0.5, 1.25, 0.05]], policeMax: ['num', [3, 10, 1]],
     wheel: ['enum', ['zoom', 'weapon']], radio: ['bool'],
   };
-  PG.SETTINGS_DEFAULTS = Object.assign({ quality: 'high' }, PG.QUALITY_PRESETS.high, { showFps: true, fpsCap: 0, wheel: 'zoom', radio: true, cameraShake: true, lightEngine: 'auto' });
+  PG.SETTINGS_DEFAULTS = Object.assign({ quality: 'high' }, PG.QUALITY_PRESETS.high, { showFps: true, fpsCap: 0, wheel: 'zoom', radio: true, cameraShake: true, lightEngine: 'webgl' });
   // The sprite/tile "fast renderer" halved the frame rate: it is gone. Not a setting any more (saves cannot turn it
   // back on), and every module that still checks fastRender takes its classic drawing path.
   PG.SETTINGS_DEFAULTS.fastRender = false;
@@ -3976,7 +3976,7 @@ body.fps-on .screen:not(.clear) { padding-top: max(44px, env(safe-area-inset-top
     ] },
     { title: 'Effects', rows: [
       { key: 'lighting', name: 'Night lighting', desc: 'Street lights, headlights and the dark between them. Off shows the city flat and fully lit.', type: 'seg', opts: [['off', 'Off'], ['low', 'Low'], ['medium', 'Medium'], ['high', 'High']] },
-      { key: 'lightEngine', name: 'Lighting engine', desc: 'Auto uses the graphics card (WebGL) when the browser offers one, and plain canvas drawing otherwise.', type: 'seg', opts: [['auto', 'Auto'], ['webgl', 'WebGL'], ['canvas', 'Canvas']] },
+      { key: 'lightEngine', name: 'Lighting engine', desc: 'WebGL draws the night on the graphics card. Canvas draws it on the processor (only if WebGL does not work here).', type: 'seg', opts: [['webgl', 'WebGL'], ['canvas', 'Canvas']] },
       { key: 'shadows', name: 'Shadows', desc: 'Drop shadows under buildings, trees, cars and people.', type: 'bool' },
       { key: 'particles', name: 'Particles', desc: 'Smoke, sparks, fire and flying debris: at most 80, 250 or 600 at once.', type: 'seg', opts: [['low', 'Low'], ['medium', 'Medium'], ['high', 'High']] },
       { key: 'decals', name: 'Ground marks', desc: 'Blood, scorch marks, oil and broken glass left on the ground: the last 80 or 400.', type: 'seg', opts: [['low', 'Low'], ['high', 'High']] },
@@ -18677,8 +18677,8 @@ body.gta.touch #gta-hud .s-pick, body.gta.touch #gta-hud .s-offer { bottom: calc
 // emits 'dayPhase' {phase: 'day'|'night'} when the sun comes up or goes down.
 // Two light-map engines draw the same picture: WebGL (every light one procedural quad in a single batched
 // buffer, additive / cut blending on the GPU, one drawImage onto the scene) and Canvas 2D (pre-baked
-// sprites). PG.settings.lightEngine picks one ('auto' = WebGL when the browser has a hardware context, and
-// it stays fast); PG.settings.lighting is the quality: 'high' (everything), 'medium' (1/3-res map, no
+// sprites). PG.settings.lightEngine picks one: 'webgl' (the default; canvas only if the browser has no WebGL)
+// or 'canvas'; PG.settings.lighting is the quality: 'high' (everything), 'medium' (1/3-res map, no
 // window spill), 'low' (1/4-res map: darkness, lamps, headlights and the big lights only), 'off' (no
 // darkness at all; gameplay still knows it is night).
 (function (PG) {
@@ -18750,8 +18750,8 @@ body.gta.touch #gta-hud .s-pick, body.gta.touch #gta-hud .s-offer { bottom: calc
     get torch() { return torch; }, set torch(v) { torch = !!v; },
     toggle() { toggleLights(); },
     lightAt,
-    // which light-map engine draws and why: {engine, pick ('auto' trial result), webgl (context kind or null)}
-    engineInfo() { return { engine: api.stats.engine, pick: TRIAL.pick, trial: TRIAL.phase, ema: TRIAL.ema.map(v => +v.toFixed(1)), slow: !!GE.slow, webgl: GE.gl ? (GE.strict ? 'hardware' : 'any') : null, err: GE.err }; },
+    // which light-map engine draws: {engine, webgl ('any' when a context exists, else null), err}
+    engineInfo() { return { engine: api.stats.engine, webgl: GE.gl ? 'any' : null, err: GE.err }; },
     // this frame's lights after culling (for tests and debugging): {x, y, r, ry, cone, dir, cut, glow, color}
     records() { const out = []; for (let k = 0; k < nL; k++) { const r = LP[k]; out.push({ x: r.x, y: r.y, r: r.rx, ry: r.ry, cone: r.sp, dir: r.rot, cut: r.cut, glow: r.glow, color: r.col, roof: k >= nGround }); } return out; },
   };
@@ -18924,7 +18924,7 @@ body.gta.touch #gta-hud .s-pick, body.gta.touch #gta-hud .s-offer { bottom: calc
   function prewarm() {
     if (warmed) return; warmed = true;
     sprites();
-    for (const sp of [0.34, 0.36, 0.6, 0.75]) coneBase(bucket(sp));
+    for (const sp of [0.36, 0.4]) { const b = bucket(sp); for (let k = 0; k < DIRS; k++) coneRot(b, k); }   // headlights, torches
     for (const c of BAKE) glowLevels(tintOf(c));
   }
 
@@ -19215,7 +19215,7 @@ body.gta.touch #gta-hud .s-pick, body.gta.touch #gta-hud .s-offer { bottom: calc
     ' else if (vP.x < 3.5) v = 1.0;' +                                                     // 3: flat
     ' else v = 1.0 - clamp(vUV.x, 0.0, 1.0);' +                                             // 4: linear gradient
     ' gl_FragColor = vCol * v; }';
-  const GE = { gl: null, cv: null, strict: false, lost: false, tried: { strict: false, loose: false }, vb: null, vbo: null, prog: null, uRes: null, slow: 0, emaMs: 0, n: 0, err: '' };
+  const GE = { gl: null, cv: null, strict: false, lost: false, tried: { loose: false }, vb: null, vbo: null, prog: null, uRes: null, err: '' };
   function glCreate(strict) {
     const cv = document.createElement('canvas'); cv.width = cv.height = 4;
     const o = { alpha: true, premultipliedAlpha: true, antialias: false, depth: false, stencil: false, preserveDrawingBuffer: false, failIfMajorPerformanceCaveat: strict };
@@ -19237,42 +19237,22 @@ body.gta.touch #gta-hud .s-pick, body.gta.touch #gta-hud .s-offer { bottom: calc
     at('aPos', 2, 0); at('aUV', 2, 2); at('aCol', 4, 4); at('aP', 2, 8);
     gl.disable(gl.DEPTH_TEST); gl.disable(gl.CULL_FACE); gl.enable(gl.BLEND);
     cv.addEventListener('webglcontextlost', e => { e.preventDefault(); GE.lost = true; });
-    cv.addEventListener('webglcontextrestored', () => { GE.gl = null; GE.lost = false; GE.tried.strict = GE.tried.loose = false; });
+    cv.addEventListener('webglcontextrestored', () => { GE.gl = null; GE.lost = false; GE.tried.loose = false; });
     GE.gl = gl; GE.cv = cv; GE.strict = strict; GE.prog = pr; GE.uRes = gl.getUniformLocation(pr, 'uRes');
     if (!GE.vb) GE.vb = new Float32Array(MAXQ * 4 * STR);
     GE.w = GE.h = 0;
     return true;
   }
-  // 'auto' wants a hardware context (failIfMajorPerformanceCaveat) that keeps up; 'webgl' takes any context
-  function glReady(strict) {
+  // WebGL takes any context the browser gives; only a browser with no WebGL at all falls back to canvas.
+  function glReady() {
     if (GE.lost) return false;
-    if (GE.gl && (GE.strict || !strict)) return true;
-    const k = strict ? 'strict' : 'loose';
-    if (GE.tried[k]) return false;
-    GE.tried[k] = true;
-    if (GE.gl) { const ext = GE.gl.getExtension('WEBGL_lose_context'); if (ext) ext.loseContext(); GE.gl = null; }
-    return glCreate(strict);
+    if (GE.gl) return true;
+    if (GE.tried.loose) return false;
+    GE.tried.loose = true;
+    return glCreate(false);
   }
-  // 'auto' with a hardware context: WebGL unless it turns out slower here. A frame-rate trial decides once
-  // (frames slower than the display -> try the canvas engine for a while, keep whichever ran faster), and a
-  // light pass that stalls the frame (readback into a software-rasterised canvas) gives up straight away.
-  const TRIAL = { pick: null, phase: 'gl', n: 0, ema: [0, 0], last: 0 };
-  function engineOf(pref) {
-    if (pref === 'canvas') return 'canvas';
-    if (pref === 'webgl') return glReady(false) ? 'webgl' : 'canvas';
-    if (GE.slow > 0 || !glReady(true)) return 'canvas';
-    return TRIAL.pick || (TRIAL.phase === 'cv' ? 'canvas' : 'webgl');
-  }
-  function trialFrame(eng, now) {
-    if (TRIAL.pick) return;
-    const dt = now - TRIAL.last; TRIAL.last = now;
-    if (!(dt > 0 && dt < 100)) return;
-    const k = eng === 'webgl' ? 0 : 1;
-    TRIAL.ema[k] = TRIAL.n ? TRIAL.ema[k] * 0.95 + dt * 0.05 : dt; TRIAL.n++;
-    if (TRIAL.n < 120) return;
-    if (k === 0) { if (TRIAL.ema[0] < 17.5) TRIAL.pick = 'webgl'; else { TRIAL.phase = 'cv'; TRIAL.n = 0; } }
-    else TRIAL.pick = TRIAL.ema[0] > TRIAL.ema[1] + 1.5 ? 'canvas' : 'webgl';
-  }
+  // WebGL everywhere unless the player picked canvas in the settings.
+  function engineOf(pref) { return pref !== 'canvas' && glReady() ? 'webgl' : 'canvas'; }
   // colours -> [r, g, b, a] 0..1 (records carry CSS colours)
   const RGBA = new Map(); let parseCtx = null;
   function rgbaOf(col) {
@@ -19457,10 +19437,6 @@ body.gta.touch #gta-hud .s-pick, body.gta.touch #gta-hud .s-offer { bottom: calc
     const now = performance.now(), ms = now - t0;
     api.stats.ms = api.stats.ms * 0.9 + ms * 0.1;
     const RS = PG.renderStats; if (RS) { RS.lights = nL; RS.lightEngine = eng; }
-    if (set.lightEngine !== 'webgl' && set.lightEngine !== 'canvas' && GE.gl && GE.strict) {
-      if (webgl) { GE.emaMs = GE.n ? GE.emaMs * 0.9 + ms * 0.1 : ms; GE.n++; if (GE.n > 30 && GE.emaMs > 8) GE.slow = 1; }
-      if (PG.game && PG.game.status === 'play') trialFrame(eng, now);
-    }
     // [gather, light map, composite, emissive] (only meaningful with debugFlush)
     const ph = api.stats.phase || (api.stats.phase = [0, 0, 0, 0]);
     ph[0] = ph[0] * 0.9 + (PH[0] - t0) * 0.1; ph[1] = ph[1] * 0.9 + (PH[1] - PH[0]) * 0.1; ph[2] = ph[2] * 0.9 + (PH[2] - PH[1]) * 0.1; ph[3] = ph[3] * 0.9 + (now - PH[2]) * 0.1;

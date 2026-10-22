@@ -84,8 +84,10 @@ check('06:30 is warm dawn, getting light', curve.dawn.d > 0.3 && curve.dawn.d < 
 check('21:00 is already mostly dark', curve.e2100.d > 0.75, curve.e2100);
 
 // ---------- 3. fps in a busy night scene (before any canvas readback) ----------
+// measured on the canvas engine: test machines have no graphics card, so WebGL runs in software there
 const busy = await t.eval(() => {
   const X = PG.gta, P = X.player, C = X.city, W = window;
+  PG.setSetting('lightEngine', 'canvas');
   const x = C.xs[4] + 40, y = C.ys[4];
   W.__tp(x, y, 1); X.clock = 23 * 60;
   const c = X.makeCar('furia', x, y + 3, 0, {}); X.toPhys(c); c.driver = P.ped; P.ped.car = c; P.ped.hidden = true; P.car = c; c.lightsOn = true;
@@ -101,6 +103,7 @@ const busy = await t.eval(() => {
 await t.wait(1500);
 const fps = await t.eval(() => new Promise(r => { let n = 0; const t0 = performance.now(); (function f() { n++; if (performance.now() - t0 < 2500) requestAnimationFrame(f); else { const s = PG.gta.lighting.stats; r({ fps: Math.round(n / ((performance.now() - t0) / 1000)), lights: s.lights, submitted: s.submitted, litCars: s.cars, lamps: s.lamps, ms: +s.ms.toFixed(2), res: +(s.res || 1).toFixed(2) }); } })(); }));
 check('busy night (40 lit cars, police siren, 150 submitted lights) keeps ~60 fps', fps.fps >= 45 && fps.submitted >= 150 && fps.lights >= 150 && fps.litCars >= 20, Object.assign(fps, busy));
+await t.eval(() => PG.setSetting('lightEngine', PG.SETTINGS_DEFAULTS.lightEngine));
 await freeze(); await settle(); await t.shot('lighting-1-busy-night'); await play();
 await t.eval(() => { window.__testLights = []; });
 
@@ -372,9 +375,9 @@ else check('without WebGL the webgl setting falls back to the canvas engine', WG
 const M = looks['canvas-medium'], LO = looks['canvas-low'], LW = looks['webgl-low'], OFF = looks['canvas-off'];
 check('medium and low lighting: still night, lamps and headlights still light the street, fewer lights', [M, LO, LW].every(q => q.screen < OFF.screen * 0.8 && q.pool > q.screen * 1.5 && q.beam > q.behind * 1.3) && LO.recs < H.recs && M.recs <= H.recs, { medium: M, low: LO, webglLow: LW, high: H.recs });
 check('lighting off: no darkness at night, but the game still knows it is night', OFF.engine === 'off' && OFF.recs === 0 && OFF.screen > H.screen * 1.25 && OFF.night && OFF.at > 0.5, { off: OFF, high: H });
-await setS('lighting', 'high'); await setS('lightEngine', 'auto'); await t.eval(() => { if (PG.applyPreset) PG.applyPreset('high'); });
-const autoEng = await t.eval(() => new Promise(r => setTimeout(() => r(PG.gta.lighting.engineInfo()), 300)));
-check('lightEngine auto: WebGL only with a hardware context, else the canvas engine', autoEng.engine === 'canvas' || (autoEng.engine === 'webgl' && autoEng.webgl === 'hardware'), autoEng);
+await setS('lighting', 'high'); await t.eval(() => { if (PG.applyPreset) PG.applyPreset('high'); PG.setSetting('lightEngine', PG.SETTINGS_DEFAULTS.lightEngine); });
+const defEng = await t.eval(() => new Promise(r => setTimeout(() => r(Object.assign({ def: PG.SETTINGS_DEFAULTS.lightEngine, auto: PG.setSetting('lightEngine', 'auto'), now: PG.settings.lightEngine }, PG.gta.lighting.engineInfo())), 300)));
+check('WebGL is the default light engine; there is no auto any more', defEng.def === 'webgl' && defEng.auto === false && defEng.now === 'webgl' && (gl ? defEng.engine === 'webgl' : defEng.engine === 'canvas'), defEng);
 await play();
 await t.eval(() => { if (window.__qc) PG.gta.removeCar(window.__qc); });
 
