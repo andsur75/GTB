@@ -23,7 +23,7 @@ const api = await ev(() => ({ s: !!PG.settings, on: typeof PG.onSettings, set: t
 check('settings API present', api.s && api.on === 'function' && api.set === 'function' && api.ap === 'function' && api.sprites && api.rs, api);
 check('presets low/medium/high/ultra', ['low', 'medium', 'high', 'ultra'].every(p => api.presets.includes(p)), api.presets);
 const d = api.d;
-check('defaults: high preset + showFps, fpsCap 0, wheel zoom, radio, shake, light engine auto', d.quality === 'high' && d.renderScale === 1 && d.maxDpr === 1.5 && d.adaptive === true && d.fastRender === true && d.lighting === 'high' && d.particles === 'high' && d.decals === 'high' && d.detail === 'high' && d.traffic === 1 && d.pedDensity === 1 && d.policeMax === 8 && d.showFps === true && d.fpsCap === 0 && d.wheel === 'zoom' && d.radio === true && d.cameraShake === true && d.lightEngine === 'auto', d);
+check('defaults: high preset + showFps, fpsCap 0, wheel zoom, radio, shake, light engine auto', d.quality === 'high' && d.renderScale === 1 && d.maxDpr === 1.5 && d.adaptive === true && d.fastRender === false && d.lighting === 'high' && d.particles === 'high' && d.decals === 'high' && d.detail === 'high' && d.traffic === 1 && d.pedDensity === 1 && d.policeMax === 8 && d.showFps === true && d.fpsCap === 0 && d.wheel === 'zoom' && d.radio === true && d.cameraShake === true && d.lightEngine === 'auto', d);
 
 // presets, Custom, listeners
 const pr = await ev(() => {
@@ -41,7 +41,7 @@ const pr = await ev(() => {
   return { low, custom, q2, bad, clamp, ultra, seen: seen.length, firstKeys: seen[0] };
 });
 const L = pr.low;
-check('low preset values', L.quality === 'low' && L.renderScale === 0.6 && L.maxDpr === 1 && L.adaptive && L.fastRender && L.lighting === 'low' && L.shadows === false && L.particles === 'low' && L.decals === 'low' && L.skidMarks === false && L.weather === false && L.ambientLife === false && L.detail === 'low' && L.screenFx === false && L.traffic === 0.6 && L.pedDensity === 0.5 && L.policeMax === 4, L);
+check('low preset values', L.quality === 'low' && L.renderScale === 0.6 && L.maxDpr === 1 && L.adaptive && L.lighting === 'low' && L.shadows === false && L.particles === 'low' && L.decals === 'low' && L.skidMarks === false && L.weather === false && L.ambientLife === false && L.detail === 'low' && L.screenFx === false && L.traffic === 0.6 && L.pedDensity === 0.5 && L.policeMax === 4, L);
 check('ultra preset values', pr.ultra.maxDpr === 2 && pr.ultra.adaptive === false && pr.ultra.traffic === 1.25 && pr.ultra.pedDensity === 1.25 && pr.ultra.policeMax === 10, pr.ultra);
 check('changing a preset option switches to Custom', pr.custom === 'custom', pr.custom);
 check('non-preset option (FPS counter) keeps the preset', pr.q2 === 'low', pr.q2);
@@ -62,7 +62,7 @@ check('` hides and shows the FPS counter (preset untouched)', fps1.hidden && fps
 await t.page.click('#btn-settings'); await t.wait(250);
 const m1 = await ev(() => ({ screen: PG.ui.screen(), rows: document.querySelectorAll('#scr-settings .set-row').length, secs: [...document.querySelectorAll('#scr-settings .set-sec h3')].map(h => h.textContent), q: document.querySelector('#scr-settings .seg.big [aria-pressed="true"]').textContent }));
 check('settings opens from the title', m1.screen === 'settings', m1.screen);
-check('menu has Graphics / Effects / World / Controls / Audio and 24 options', ['Graphics', 'Effects', 'World', 'Controls', 'Audio'].every(s => m1.secs.includes(s)) && m1.rows >= 24, m1);
+check('menu has Graphics / Effects / World / Controls / Audio and 23 options', ['Graphics', 'Effects', 'World', 'Controls', 'Audio'].every(s => m1.secs.includes(s)) && m1.rows >= 23, m1);
 check('current preset shown', m1.q === 'High', m1.q);
 await t.shot('engine-1-settings-title');
 // touch an option: switches to Custom, applies live; then pick a preset back
@@ -72,9 +72,10 @@ check('option click applies and shows Custom', m2.detail === 'low' && m2.q === '
 await t.page.click('#scr-settings .seg.big button[data-v="medium"]'); await t.wait(150);
 const m3 = await ev(() => ({ q: PG.settings.quality, rs: PG.settings.renderScale, slider: document.getElementById('set-renderScale').value }));
 check('preset button applies the preset and moves the slider', m3.q === 'medium' && m3.rs === 0.8 && +m3.slider === 0.8, m3);
-await t.page.click('#set-fastRender'); await t.wait(100);
-const m4 = await ev(() => ({ f: PG.settings.fastRender, aria: document.getElementById('set-fastRender').getAttribute('aria-checked') }));
-await t.page.click('#set-fastRender'); await t.wait(100);
+check('fast renderer is gone: no toggle, cannot be turned on', await ev(() => !document.getElementById('set-fastRender') && PG.setSetting('fastRender', true) === false && PG.settings.fastRender === false));
+await t.page.click('#set-shadows'); await t.wait(100);
+const m4 = await ev(() => ({ f: PG.settings.shadows, aria: document.getElementById('set-shadows').getAttribute('aria-checked') }));
+await t.page.click('#set-shadows'); await t.wait(100);
 check('toggle switches flip the option', m4.f === false && m4.aria === 'false', m4);
 // slider by keyboard
 await t.page.focus('#set-traffic'); await t.page.keyboard.press('ArrowLeft'); await t.wait(100);
@@ -232,7 +233,7 @@ async function compare(label) {
     const ca = city(false), cb = city(true);
     const diff = (p, q) => { let sum = 0, big = 0, n = p.length / 4; for (let i = 0; i < p.length; i += 4) { const d = Math.max(Math.abs(p[i] - q[i]), Math.abs(p[i + 1] - q[i + 1]), Math.abs(p[i + 2] - q[i + 2])); sum += d; if (d > 48) big++; } return { mean: +(sum / n).toFixed(2), bigPct: +(big / n * 100).toFixed(2) }; };
     const st = PG.cityDraw.tileStats();
-    PG.settings.fastRender = true; Object.assign(PG.renderCaps, caps0); G.particles = parts;
+    PG.settings.fastRender = false; Object.assign(PG.renderCaps, caps0); G.particles = parts;
     PG.pause(false);
     return { frame: diff(a, b), city: diff(ca, cb), tiles: st, rot: +(view.rot || 0).toFixed(2) };
   });

@@ -703,6 +703,59 @@
   };
   const LAYOUT_SIZE = { bank: [36, 34], police: [30, 24], hospital: [30, 26], gunshop: [22, 18], bar: [28, 22], apartment: [22, 18], hideout: [30, 24], store: [20, 16], lobby: [18, 16], office: [26, 20], warehouse: [30, 24], club: [28, 24], diner: [24, 16] };
 
+  // Every layout is drawn with its street door in the bottom wall, entered walking up. orient() turns the
+  // finished room so its door is on the side the player walked in from: a door on a building's top face is
+  // entered walking down, so the room's door goes to the top; a left-face door puts it on the left, and so on.
+  // Everything with a position turns with it; the door and street strip are drawn through sc.T, the turn as a
+  // canvas transform, from the untouched copies entry0 / exit0 / y10. The bank is left as built (its vault
+  // swings on hard-coded offsets).
+  function orient(sc, door) {
+    const nx = door.nx || 0, ny = door.ny || 0;
+    const k = Math.abs(nx) > Math.abs(ny) ? (nx < 0 ? 'W' : 'E') : (ny < 0 ? 'N' : null);
+    if (!k) return;
+    const W = sc.w, H = sc.h, ox = sc.ox, oy = sc.oy;
+    const loc = k === 'N' ? (x, y) => [W - x, H - y] : k === 'W' ? (x, y) => [H - y, x] : (x, y) => [y, W - x];
+    const da = k === 'N' ? Math.PI : k === 'W' ? Math.PI / 2 : -Math.PI / 2;
+    sc.T = k === 'N' ? [-1, 0, 0, -1, 2 * ox + W, 2 * oy + H] : k === 'W' ? [0, 1, -1, 0, ox + oy + H, oy - ox] : [0, -1, 1, 0, ox - oy, oy + ox + W];
+    sc.orient = k; sc.loc = loc;
+    sc.entry0 = sc.entry && Object.assign({}, sc.entry); sc.exit0 = sc.exit && Object.assign({}, sc.exit); sc.y10 = sc.y1;
+    const pt = o => { if (!o || o.x == null) return; const q = loc(o.x - ox, o.y - oy); o.x = ox + q[0]; o.y = oy + q[1]; };
+    const rc = o => { if (!o) return; const a = loc(o.x0 - ox, o.y0 - oy), b = loc(o.x1 - ox, o.y1 - oy); o.x0 = ox + Math.min(a[0], b[0]); o.x1 = ox + Math.max(a[0], b[0]); o.y0 = oy + Math.min(a[1], b[1]); o.y1 = oy + Math.max(a[1], b[1]); };
+    const ang = (o, key) => { if (o && o[key] != null) o[key] += da; };
+    for (const q of sc.rooms) rc(q);
+    for (const q of sc.walls) rc(q);
+    for (const q of sc.zones) rc(q);
+    for (const q of sc.wins || []) rc(q);
+    rc(sc.exit);
+    for (const q of sc.lights) pt(q);
+    for (const q of sc.acts) pt(q);
+    for (const q of sc.loot) pt(q);
+    for (const q of sc.pads) pt(q);
+    for (const q of sc.browse) { pt(q); ang(q, 'th'); }
+    for (const q of sc.specs) { pt(q); ang(q, 'th'); if (q.patrol) q.patrol.forEach(pt); }
+    for (const f of sc.furn) { pt(f); f.rot = (f.rot || 0) + da; }
+    for (const g of sc.gaps) { pt(g); if (k !== 'N') g.vert = !g.vert; }
+    if (sc.critter) pt(sc.critter);
+    pt(sc.spawn); ang(sc.spawn, 'th');
+    pt(sc.entry);
+    if (sc.st.barrels) sc.st.barrels = sc.st.barrels.map(q => loc(q[0], q[1]));
+    // solids live in the city's spatial hash: take each out, turn it, put it back
+    sc.solids = [];
+    for (const q of sc.rects) {
+      rc(q);
+      if (!q.solid) continue;
+      PG.cityRemove(X.city, q.solid);
+      const o = { kind: 'building', interior: sc.key, poly: PG.obb((q.x0 + q.x1) / 2, (q.y0 + q.y1) / 2, q.x1 - q.x0, q.y1 - q.y0, 0) };
+      PG.cityPut(X.city, o); sc.solids.push(o); q.solid = o;
+    }
+    if (k !== 'N') { sc.w = H; sc.h = W; }
+    sc.x1 = ox + sc.w; sc.y1 = oy + sc.h;
+  }
+  // A layout-local point (as the layout was written) in world coordinates, after orient().
+  const wl = (sc, x, y) => { const q = sc.loc ? sc.loc(x, y) : [x, y]; return { x: sc.ox + q[0], y: sc.oy + q[1] }; };
+  // Runs draw() in the layout's own frame (door at the bottom), for the door and the street outside it.
+  function inFrame(sc, ctx, draw) { if (!sc.T) return draw(); ctx.save(); ctx.transform(...sc.T); draw(); ctx.restore(); }
+
   // ================= scenes: build, cache, enter, leave =================
   function buildScene(door) {
     const type = door.type, sz = LAYOUT_SIZE[type];
@@ -712,6 +765,7 @@
     sc.door = door; sc.gen = !!door.gen;
     const R = rng((door.bi || 7) * 977 + type.length * 31 + ((X.city && X.city.seed) || 1) % 9973);
     L[type](sc, B(sc), R);
+    if (type !== 'bank') orient(sc, door);
     for (const f of sc.furn) prepFurn(f, R);
     if (sc.st.pool) initBalls(sc);
     buildNav(sc);
@@ -2037,7 +2091,8 @@
   function floorBox(sc) {
     if (sc._fbox) return sc._fbox;
     const b = { x0: sc.x0 - 1, y0: sc.y0 - 1, x1: sc.x1 + 1, y1: sc.y1 + 1 }, e = sc.entry;
-    if (e) { b.x0 = Math.min(b.x0, e.x - 11.5); b.x1 = Math.max(b.x1, e.x + 11.5); b.y1 = Math.max(b.y1, sc.y1 + 12.5); }
+    if (e && sc.T) { b.x0 = Math.min(b.x0, e.x - 12.5); b.x1 = Math.max(b.x1, e.x + 12.5); b.y0 = Math.min(b.y0, e.y - 12.5); b.y1 = Math.max(b.y1, e.y + 12.5); }
+    else if (e) { b.x0 = Math.min(b.x0, e.x - 11.5); b.x1 = Math.max(b.x1, e.x + 11.5); b.y1 = Math.max(b.y1, sc.y1 + 12.5); }
     for (const l of sc.lights) if (!l.disco) { b.x0 = Math.min(b.x0, l.x - l.r); b.x1 = Math.max(b.x1, l.x + l.r); b.y0 = Math.min(b.y0, l.y - l.r); b.y1 = Math.max(b.y1, l.y + l.r); }
     return (sc._fbox = b);
   }
@@ -2047,7 +2102,7 @@
     const ov = (a0, b0, a1, b1) => a1 > x0 && a0 < x1 && b1 > y0 && b0 < y1;
     g.fillStyle = sc.bg || '#040507'; g.fillRect(x0, y0, x1 - x0, y1 - y0);
     const e = sc.entry;
-    if (e && ov(e.x - 11, sc.y1, e.x + 11, sc.y1 + 12)) streetStrip(sc, g);
+    if (e && (sc.T ? ov(e.x - 12, e.y - 12, e.x + 12, e.y + 12) : ov(e.x - 11, sc.y1, e.x + 11, sc.y1 + 12))) inFrame(sc, g, () => streetStrip(sc, g));
     for (const r of sc.rooms) {
       if (!ov(r.x0, r.y0, r.x1, r.y1)) continue;
       if (r.floor === 'dance') { g.clearRect(r.x0, r.y0, r.x1 - r.x0, r.y1 - r.y0); continue; }
@@ -2057,13 +2112,15 @@
     for (const l of sc.lights) if (!l.disco && ov(l.x - l.r, l.y - l.r, l.x + l.r, l.y + l.r)) lightPool(g, l);
     g.globalCompositeOperation = 'source-over';
     for (const f of sc.furn) { const r = Math.max(f.w, f.h) / 2 + 1; if (f.layer === 0 && ov(f.x - r, f.y - r, f.x + r, f.y + r)) drawFurn(g, f, 0, sc); }
-    if (sc.exit) doorMat(sc, g);
+    if (sc.exit) inFrame(sc, g, () => doorMat(sc, g));
   }
   function streetStrip(sc, ctx) {
-    const e = sc.entry;
+    const e = sc.entry0 || sc.entry, y1 = sc.y10 != null ? sc.y10 : sc.y1;
+    sc = { y1, outG: sc.outG, _sc: sc };
     rect(ctx, e.x - 10, sc.y1, 20, 4.4, '#3e4148'); ctx.fillStyle = '#4c4f57'; for (let x = e.x - 10; x < e.x + 10; x += 1.5) ctx.fillRect(x, sc.y1, 0.05, 4.4);
     rect(ctx, e.x - 10, sc.y1 + 4.4, 20, 0.3, '#6a6d74'); rect(ctx, e.x - 10, sc.y1 + 4.7, 20, 7, '#26282d'); rect(ctx, e.x - 10, sc.y1 + 8.5, 20, 0.14, 'rgba(236,232,220,0.6)');
     if (!sc.outG) { const g = ctx.createRadialGradient(e.x, sc.y1, 3, e.x, sc.y1, 10.5); g.addColorStop(0, 'rgba(4,5,7,0)'); g.addColorStop(1, 'rgba(4,5,7,1)'); sc.outG = g; }
+    sc._sc.outG = sc.outG;
     ctx.fillStyle = sc.outG; ctx.fillRect(e.x - 11, sc.y1, 22, 12);
   }
   function roomFloor(ctx, r) {
@@ -2076,7 +2133,7 @@
     ctx.fillStyle = l.g; ctx.fillRect(l.x - l.r, l.y - l.r, l.r * 2, l.r * 2);
   }
   function doorMat(sc, ctx) {
-    const x = sc.exit, w = x.x1 - x.x0, h = x.y1 - x.y0;
+    const x = sc.exit0 || sc.exit, w = x.x1 - x.x0, h = x.y1 - x.y0;
     rect(ctx, x.x0, x.y0, w, h, '#2a2622'); ctx.strokeStyle = '#4a4038'; ctx.lineWidth = 0.08; ctx.strokeRect(x.x0 + 0.1, x.y0 + 0.1, w - 0.2, h - 0.2);
     wtext(ctx, sc.type === 'apartment' || sc.type === 'hideout' ? 'HOME' : 'VELKOMMEN', x.x0 + w / 2, x.y0 + h / 2, 0.36, '#8a7a62', 800);
   }
@@ -2087,7 +2144,7 @@
     const L = sc._floorC || (sc._floorC = tileCache());
     if (tcDraw(L, ctx, view, floorBox(sc), 'floor', settlePpm(view.scale * (view.dpr || 1)), (g, x0, y0, x1, y1) => paintFloor(sc, g, x0, y0, x1, y1))) return;
     const e = sc.entry;
-    if (e && X.inView(e.x, sc.y1 + 4, 16)) streetStrip(sc, ctx);
+    if (e && (sc.T ? X.inView(e.x, e.y, 16) : X.inView(e.x, sc.y1 + 4, 16))) inFrame(sc, ctx, () => streetStrip(sc, ctx));
     for (const r of sc.rooms) {
       const w = r.x1 - r.x0, h = r.y1 - r.y0;
       if (r.floor === 'dance' || !X.inView(r.x0 + w / 2, r.y0 + h / 2, Math.max(w, h) / 2 + 2)) continue;
@@ -2097,7 +2154,7 @@
     for (const l of sc.lights) if (!l.disco && X.inView(l.x, l.y, l.r)) lightPool(ctx, l);
     ctx.globalCompositeOperation = 'source-over';
     for (const f of sc.furn) if (f.layer === 0 && X.inView(f.x, f.y, Math.max(f.w, f.h) / 2 + 1)) drawFurn(ctx, f, t, sc);
-    if (sc.exit) doorMat(sc, ctx);
+    if (sc.exit) inFrame(sc, ctx, () => doorMat(sc, ctx));
   }
   function drawDance(ctx, r, t) {
     const b = Math.floor(t * 126 / 60 * 2);
@@ -2109,6 +2166,14 @@
     }
   }
   function visR(w) { return X.inView((w.x0 + w.x1) / 2, (w.y0 + w.y1) / 2, Math.max(w.x1 - w.x0, w.y1 - w.y0) / 2 + 1); }
+  // The street door, in the layout's frame (bottom wall); drawWalls runs it through inFrame.
+  function drawEntry(sc, ctx) {
+    const e = sc.entry0 || sc.entry, y1 = sc.y10 != null ? sc.y10 : sc.y1;
+    const x0 = e.x - e.w / 2, y0 = y1 - TW;
+    if (e.style === 'roller') { rect(ctx, x0, y0, e.w, TW, '#77736b'); ctx.fillStyle = 'rgba(0,0,0,0.3)'; for (let x = x0 + 0.2; x < x0 + e.w; x += 0.3) ctx.fillRect(x, y0, 0.05, TW); rect(ctx, x0, y0, e.w, 0.08, '#e3b23c'); }
+    else { rect(ctx, x0 - 0.1, y0, e.w + 0.2, TW, '#1b222b'); rect(ctx, x0 + 0.06, y0 + 0.12, e.w / 2 - 0.1, TW - 0.24, 'rgba(140,195,225,0.6)'); rect(ctx, e.x + 0.04, y0 + 0.12, e.w / 2 - 0.1, TW - 0.24, 'rgba(140,195,225,0.6)'); rect(ctx, e.x - 0.25, y0 + 0.2, 0.1, 0.1, '#c9ccd1'); rect(ctx, e.x + 0.15, y0 + 0.2, 0.1, 0.1, '#c9ccd1'); }
+    rect(ctx, e.x - 0.42, y0 - 0.32, 0.84, 0.3, '#1d7a3a'); wtext(ctx, 'EXIT', e.x, y0 - 0.17, 0.22, '#eaffea', 800);
+  }
   function drawWalls(sc, ctx, view, t) {
     readSettings();
     for (const f of sc.furn) if (f.layer === 1 && X.inView(f.x, f.y, Math.max(f.w, f.h) / 2 + 1)) drawFurn(ctx, f, t, sc);
@@ -2136,13 +2201,7 @@
       rect(ctx, w.x0, w.y0, ww, hh, '#2b4258'); rect(ctx, vert ? w.x0 + ww / 2 - 0.03 : w.x0, vert ? w.y0 : w.y0 + hh / 2 - 0.03, vert ? 0.06 : ww, vert ? hh : 0.06, 'rgba(190,225,255,0.45)');
       ctx.fillStyle = '#1a2430'; for (let s = 1.6; s < (vert ? hh : ww); s += 1.6) ctx.fillRect(vert ? w.x0 : w.x0 + s, vert ? w.y0 + s : w.y0, vert ? ww : 0.08, vert ? 0.08 : hh);
     }
-    const e = sc.entry;
-    if (e && X.inView(e.x, e.y, 4)) {
-      const x0 = e.x - e.w / 2, y0 = sc.y1 - TW;
-      if (e.style === 'roller') { rect(ctx, x0, y0, e.w, TW, '#77736b'); ctx.fillStyle = 'rgba(0,0,0,0.3)'; for (let x = x0 + 0.2; x < x0 + e.w; x += 0.3) ctx.fillRect(x, y0, 0.05, TW); rect(ctx, x0, y0, e.w, 0.08, '#e3b23c'); }
-      else { rect(ctx, x0 - 0.1, y0, e.w + 0.2, TW, '#1b222b'); rect(ctx, x0 + 0.06, y0 + 0.12, e.w / 2 - 0.1, TW - 0.24, 'rgba(140,195,225,0.6)'); rect(ctx, e.x + 0.04, y0 + 0.12, e.w / 2 - 0.1, TW - 0.24, 'rgba(140,195,225,0.6)'); rect(ctx, e.x - 0.25, y0 + 0.2, 0.1, 0.1, '#c9ccd1'); rect(ctx, e.x + 0.15, y0 + 0.2, 0.1, 0.1, '#c9ccd1'); }
-      rect(ctx, e.x - 0.42, y0 - 0.32, 0.84, 0.3, '#1d7a3a'); wtext(ctx, 'EXIT', e.x, y0 - 0.17, 0.22, '#eaffea', 800);
-    }
+    if (sc.entry && X.inView(sc.entry.x, sc.entry.y, 4)) inFrame(sc, ctx, () => drawEntry(sc, ctx));
     for (const g of sc.gaps) {
       if (!X.inView(g.x, g.y, g.w + 1)) continue;
       if (g.vert) rect(ctx, g.x - TW / 2, g.y - g.w / 2, TW, g.w, 'rgba(0,0,0,0.16)'); else rect(ctx, g.x - g.w / 2, g.y - TW / 2, g.w, TW, 'rgba(0,0,0,0.16)');
@@ -2179,11 +2238,11 @@
     }
   }
   function drawClubTop(sc, ctx, t) {
-    const bx = sc.ox + 14, by = sc.oy + 10.5;
+    const B0 = wl(sc, 14, 10.5), L0 = wl(sc, 14, 3), bx = B0.x, by = B0.y, da = sc.orient === 'N' ? Math.PI : sc.orient === 'W' ? Math.PI / 2 : sc.orient === 'E' ? -Math.PI / 2 : 0;
     ctx.globalCompositeOperation = 'lighter';
     for (let i = 0; i < 4; i++) {   // lasers sweeping out of the DJ booth
-      const a = Math.PI / 2 + Math.sin(t * 1.3 + i * 1.7) * 0.9, col = DISCO[(i + Math.floor(t)) % DISCO.length];
-      ln(ctx, sc.ox + 14, sc.oy + 3, sc.ox + 14 + Math.cos(a) * 16, sc.oy + 3 + Math.sin(a) * 16, rgba(col, 0.45), 0.06);
+      const a = da + Math.PI / 2 + Math.sin(t * 1.3 + i * 1.7) * 0.9, col = DISCO[(i + Math.floor(t)) % DISCO.length];
+      ln(ctx, L0.x, L0.y, L0.x + Math.cos(a) * 16, L0.y + Math.sin(a) * 16, rgba(col, 0.45), 0.06);
     }
     for (let i = 0; i < 26; i++) { const a = i * 2.4 + t * 0.7, r = 2 + (i * 37 % 70) / 10; disc(ctx, bx + Math.cos(a) * r, by + Math.sin(a) * r * 0.8, 0.1, 'rgba(255,255,255,0.5)'); }
     ctx.globalCompositeOperation = 'source-over';

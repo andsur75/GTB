@@ -2027,19 +2027,19 @@ body.fps-on .screen:not(.clear) { padding-top: max(44px, env(safe-area-inset-top
 // read it every frame (never cache across frames). Quality presets fill in the keys that trade looks for
 // speed; changing one of those by hand switches the preset to 'custom'. Saved in the player's state.
 (function (PG) {
-  const PRESET_KEYS = ['renderScale', 'maxDpr', 'adaptive', 'fastRender', 'lighting', 'shadows', 'particles', 'decals', 'skidMarks', 'weather', 'ambientLife', 'detail', 'screenFx', 'traffic', 'pedDensity', 'policeMax'];
+  const PRESET_KEYS = ['renderScale', 'maxDpr', 'adaptive', 'lighting', 'shadows', 'particles', 'decals', 'skidMarks', 'weather', 'ambientLife', 'detail', 'screenFx', 'traffic', 'pedDensity', 'policeMax'];
   const P = (...v) => { const o = {}; PRESET_KEYS.forEach((k, i) => { o[k] = v[i]; }); return o; };
   PG.QUALITY_PRESETS = {
-    low: P(0.6, 1, true, true, 'low', false, 'low', 'low', false, false, false, 'low', false, 0.6, 0.5, 4),
-    medium: P(0.8, 1, true, true, 'medium', true, 'medium', 'high', true, true, false, 'high', true, 0.8, 0.75, 6),
-    high: P(1, 1.5, true, true, 'high', true, 'high', 'high', true, true, true, 'high', true, 1, 1, 8),
-    ultra: P(1, 2, false, true, 'high', true, 'high', 'high', true, true, true, 'high', true, 1.25, 1.25, 10),
+    low: P(0.6, 1, true, 'low', false, 'low', 'low', false, false, false, 'low', false, 0.6, 0.5, 4),
+    medium: P(0.8, 1, true, 'medium', true, 'medium', 'high', true, true, false, 'high', true, 0.8, 0.75, 6),
+    high: P(1, 1.5, true, 'high', true, 'high', 'high', true, true, true, 'high', true, 1, 1, 8),
+    ultra: P(1, 2, false, 'high', true, 'high', 'high', true, true, true, 'high', true, 1.25, 1.25, 10),
   };
   PG.PRESET_KEYS = PRESET_KEYS;
   // key: [type, allowed values | [min, max, step]]
   const SPEC = PG.SETTINGS_SPEC = {
     quality: ['enum', ['low', 'medium', 'high', 'ultra', 'custom']],
-    renderScale: ['num', [0.5, 1, 0.05]], maxDpr: ['enum', [1, 1.5, 2]], adaptive: ['bool'], fpsCap: ['enum', [0, 30, 60]], showFps: ['bool'], fastRender: ['bool'],
+    renderScale: ['num', [0.5, 1, 0.05]], maxDpr: ['enum', [1, 1.5, 2]], adaptive: ['bool'], fpsCap: ['enum', [0, 30, 60]], showFps: ['bool'],
     lighting: ['enum', ['off', 'low', 'medium', 'high']], lightEngine: ['enum', ['auto', 'webgl', 'canvas']], shadows: ['bool'],
     particles: ['enum', ['low', 'medium', 'high']], decals: ['enum', ['low', 'high']], skidMarks: ['bool'], weather: ['bool'], ambientLife: ['bool'],
     detail: ['enum', ['low', 'high']], screenFx: ['bool'], cameraShake: ['bool'],
@@ -2047,6 +2047,9 @@ body.fps-on .screen:not(.clear) { padding-top: max(44px, env(safe-area-inset-top
     wheel: ['enum', ['zoom', 'weapon']], radio: ['bool'],
   };
   PG.SETTINGS_DEFAULTS = Object.assign({ quality: 'high' }, PG.QUALITY_PRESETS.high, { showFps: true, fpsCap: 0, wheel: 'zoom', radio: true, cameraShake: true, lightEngine: 'auto' });
+  // The sprite/tile "fast renderer" halved the frame rate: it is gone. Not a setting any more (saves cannot turn it
+  // back on), and every module that still checks fastRender takes its classic drawing path.
+  PG.SETTINGS_DEFAULTS.fastRender = false;
   // Particle and ground-decal caps per setting.
   PG.PARTICLE_CAP = { low: 80, medium: 250, high: 600 };
   PG.DECAL_CAP = { low: 80, high: 400 };
@@ -3965,7 +3968,6 @@ body.fps-on .screen:not(.clear) { padding-top: max(44px, env(safe-area-inset-top
     { title: 'Graphics', rows: [
       { key: 'quality', name: 'Quality preset', desc: 'Sets every option that trades looks for speed in one go. Changing one of those yourself switches to Custom.', type: 'seg', big: true,
         opts: [['low', 'Low'], ['medium', 'Medium'], ['high', 'High'], ['ultra', 'Ultra'], ['custom', 'Custom']] },
-      { key: 'fastRender', name: 'Fast renderer', desc: 'Keeps the streets, cars, trees and smoke as ready-drawn images instead of redrawing them every frame.', type: 'bool' },
       { key: 'renderScale', name: 'Resolution scale', desc: 'Draws the world at fewer pixels and stretches it to fill the screen.', type: 'range', min: 0.5, max: 1, step: 0.05, fmt: pct },
       { key: 'maxDpr', name: 'Pixel density cap', desc: 'How sharp high-density (retina) screens may get. Each step up draws many more pixels.', type: 'seg', opts: [[1, '1×'], [1.5, '1.5×'], [2, '2×']] },
       { key: 'adaptive', name: 'Adaptive resolution', desc: 'Lowers the resolution by itself when the frame rate drops, and raises it again when there is room.', type: 'bool' },
