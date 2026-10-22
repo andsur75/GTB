@@ -834,6 +834,16 @@
     ctx.drawImage(spr, -spr.mw / 2, -spr.mh / 2, spr.mw, spr.mh);
   }
   // light sources themselves, crisp and bright on top of the dark
+  // A lamp head with a car over it stays hidden: the bright dot belongs under the car, not painted on its roof.
+  function underCar(x, y) {
+    for (const c of visCars) {
+      const dx = x - c.x, dy = y - c.y, L = (c.len || 4.5) / 2 + 0.3, W = (c.wid || 1.9) / 2 + 0.3;
+      if (Math.abs(dx) > L + W || Math.abs(dy) > L + W) continue;
+      const ca = Math.cos(c.th || 0), sa = Math.sin(c.th || 0), u = dx * ca + dy * sa, v = -dx * sa + dy * ca;
+      if (Math.abs(u) < L && Math.abs(v) < W) return true;
+    }
+    return false;
+  }
   function emissive(ctx, view, t) {
     PG.cityDraw.worldTransform(ctx, view);
     ctx.globalCompositeOperation = 'lighter';
@@ -849,7 +859,7 @@
     const fine = view.scale > 6;   // lamp heads, lenses and sign letters vanish below a pixel on the big map
     if (fine) for (let ci = 0; ci < 3; ci++) {
       ctx.fillStyle = LAMPC[ci]; ctx.beginPath(); let any = false;
-      for (const f of visLamps) if (f.col === ci) { any = true; ctx.moveTo(f.hx + 0.3, f.hy); ctx.arc(f.hx, f.hy, 0.3, 0, TAU); }
+      for (const f of visLamps) if (f.col === ci && !underCar(f.hx, f.hy)) { any = true; ctx.moveTo(f.hx + 0.3, f.hy); ctx.arc(f.hx, f.hy, 0.3, 0, TAU); }
       if (any) { ctx.globalAlpha = em * 0.9; ctx.fill(); }
     }
     ctx.lineCap = 'round';
