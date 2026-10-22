@@ -25,8 +25,9 @@
   // ================= world: rebuild two blocks =================
   const S = { army: null, swat: null };
   function inside(bd, b) { const cx = (bd.x0 + bd.x1) / 2, cy = (bd.y0 + bd.y1) / 2; return cx > b.x0 && cx < b.x1 && cy > b.y0 && cy < b.y1; }
-  function clearBlock(C, blk) {
-    const gone = C.buildings.filter(bd => !bd.deco && inside(bd, blk));
+  // Knock down every building of the block that reaches into the lot F (the rest of the block stays).
+  function clearLot(C, blk, F) {
+    const gone = C.buildings.filter(bd => !bd.deco && inside(bd, blk) && bd.x1 > F.x0 - 1.5 && bd.x0 < F.x1 + 1.5 && bd.y1 > F.y0 - 1.5 && bd.y0 < F.y1 + 1.5);
     for (const bd of gone) {
       const cx = (bd.x0 + bd.x1) / 2, cy = (bd.y0 + bd.y1) / 2;
       for (const o of PG.cityNear(C, cx, cy, 2)) {
@@ -57,10 +58,15 @@
     solid(C, gx + gateW / 2, F.y1 - t, F.x1, F.y1, list);
     return { x: gx, y: F.y1 + 1.4, nx: 0, ny: 1, w: gateW };
   }
+  // The lot: the south side of the block, at most w x h metres, centred.
+  function lot(blk, w, h) {
+    const cx = (blk.x0 + blk.x1) / 2, hw = Math.min(w, blk.x1 - blk.x0 - 10) / 2;
+    return { x0: cx - hw, x1: cx + hw, y1: blk.y1 - 5, y0: Math.max(blk.y0 + 5, blk.y1 - 5 - h) };
+  }
   function buildArmy(C, blk, places) {
-    clearBlock(C, blk);
+    const F = lot(blk, 130, 110), fw = F.x1 - F.x0, fh = F.y1 - F.y0, cx = (F.x0 + F.x1) / 2;
+    clearLot(C, blk, F);
     blk.base = true;   // (kind stays 'city': strollers and pickups keep out)
-    const F = { x0: blk.x0 + 5, y0: blk.y0 + 5, x1: blk.x1 - 5, y1: blk.y1 - 5 }, fw = F.x1 - F.x0, fh = F.y1 - F.y0, cx = (F.x0 + F.x1) / 2;
     const A = { blk, F, fences: [], slots: [], posts: [], towers: [], cars: [], soldiers: [] };
     A.gate = fence(C, F, 10, A.fences);
     // HQ (the place), barracks on the west side, the hangar on the east side
@@ -71,7 +77,14 @@
     const door = { x: cx, y: hq.y1 + 0.9, nx: 0, ny: 1 };
     places[ARMY.id] = { id: ARMY.id, name: ARMY.name, b: hq, door, color: ARMY.color, gate: A.gate, compound: F };
     // the motor pool: a row facing the gate
-    const row = ['jeep', 'armytruck', 'apc', 'tank', 'armytruck', 'jeep'], ry = Math.min(F.y1 - 18, hq.y1 + 14), span = 5.2;
+    // a mess hall and a field of tents for the conscripts
+    if (fh > 70) addBuilding(C, F.x0 + 4, A.barracks.y1 + 6, F.x0 + 20, A.barracks.y1 + 18, 7, { tint: 4, color: '#6b6a4f' });
+    A.tents = [];
+    if (fw > 80 && fh > 70) for (let i = 0; i < 3; i++) for (let j = 0; j < 2; j++) {
+      const x0 = F.x1 - 34 + i * 10, y0 = F.y1 - 36 + j * 11;
+      A.tents.push(addBuilding(C, x0, y0, x0 + 7, y0 + 7, 3.2, { tint: 5, color: '#55603e', top: false, tent: true }));
+    }
+    const row = ['jeep', 'armytruck', 'apc', 'tank', 'armytruck', 'jeep'], ry = Math.min(F.y1 - 20, Math.max(hq.y1 + 14, F.y0 + fh * 0.45)), span = 5.2;
     row.forEach((m, i) => A.slots.push({ model: m, x: cx + (i - (row.length - 1) / 2) * span, y: ry, th: Math.PI / 2, car: null, goneT: 0 }));
     A.helipad = { x: F.x0 + 14, y: F.y1 - 13, r: 6.5 };
     for (const [x, y] of [[F.x0 + 2.2, F.y0 + 2.2], [F.x1 - 2.2, F.y0 + 2.2], [F.x0 + 2.2, F.y1 - 2.2], [F.x1 - 2.2, F.y1 - 2.2]]) A.towers.push({ x, y });
@@ -87,9 +100,9 @@
     return A;
   }
   function buildSwat(C, blk, places) {
-    clearBlock(C, blk);
-    blk.base = true;   // (kind stays 'city': strollers and pickups keep out)
-    const F = { x0: blk.x0 + 5, y0: blk.y0 + 5, x1: blk.x1 - 5, y1: blk.y1 - 5 }, fw = F.x1 - F.x0, cx = (F.x0 + F.x1) / 2;
+    const F = lot(blk, 76, 62), fw = F.x1 - F.x0, cx = (F.x0 + F.x1) / 2;
+    clearLot(C, blk, F);
+    blk.base = true;
     const W = { blk, F, fences: [], slots: [], posts: [], towers: [], cars: [], soldiers: [], swat: true };
     W.gate = fence(C, F, 12, W.fences);
     const hw = Math.min(36, fw * 0.5) / 2, hq = addBuilding(C, cx - hw, F.y0 + 4, cx + hw, F.y0 + 24, 22, { tint: 6, place: SWAT.id, color: SWAT.color });

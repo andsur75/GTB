@@ -1340,6 +1340,8 @@
     },
     apc(ctx, c) {
       const L = c.len, W = c.wid;
+      ctx.fillStyle = c.color; ctx.fillRect(-L / 2 + 0.05, -W / 2 + 0.05, L * 0.72, W - 0.1);   // armour, not a cargo box
+      ctx.fillStyle = 'rgba(0,0,0,0.18)'; ctx.fillRect(-L / 2 + 0.05, -W / 2 + 0.05, L * 0.72, 0.16); ctx.fillRect(-L / 2 + 0.05, W / 2 - 0.21, L * 0.72, 0.16);
       ctx.fillStyle = '#48522f'; ctx.beginPath(); ctx.moveTo(L / 2, -W / 2 + 0.5); ctx.lineTo(L / 2 - 1.1, -W / 2 + 0.05); ctx.lineTo(L / 2 - 1.1, W / 2 - 0.05); ctx.lineTo(L / 2, W / 2 - 0.5); ctx.closePath(); ctx.fill();   // sloped glacis
       ctx.fillStyle = '#3a4227'; ctx.fillRect(-L / 2 + 0.4, -0.55, 1.1, 1.1); ctx.fillRect(-L / 2 + 0.4, W / 2 - 0.75, 1.6, 0.5); ctx.fillRect(-L / 2 + 0.4, -W / 2 + 0.25, 1.6, 0.5);
       ctx.fillStyle = '#2e3420'; ctx.beginPath(); ctx.arc(0.4, 0, 0.62, 0, TAU); ctx.fill();   // turret ring, gun forward

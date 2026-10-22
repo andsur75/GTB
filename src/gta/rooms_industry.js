@@ -429,7 +429,7 @@
     size: [40, 32], weight: 2, minSide: 15,
     names: ['Bussby Bussdepot', 'Kollektivverkstedet', 'Take the Bus! Service Hall', 'Rute 7 Verksted'],
     greet: ['TAKE THE BUS! (We fix them, you take them.)', 'Mind the pit. Kjell is still down there.', 'Every bus in Bussby passes through here. Like a spa.'],
-    style: { w: 4.6, door: '#c0392b', frame: '#f2c230', plate: '#1b1b1f', text: '#f2c230', light: '#ffd27a', roller: 1, hazard: 1, icon: 'bus' },
+    style: { w: 4.6, door: '#c0392b', frame: '#f2c230', plate: '#1b1b1f', text: '#f2c230', light: '#ffd27a', roller: 1, hazard: 1 },
     furn, looks,
     layout(sc, b, R, K) {
       base(sc, { camSpan: 32, ambient: 0.55, wallTop: '#4a3a34', wallLo: '#2a201c', wallHi: '#8a6a5a' });

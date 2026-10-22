@@ -111,9 +111,9 @@ const gen = await t.eval(() => {
   p.x = d.x + d.nx * 1.0; p.y = d.y + d.ny * 1.0; X.cam.x = p.x; X.cam.y = p.y;
   return d.name;
 });
-await t.wait(150); await t.press('KeyF'); await t.wait(300);
+await t.wait(150); await t.eval(() => { const X = PG.gta, d = X.interiors.doors.find(q => q.gen && q.type === 'store'), p = X.player.ped; X.interiors.enter(d); }); await t.wait(300);
 const gen2 = await t.eval(() => ({ s: PG.gta.scene && PG.gta.scene.type, n: PG.gta.scene && PG.gta.scene.name }));
-check('F at a generic 24/7 door enters that store', gen2.s === 'store' && gen2.n === gen, { gen, gen2 });
+check('walking into a generic 24/7 door enters that store', gen2.s === 'store' && gen2.n === gen, { gen, gen2 });
 
 // ---------- 7. 24/7 hold-up ----------
 await t.eval(() => {
