@@ -151,13 +151,25 @@ const beam = await t.eval(c => ({ ahead: window.__lum(c.x + 10, c.y, 8), behind:
 await t.shot('lighting-5-headlights');
 await t.eval(() => { window.__hc.lightsOn = false; }); await settle();
 const dark = await t.eval(c => ({ ahead: window.__lum(c.x + 10, c.y, 8) }), hl);
-check('headlights light the road ahead, not behind', beam.ahead.l > beam.behind.l * 1.6 && beam.cones === 1, beam);
+check('headlights light the road ahead, not behind (two beams, like every car)', beam.ahead.l > beam.behind.l * 1.6 && beam.cones === 2, beam);
 check('lights off: the road ahead goes dark', dark.ahead.l < beam.ahead.l * 0.6, { on: beam.ahead.l, off: dark.ahead.l });
 const eyes = await t.eval(() => {
   const X = PG.gta, c = window.__hc; c.lightsOn = true; c.hp = c.maxHp * 0.3;
   return new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => { const n = X.lighting.records().filter(q => q.cone > 0 && Math.hypot(q.x - c.x, q.y - c.y) < 4).length; c.hp = c.maxHp; r(n); })));
 });
-check('a battered car is down to one headlight', eyes === 1, eyes);
+check('a battered car still has both headlights', eyes === 2, eyes);
+// the beams start on the front bumper at the two lamps, the red tail glows sit behind the rear bumper
+const lamps = await t.eval(() => {
+  const X = PG.gta, c = window.__hc; c.lightsOn = true; c.braking = true;
+  return new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => {
+    const cs = Math.cos(c.th), sn = Math.sin(c.th), loc = q => ({ u: +((q.x - c.x) * cs + (q.y - c.y) * sn).toFixed(2), v: +(-(q.x - c.x) * sn + (q.y - c.y) * cs).toFixed(2) });
+    const near = X.lighting.records().filter(q => Math.hypot(q.x - c.x, q.y - c.y) < 4);
+    const heads = near.filter(q => q.cone > 0).map(loc), tails = near.filter(q => !(q.cone > 0) && q.color === '#ff2414').map(loc);
+    c.braking = false; r({ L2: c.len / 2, W2: c.wid / 2, heads, tails });
+  })));
+});
+check('headlight beams start at the two front lamps', lamps.heads.length === 2 && lamps.heads.every(h => Math.abs(h.u - lamps.L2 - 0.08) < 0.05 && Math.abs(Math.abs(h.v) - (lamps.W2 - 0.31)) < 0.05) && lamps.heads[0].v * lamps.heads[1].v < 0, lamps);
+check('two brake lights, behind the rear bumper on the lamp lines', lamps.tails.length === 2 && lamps.tails.every(q => q.u < -lamps.L2 && q.u > -lamps.L2 - 1.2 && Math.abs(Math.abs(q.v) - (lamps.W2 - 0.31)) < 0.05) && lamps.tails[0].v * lamps.tails[1].v < 0, lamps);
 
 // ---------- 7. sirens, X.addLight points and cones ----------
 const sir = await t.eval(s => {

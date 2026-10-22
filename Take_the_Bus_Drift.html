@@ -18845,8 +18845,8 @@ body.gta.touch #gta-hud .s-pick, body.gta.touch #gta-hud .s-offer { bottom: calc
   // ================= sprites =================
   // A software-rasterised canvas is fastest with axis-aligned, nearest-sampled, source-over draws and no
   // globalAlpha: point lights use big sprites with the intensity baked in (16 levels, 8 for the common glow
-  // colours) and cones are pre-rotated into direction buckets.
-  const LV = 16, CS = 128, DIRS = 96;
+  // colours); cones are drawn turned to their exact angle.
+  const LV = 16, CS = 128, DIRS = 360, CR = 72;   // CR: px per reach in a turned beam
   let SPR = null;
   function mk(w, h, fn) {
     const c = document.createElement('canvas'); c.width = w; c.height = h;
@@ -18880,7 +18880,7 @@ body.gta.touch #gta-hud .s-pick, body.gta.touch #gta-hud .s-offer { bottom: calc
       return m * Math.pow(1 - d, 1.25) * sstep(0, 0.1, d);
     }));
   }
-  // the cut cone for spread bucket b turned to direction bucket k, cropped to its bounding box (unit = reach)
+  // the cone for spread bucket b turned to direction bucket k (1 degree), cropped to its bounding box (unit = reach)
   function coneRot(b, k) {
     const row = SPR.coneRot[b] || (SPR.coneRot[b] = []);
     if (row[k]) return row[k];
@@ -18890,11 +18890,12 @@ body.gta.touch #gta-hud .s-pick, body.gta.touch #gta-hud .s-offer { bottom: calc
     take(phi - sp); take(phi + sp);
     for (let q = -4; q <= 4; q++) { const a = q * Math.PI / 2; if (Math.abs(PG.wrap(a - phi)) < sp) take(a); }
     x0 -= 0.03; y0 -= 0.03; x1 += 0.03; y1 += 0.03;
-    const c = document.createElement('canvas'); c.width = Math.max(1, Math.ceil((x1 - x0) * CS)); c.height = Math.max(1, Math.ceil((y1 - y0) * CS));
-    const g = c.getContext('2d');
-    g.setTransform(1, 0, 0, 1, -x0 * CS, -y0 * CS); g.rotate(phi); g.drawImage(coneBase(b), -CS, -CS);
-    return (row[k] = { cv: c, x0, y0, w: c.width / CS, h: c.height / CS });
+    const c = document.createElement('canvas'); c.width = Math.max(1, Math.ceil((x1 - x0) * CR)); c.height = Math.max(1, Math.ceil((y1 - y0) * CR));
+    const g = c.getContext('2d'); g.imageSmoothingQuality = 'high';
+    g.setTransform(CR / CS, 0, 0, CR / CS, -x0 * CR, -y0 * CR); g.rotate(phi); g.drawImage(coneBase(b), -CS, -CS);
+    return (row[k] = { cv: c, x0, y0, w: c.width / CR, h: c.height / CR });
   }
+  const dirBucket = a => { const k = Math.round(a / TAU * DIRS) % DIRS; return k < 0 ? k + DIRS : k; };
   const TINT = new Map();
   function tint(src, col) {
     const c = document.createElement('canvas'); c.width = src.width; c.height = src.height;
@@ -18923,7 +18924,7 @@ body.gta.touch #gta-hud .s-pick, body.gta.touch #gta-hud .s-offer { bottom: calc
   function prewarm() {
     if (warmed) return; warmed = true;
     sprites();
-    for (const sp of [0.36, 0.4]) { const b = bucket(sp); for (let k = 0; k < DIRS; k++) coneRot(b, k); }
+    for (const sp of [0.34, 0.36, 0.6, 0.75]) coneBase(bucket(sp));
     for (const c of BAKE) glowLevels(tintOf(c));
   }
 
@@ -19024,19 +19025,21 @@ body.gta.touch #gta-hud .s-pick, body.gta.touch #gta-hud .s-offer { bottom: calc
       if (bc.on) pt(bc.x, bc.y, 3.2, '#ff2a1a', 0.35 * em, 0.95 * em);
     }
   }
+  // Every car has exactly two headlights and two tail lights, at the lamp positions PG.drawCar paints (front
+  // and rear bumper, W/2 - 0.31 from the centre line). Each beam is a cone whose apex sits on the bumper, so
+  // it lights the road and never the car's own bonnet or roof; the halo at each lens is glow only.
+  const HL_Y = 0.31, BUMP = 0.08;
+  function carLamp(c, cs, sn, lx, ly) { return { x: c.x + lx * cs - ly * sn, y: c.y + lx * sn + ly * cs }; }
+  function headReach(c, kind) { return c === P.car ? 23 : kind === 'police' || kind === 'swat' ? 19 : c.len > 7 ? 18 : 16; }
   function carLights(c, t, gk) {
     const cs = Math.cos(c.th), sn = Math.sin(c.th), L2 = c.len / 2, W2 = c.wid / 2, kind = c.model && c.model.kind;
     if (c.lightsOn) {
-      const reach = c === P.car ? 23 : kind === 'police' || kind === 'swat' ? 19 : c.len > 7 ? 18 : 16;
-      const hk = c.maxHp ? c.hp / c.maxHp : 1, twin = c === P.car || hk < 0.35;
-      // traffic gets one wide beam; your car and the battered ones get a beam per lamp
-      if (!twin) cone(c.x + cs * (L2 + 0.25), c.y + sn * (L2 + 0.25), reach, c.th, 0.4, HEAD, 1, 0.15 * em);
+      const reach = headReach(c, kind), hk = c.maxHp ? c.hp / c.maxHp : 1;
       for (let s = -1; s <= 1; s += 2) {
-        if (s < 0 && hk < 0.35) continue;   // a battered car is down to one eye
-        const on = s > 0 && hk < 0.18 ? (Math.sin(t * 23 + c.id) > -0.2 ? 1 : 0.1) : 1;
-        const lx = L2 - 0.15, ly = s * (W2 - 0.32), hx = c.x + lx * cs - ly * sn, hy = c.y + lx * sn + ly * cs;
-        if (twin) cone(hx + cs * 0.25, hy + sn * 0.25, reach, c.th + s * 0.05, 0.36, HEAD, on, 0.13 * on * em);
-        pt(hx + cs * 0.55, hy + sn * 0.55, 0.7, HEAD, 0, 0.7 * on * em);
+        const on = hk < 0.18 && s > 0 ? (Math.sin(t * 23 + c.id) > -0.2 ? 1 : 0.35) : 1;   // a wreck-to-be flickers, never goes out
+        const h = carLamp(c, cs, sn, L2 + BUMP, s * (W2 - HL_Y));
+        cone(h.x, h.y, reach, c.th + s * 0.04, 0.36, HEAD, 0.85 * on, 0.12 * on * em);
+        pt(h.x + cs * 0.2, h.y + sn * 0.2, 0.55, HEAD, 0, 0.6 * on * em);
       }
       if (kind === 'taxi') pt(c.x - cs * 0.07, c.y - sn * 0.07, 0.5, '#ffe680', 0, 0.35 * em);
       if (kind === 'bus' && (c.driver || c.npcDriver)) {
@@ -19047,11 +19050,12 @@ body.gta.touch #gta-hud .s-pick, body.gta.touch #gta-hud .s-offer { bottom: calc
     if (c.lightsOn || c.braking) {
       const br = c.braking;
       for (let s = -1; s <= 1; s += 2) {
-        const lx = -L2 - (br ? 1.0 : 0.55), ly = s * (W2 - 0.3);
-        pt(c.x + lx * cs - ly * sn, c.y + lx * sn + ly * cs, br ? 1.8 : 1.0, TAIL, br ? 0.3 : 0.12, (br ? 0.85 : 0.4) * em);
+        const q = carLamp(c, cs, sn, -L2 - BUMP, s * (W2 - HL_Y));
+        const o = br ? 0.75 : 0.45;   // centred behind the bumper: the glow lies on the road, barely on the boot
+        pt(q.x - cs * o, q.y - sn * o, br ? 1.25 : 0.8, TAIL, br ? 0.3 : 0.12, (br ? 0.85 : 0.4) * em);
       }
     }
-    if (c.reversing) pt(c.x - cs * (L2 + 0.9), c.y - sn * (L2 + 0.9), 3.6, '#f4f6ff', 0.5, 0.3 * em);
+    if (c.reversing) { const q = carLamp(c, cs, sn, -L2 - 1.6, 0); pt(q.x, q.y, 2.2, '#f4f6ff', 0.45, 0.25 * em); }
     // bumped NPC cars sit there with the hazards on
     if (!c.siren && c.ctrl === 'phys' && (c.npcDriver || (c.driver && !c.driver.isPlayer)) && !c.ai && c.speed < 1.5 && ((t * 1.6 + c.id * 0.37) % 1) < 0.5) {
       for (let s = -1; s <= 1; s += 2) for (let f = -1; f <= 1; f += 2) {
@@ -19073,12 +19077,12 @@ body.gta.touch #gta-hud .s-pick, body.gta.touch #gta-hud .s-offer { bottom: calc
       if (!submittedNear(c.x, c.y, 6)) pt(c.x, c.y, 12, on ? '#ff3030' : '#3060ff', 0.45, 0.32 * gk);
     }
   }
-  // 'low': one wide beam per lit car and the siren wash, nothing else
+  // 'low': the two beams per lit car and the siren wash, nothing else
   function carLightsLow(c, t, gk) {
     const cs = Math.cos(c.th), sn = Math.sin(c.th), L2 = c.len / 2, kind = c.model && c.model.kind;
     if (c.lightsOn) {
-      const hk = c.maxHp ? c.hp / c.maxHp : 1, reach = c === P.car ? 23 : kind === 'police' || kind === 'swat' ? 19 : c.len > 7 ? 18 : 16;
-      cone(c.x + cs * (L2 - 2.2), c.y + sn * (L2 - 2.2), reach, c.th, hk < 0.35 ? 0.3 : 0.4, HEAD, hk < 0.35 ? 0.7 : 1, 0);
+      const reach = headReach(c, kind), W2 = c.wid / 2;
+      for (let s = -1; s <= 1; s += 2) { const h = carLamp(c, cs, sn, L2 + BUMP, s * (W2 - HL_Y)); cone(h.x, h.y, reach, c.th + s * 0.04, 0.36, HEAD, 0.85, 0); }
     }
     if (c.siren && !submittedNear(c.x, c.y, 6)) { const on = Math.floor(t * 8) % 2 === 0; pt(c.x, c.y, 12, on ? '#ff3030' : '#3060ff', 0.45, 0.32 * gk); }
   }
@@ -19129,7 +19133,6 @@ body.gta.touch #gta-hud .s-pick, body.gta.touch #gta-hud .s-offer { bottom: calc
     if (w === MW && h === MH) return;
     lm.width = MW = w; lm.height = MH = h; lc = lm.getContext('2d');
   }
-  const dirBucket = a => { const k = Math.round(a / TAU * DIRS) % DIRS; return k < 0 ? k + DIRS : k; };
   // Native-size copies of the round sprites (6 % size steps, fast renderer): an unscaled, unfiltered blit
   // is the cheapest draw a software-rasterised canvas has; scaling the 256 px original costs about twice that.
   const NAT = new Map(), NSTEP = Math.log(1.06);
@@ -19147,10 +19150,9 @@ body.gta.touch #gta-hud .s-pick, body.gta.touch #gta-hud .s-offer { bottom: calc
   function drawCut(r) {
     const px = Ma * r.x + Mc * r.y + Me, py = Mb * r.x + Md * r.y + Mf;
     if (r.sp > 0) {
-      const R = r.rx * kpx, cr = coneRot(bucket(r.sp), dirBucket(r.rot + vrot));
-      lc.globalAlpha = r.cut > 0.97 ? 1 : r.cut; lc.imageSmoothingEnabled = true;
-      lc.drawImage(cr.cv, px + cr.x0 * R, py + cr.y0 * R, cr.w * R, cr.h * R);
-      lc.globalAlpha = 1; lc.imageSmoothingEnabled = false;
+      lc.globalAlpha = r.cut > 0.97 ? 1 : r.cut;
+      drawCone(r, px, py);
+      lc.globalAlpha = 1;
       return;
     }
     const lev = Math.min(LV, Math.max(1, Math.round(r.cut * LV))), spr = SPR.levels[lev], rx = r.rx * kpx, ry = r.ry * kpx, rot = r.rx === r.ry ? 0 : r.rot + vrot;
@@ -19159,6 +19161,14 @@ body.gta.touch #gta-hud .s-pick, body.gta.touch #gta-hud .s-offer { bottom: calc
     if (!rot) { lc.drawImage(spr, px - rx, py - ry, 2 * rx, 2 * ry); return; }
     const cs = Math.cos(rot), sn = Math.sin(rot);
     lc.setTransform(cs, sn, -sn, cs, px, py); lc.drawImage(spr, -rx, -ry, 2 * rx, 2 * ry); lc.setTransform(1, 0, 0, 1, 0, 0);
+  }
+  // A beam turned to its screen angle in 1 degree steps (the old 3.75 degree steps made beams jump as the
+  // camera turned), drawn axis-aligned: a rotated draw costs a software canvas several times more.
+  function drawCone(r, px, py) {
+    const R = r.rx * kpx, cr = coneRot(bucket(r.sp), dirBucket(r.rot + vrot));
+    lc.imageSmoothingEnabled = true;
+    lc.drawImage(cr.cv, px + cr.x0 * R, py + cr.y0 * R, cr.w * R, cr.h * R);
+    lc.imageSmoothingEnabled = false;
   }
   function cutPass(a, b, op) {
     lc.setTransform(1, 0, 0, 1, 0, 0); lc.globalAlpha = 1; lc.globalCompositeOperation = op;
@@ -19170,9 +19180,7 @@ body.gta.touch #gta-hud .s-pick, body.gta.touch #gta-hud .s-offer { bottom: calc
       const r = LP[k]; if (r.glow <= 0.004) continue;
       const px = Ma * r.x + Mc * r.y + Me, py = Mb * r.x + Md * r.y + Mf, ga = r.glow > 1 ? 1 : r.glow;
       if (r.sp > 0) {   // beams glow white: the cut sprite doubles as the haze
-        const R = r.rx * kpx, cr = coneRot(bucket(r.sp), dirBucket(r.rot + vrot));
-        lc.globalAlpha = ga; lc.imageSmoothingEnabled = true;
-        lc.drawImage(cr.cv, px + cr.x0 * R, py + cr.y0 * R, cr.w * R, cr.h * R); lc.imageSmoothingEnabled = false;
+        lc.globalAlpha = ga; drawCone(r, px, py);
         continue;
       }
       const e = tintOf(r.col);
@@ -19543,7 +19551,7 @@ body.gta.touch #gta-hud .s-pick, body.gta.touch #gta-hud .s-offer { bottom: calc
     place(ctx, M, c.x, c.y, c.th);
     if (c.lightsOn) {
       ctx.fillStyle = HEAD; ctx.globalAlpha = em;
-      if (hk >= 0.35) ctx.fillRect(L / 2 - 0.13, -W / 2 + 0.12, 0.12, 0.38);
+      ctx.fillRect(L / 2 - 0.13, -W / 2 + 0.12, 0.12, 0.38);
       if (hk >= 0.18 || Math.sin(t * 23 + c.id) > -0.2) ctx.fillRect(L / 2 - 0.13, W / 2 - 0.5, 0.12, 0.38);
     }
     if (c.lightsOn || c.braking) {
