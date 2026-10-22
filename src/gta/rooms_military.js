@@ -422,13 +422,13 @@
   }
 
   D(ARMY.id, {
-    place: true, size: [36, 28], names: [ARMY.name],
+    place: true, size: [36, 30], names: [ARMY.name],
     greet: ['CAMP BUSSBY HQ. WIPE YOUR BOOTS.', 'ARE YOU THE NEW RECRUIT? YOU LOOK LIKE A RECRUIT.', 'STATE YOUR BUSINESS. AND YOUR SHOE SIZE.'],
     style: { door: '#3d4a2c', frame: '#2b2f22', plate: '#3d4a2c', text: '#e9e4d8', light: '#ffe2a0' },
     looks, furn,
     layout(sc, b, R, K) {
       Object.assign(sc, { camSpan: 28, ambient: 0.75, wallTop: '#4a5236', wallLo: '#2b301f', wallHi: '#7a8460' });
-      b.room(0, 20, 36, 28, 'concrete', '#6a6b5f', '#5a5b50');
+      b.room(0, 20, 36, 30, 'concrete', '#6a6b5f', '#5a5b50');
       b.room(0, 0, 14, 20, 'wood', '#6e5a3c', '#5a4830');
       b.room(14, 0, 24, 20, 'lino', '#7d846a', '#6a7158');
       b.room(24, 0, 36, 20, 'concrete', '#55574e', '#46483f');
@@ -436,16 +436,16 @@
       b.hwall(20, 0.25, 35.75, [[6, 2.2], [19, 2.4], [30, 2.2]]);
       b.vwall(14, 0.5, 19.75, []); b.vwall(24, 0.5, 19.75, []);
       // lobby: the flag, the quartermaster's counter with stands to buy from, sentries
-      b.f('armyflag', 6, 27.6, 2.6, 0.3, { layer: 2 });
+      b.f('armyflag', 6, 29.6, 2.6, 0.3, { layer: 2 });
       b.f('sign', 12, 20.45, 7, 0.45, { text: 'DAYS WITHOUT A TANK IN THE CANTEEN: 2', c: '#e9e4d8', bg: '#3d4a2c', size: 0.24, layer: 2 });
       b.f('counter', 30, 22.4, 10.5, 1.2, { solid: 'low', c: '#3d4a2c', top: '#8a8466' });
       b.ped('owner', 30, 21.2, Math.PI / 2, { look: 'quartermaster', weapon: 'rifle', hp: 180, armor: 50 });
-      b.f('sign', 30, 27.55, 9, 0.42, { text: 'QUARTERMASTER · ARMY SURPLUS · NO QUESTIONS', c: '#1b1b1f', bg: '#d8c96a', size: 0.22, layer: 2 });
-      ['rifle', 'grenade', 'rocket', 'flamer', 'armor'].forEach((it, i) => b.pad(25 + i * 2.5, 25, it));
+      b.f('sign', 29, 29.55, 9, 0.42, { text: 'QUARTERMASTER · ARMY SURPLUS · NO QUESTIONS', c: '#1b1b1f', bg: '#d8c96a', size: 0.22, layer: 2 });
+      ['rifle', 'grenade', 'rocket', 'flamer', 'armor'].forEach((it, i) => b.pad(i < 3 ? 24.5 + i * 4 : 26.5 + (i - 3) * 4, i < 3 ? 24.4 : 27.6, it));
       b.ped('guard', 13.5, 25.5, -Math.PI / 2, { look: 'soldier', weapon: 'rifle', hp: 150, armor: 60 });
       b.ped('guard', 22.5, 25.5, -Math.PI / 2, { look: 'soldier', weapon: 'rifle', hp: 150, armor: 60 });
-      b.f('bench', 1.2, 24, 0.8, 5, { solid: 'low', c: '#4a5236', back: 'w' });
-      b.ped('sitter', 1.6, 23, 0, { look: 'soldier', chance: 0.6 });
+      b.f('bench', 1.2, 25, 0.8, 5, { solid: 'low', c: '#4a5236', back: 'w' });
+      b.ped('sitter', 1.6, 24, 0, { look: 'soldier', chance: 0.6 });
       // barracks: bunks in rows, lockers, somebody snoring
       for (let i = 0; i < 4; i++) for (const x of [2.2, 11.8]) b.f('bunk', x, 2.6 + i * 4.2, 2.2, 3, { solid: 'low' });
       b.f('locker', 7, 0.95, 6, 0.9, { solid: 'tall' });
@@ -477,8 +477,8 @@
       b.act(28, 2.4, 1.6, () => 'F: Take a machine gun off the rack', () => grab(sc, 'rifle', 120, 'Machine Gun'));
       b.act(32.5, 2.4, 1.6, () => 'F: Take a rocket launcher', () => grab(sc, 'rocket', 6, 'Rocket Launcher'));
       b.act(33.6, 8, 1.6, () => 'F: Take a box of grenades', () => grab(sc, 'grenade', 10, 'Grenades'));
-      b.light(18, 24, 10, '#f4f8ff', 0.8, { fix: 'tube' }); b.light(7, 9, 9, '#ffe6b0', 0.55, { fix: 'bulb' }); b.light(19, 9, 8, '#fff0d0', 0.85, { fix: 'lamp' }); b.light(30, 9, 9, '#f4f8ff', 0.75, { fix: 'tube', flick: 1 });
-      b.win(3, 27.5, 9, 28); b.win(27, 27.5, 33, 28);
+      b.light(18, 25, 10, '#f4f8ff', 0.8, { fix: 'tube' }); b.light(7, 9, 9, '#ffe6b0', 0.55, { fix: 'bulb' }); b.light(19, 9, 8, '#fff0d0', 0.85, { fix: 'lamp' }); b.light(30, 9, 9, '#f4f8ff', 0.75, { fix: 'tube', flick: 1 });
+      b.win(3, 29.5, 9, 30); b.win(27, 29.5, 33, 30);
       b.browse(18, 24, -Math.PI / 2); b.browse(27, 25.5, -Math.PI / 2);
     },
     tick(sc, dt, t, K) { hostileWhenWanted(sc, 2); },

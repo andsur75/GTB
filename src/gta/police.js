@@ -720,7 +720,7 @@
     if (lvl >= 1 && P.state === 'play' && !X.scene && d < 70) {
       a.t -= dt;
       if (a.t <= 0) { a.t = 0.35; a.see = d < 50 && !X.raycast(p.x, p.y, S.px, S.py); if (a.see && d < TUNE.seeFoot) see(); }
-      if (d < (a.station ? 30 : 22) && (!P.car || P.car.speed < 4)) { a.state = 'chase'; shout(p, SHOUT); return; }
+      if (d < (a.station ? 30 : 22) && (!P.car || P.car.speed < 4)) { a.state = 'chase'; shout(p, a.kind === 'army' ? SHOUT_ARMY : SHOUT); return; }
       if (p.weapon && a.see && d < K.range + 8 && (P.car ? lvl >= 3 : lvl >= 2)) aimAndFire(p, a, dt);
       else face(p, dx, dy, dt);
     } else if (a.th0 != null) face(p, Math.cos(a.th0), Math.sin(a.th0), dt);

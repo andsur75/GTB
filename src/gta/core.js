@@ -1315,6 +1315,8 @@
     },
     armored(ctx, c) { ctx.fillStyle = '#d4af37'; ctx.fillRect(-c.len / 2 + 0.1, -0.1, c.len * 0.66, 0.2); },
     swat(ctx, c, on) {
+      ctx.fillStyle = c.color; ctx.fillRect(-c.len / 2 + 0.05, -c.wid / 2 + 0.05, c.len * 0.7, c.wid - 0.1);   // a black van, not a white box
+      ctx.fillStyle = 'rgba(255,255,255,0.07)'; ctx.fillRect(-c.len / 2 + 0.3, -c.wid / 2 + 0.3, c.len * 0.6, c.wid - 0.6);
       ctx.fillStyle = '#f4f4f4'; ctx.font = '700 0.7px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.save(); ctx.rotate(Math.PI / 2); ctx.fillText('SWAT', 0, 0.6); ctx.restore();
       ctx.fillStyle = c.siren ? (on ? '#ff2a2a' : '#2a6bff') : '#333'; ctx.fillRect(c.len * 0.25, -0.6, 0.25, 1.2);
