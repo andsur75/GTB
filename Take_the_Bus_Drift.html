@@ -511,7 +511,7 @@ body.fps-on .screen:not(.clear) { padding-top: max(44px, env(safe-area-inset-top
     <div class="panel">
       <div class="row-head"><div><p class="eyebrow">Options</p><h2 class="head" id="set-head">Settings</h2></div><button class="btn small" id="set-back">Back</button></div>
       <div id="set-body"></div>
-      <div class="set-foot"><p class="fine">Changes apply at once and are saved on this device. O or Esc closes this screen.</p><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="btn-carsound">Car sound</button><button class="btn primary" id="set-done">Done</button></div></div>
+      <div class="set-foot"><p class="fine">Changes apply at once and are saved on this device. O or Esc closes this screen.</p><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="set-copy">Copy settings</button><button class="btn" id="btn-carsound">Car sound</button><button class="btn primary" id="set-done">Done</button></div></div>
     </div>
   </section>
 
@@ -4163,6 +4163,17 @@ body.fps-on .screen:not(.clear) { padding-top: max(44px, env(safe-area-inset-top
     $('pause-settings').onclick = () => { PG.audio.click(); openSettings('pause'); };
     $('set-back').onclick = closeSettings;
     $('set-done').onclick = closeSettings;
+    // Copy settings: every option as one line of JSON (to hand over, e.g. to make it the default)
+    $('set-copy').onclick = () => {
+      const j = JSON.stringify(PG.settings), b = $('set-copy');
+      const done = ok => { b.textContent = ok ? 'Copied' : 'Select and copy'; setTimeout(() => { b.textContent = 'Copy settings'; }, 2000); };
+      const show = () => {   // clipboard refused: put the text where it can be selected by hand
+        let ta = document.getElementById('set-copy-text');
+        if (!ta) { ta = document.createElement('textarea'); ta.id = 'set-copy-text'; ta.readOnly = true; ta.rows = 4; ta.style.cssText = 'width:100%;font:13px ui-monospace,monospace;background:#0c0d0f;color:#ece8dc;border:1px solid #2c2f35;border-radius:6px;padding:8px;'; $('set-body').appendChild(ta); }
+        ta.value = j; ta.focus(); ta.select(); done(false);
+      };
+      try { navigator.clipboard.writeText(j).then(() => done(true), show); } catch (e) { show(); }
+    };
     PG.onSettings((S, keys) => { if (screen === 'settings') refreshSettings(); if (keys.includes('showFps')) fpsVisible(); });
     fpsVisible();
     $('btn-rename').onclick = () => rename('title');
