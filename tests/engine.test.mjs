@@ -23,7 +23,7 @@ const api = await ev(() => ({ s: !!PG.settings, on: typeof PG.onSettings, set: t
 check('settings API present', api.s && api.on === 'function' && api.set === 'function' && api.ap === 'function' && api.sprites && api.rs, api);
 check('presets low/medium/high/ultra', ['low', 'medium', 'high', 'ultra'].every(p => api.presets.includes(p)), api.presets);
 const d = api.d;
-check('defaults: high preset + showFps, fpsCap 0, wheel zoom, radio, shake, no light engine setting', d.quality === 'high' && d.renderScale === 1 && d.maxDpr === 1.5 && d.adaptive === true && d.fastRender === false && d.lighting === 'high' && d.particles === 'high' && d.decals === 'high' && d.detail === 'high' && d.traffic === 1 && d.pedDensity === 1 && d.policeMax === 8 && d.showFps === true && d.fpsCap === 0 && d.wheel === 'zoom' && d.radio === true && d.cameraShake === true && !('lightEngine' in d), d);
+check('defaults: high preset + showFps, fpsCap 0, wheel zoom, radio, shake, no light engine setting', d.quality === 'high' && d.renderScale === 0.7 && d.maxDpr === 1 && d.adaptive === false && d.fastRender === false && d.lighting === 'low' && d.particles === 'low' && d.decals === 'low' && d.detail === 'high' && d.traffic === 1.25 && d.pedDensity === 1.25 && d.policeMax === 10 && d.showFps === true && d.fpsCap === 0 && d.wheel === 'zoom' && d.radio === true && d.cameraShake === true && !('lightEngine' in d), d);
 
 // presets, Custom, listeners
 const pr = await ev(() => {
