@@ -19,10 +19,7 @@ export async function launch(o = {}) {
   page.on('pageerror', e => errors.push('pageerror: ' + e.message + (e.stack ? '\n' + e.stack.split('\n').slice(0, 3).join('\n') : '')));
   page.on('console', m => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
   await page.goto('file://' + html);
-  // The game defaults to the WebGL light engine. Test machines have no graphics card (WebGL runs in software,
-  // ~15 fps), so tests start on the canvas engine unless o.lightEngine or GTB_LIGHT=webgl says otherwise.
-  const le = o.lightEngine || process.env.GTB_LIGHT || 'canvas';
-  await page.evaluate(le => localStorage.setItem('ttb.v1', JSON.stringify(Object.assign({ nick: 'Tester', gtaIntroSeen: true, muted: true }, { settings: { lightEngine: le } }))), le);
+  await page.evaluate(() => localStorage.setItem('ttb.v1', JSON.stringify({ nick: 'Tester', gtaIntroSeen: true, muted: true })));
   await page.reload();
   await page.waitForTimeout(400);
   if (o.start !== false) {

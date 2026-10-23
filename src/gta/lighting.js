@@ -11,10 +11,9 @@
 // submit with X.addLight. Roofs are masked so street light stays on the street. L toggles the headlights,
 // or a pocket torch on foot. X.lighting = {darkness(), isNight(), ambient, lightAt(x, y), flash(k), ...};
 // emits 'dayPhase' {phase: 'day'|'night'} when the sun comes up or goes down.
-// Two light-map engines draw the same picture: WebGL (every light one procedural quad in a single batched
-// buffer, additive / cut blending on the GPU, one drawImage onto the scene) and Canvas 2D (pre-baked
-// sprites). PG.settings.lightEngine picks one: 'webgl' (the default; canvas only if the browser has no WebGL)
-// or 'canvas'; PG.settings.lighting is the quality: 'high' (everything), 'medium' (1/3-res map, no
+// The light map is WebGL only: every light is one procedural quad in a single batched buffer, additive /
+// cut blending on the GPU, one drawImage onto the scene (a browser without WebGL gets no darkness at night).
+// PG.settings.lighting is the quality: 'high' (everything), 'medium' (1/3-res map, no
 // window spill), 'low' (1/4-res map: darkness, lamps, headlights and the big lights only), 'off' (no
 // darkness at all; gameplay still knows it is night).
 (function (PG) {
@@ -75,10 +74,7 @@
   const api = X.lighting = {
     ambient: 1 - MAXA,
     quality: null,                              // light-map resolution (fraction of CSS pixels); null = automatic
-    // debugging switches for the canvas engine (A/B timing): native = false scales the 256 px sprites
-    // instead of native-size copies, copyDark = false accumulates light then fills 'source-out'
-    native: true, copyDark: true,
-    stats: { lights: 0, submitted: 0, ms: 0, lamps: 0, cars: 0, engine: '' },   // engine: 'webgl' | 'canvas' | 'off'
+    stats: { lights: 0, submitted: 0, ms: 0, lamps: 0, cars: 0, engine: '' },   // engine: 'webgl' | 'none' (no WebGL here) | 'off'
     darkness() { updateSky(); return sky.d; },  // 0 = broad daylight, 1 = deepest night
     isNight() { updateSky(); return sky.d > 0.45; },
     sky() { updateSky(); return { darkness: sky.d, color: [Math.round(sky.r), Math.round(sky.g), Math.round(sky.b)], warm: sky.warm, indoor: !!X.scene }; },
@@ -176,92 +172,6 @@
   function submittedNear(x, y, minR) {
     for (let k = 0; k < nSub; k++) { const r = LP[k]; if (r.rx >= minR && Math.abs(r.x - x) < 1.6 && Math.abs(r.y - y) < 1.6) return true; }
     return false;
-  }
-
-  // ================= sprites =================
-  // A software-rasterised canvas is fastest with axis-aligned, nearest-sampled, source-over draws and no
-  // globalAlpha: point lights use big sprites with the intensity baked in (16 levels, 8 for the common glow
-  // colours); cones are drawn turned to their exact angle.
-  const LV = 16, CS = 128, DIRS = 360, CR = 72;   // CR: px per reach in a turned beam
-  let SPR = null;
-  function mk(w, h, fn) {
-    const c = document.createElement('canvas'); c.width = w; c.height = h;
-    const g = c.getContext('2d'), im = g.createImageData(w, h), D = im.data;
-    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const i = (y * w + x) * 4; D[i] = D[i + 1] = D[i + 2] = 255; D[i + 3] = Math.round(cl(fn(x + 0.5, y + 0.5), 0, 1) * 255); }
-    g.putImageData(im, 0, 0);
-    return c;
-  }
-  const cutFall = d => d >= 1 ? 0 : (1 - d * d) * (1 - d * d);
-  const glowFall = d => d >= 1 ? 0 : (1 - d) * (1 - d);
-  function sprites() {
-    if (SPR) return SPR;
-    const N = 256, h = N / 2, base = mk(N, N, (x, y) => cutFall(Math.hypot(x - h, y - h) / h));
-    const levels = [null];
-    for (let l = 1; l <= LV; l++) {
-      const c = document.createElement('canvas'); c.width = c.height = N;
-      const g = c.getContext('2d'); g.globalAlpha = l / LV; g.drawImage(base, 0, 0); levels.push(c);
-    }
-    SPR = { levels, glow: mk(128, 128, (x, y) => glowFall(Math.hypot(x - 64, y - 64) / 64)), coneBase: [], coneRot: [] };
-    return SPR;
-  }
-  const bucket = sp => cl(Math.round(sp / 0.05), 1, 28);
-  // a cone pointing east with its apex in the middle of a (2 CS)^2 canvas
-  function coneBase(b) {
-    const arr = SPR.coneBase;
-    if (arr[b]) return arr[b];
-    const sp = b * 0.05;
-    return (arr[b] = mk(CS * 2, CS * 2, (x, y) => {
-      const dx = x - CS, dy = y - CS, d = Math.hypot(dx, dy) / CS; if (d >= 1 || dx <= 0) return 0;
-      const m = 1 - sstep(sp * 0.55, sp, Math.abs(Math.atan2(dy, dx))); if (m <= 0) return 0;
-      return m * Math.pow(1 - d, 1.25) * sstep(0, 0.1, d);
-    }));
-  }
-  // the cone for spread bucket b turned to direction bucket k (1 degree), cropped to its bounding box (unit = reach)
-  function coneRot(b, k) {
-    const row = SPR.coneRot[b] || (SPR.coneRot[b] = []);
-    if (row[k]) return row[k];
-    const sp = b * 0.05, phi = k * TAU / DIRS;
-    let x0 = 0, y0 = 0, x1 = 0, y1 = 0;
-    const take = a => { const x = Math.cos(a), y = Math.sin(a); if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; };
-    take(phi - sp); take(phi + sp);
-    for (let q = -4; q <= 4; q++) { const a = q * Math.PI / 2; if (Math.abs(PG.wrap(a - phi)) < sp) take(a); }
-    x0 -= 0.03; y0 -= 0.03; x1 += 0.03; y1 += 0.03;
-    const c = document.createElement('canvas'); c.width = Math.max(1, Math.ceil((x1 - x0) * CR)); c.height = Math.max(1, Math.ceil((y1 - y0) * CR));
-    const g = c.getContext('2d'); g.imageSmoothingQuality = 'high';
-    g.setTransform(CR / CS, 0, 0, CR / CS, -x0 * CR, -y0 * CR); g.rotate(phi); g.drawImage(coneBase(b), -CS, -CS);
-    return (row[k] = { cv: c, x0, y0, w: c.width / CR, h: c.height / CR });
-  }
-  const dirBucket = a => { const k = Math.round(a / TAU * DIRS) % DIRS; return k < 0 ? k + DIRS : k; };
-  const TINT = new Map();
-  function tint(src, col) {
-    const c = document.createElement('canvas'); c.width = src.width; c.height = src.height;
-    const g = c.getContext('2d'); g.drawImage(src, 0, 0); g.globalCompositeOperation = 'source-in'; g.fillStyle = col; g.fillRect(0, 0, c.width, c.height);
-    return c;
-  }
-  function tintOf(col) {
-    let e = TINT.get(col);
-    if (!e) {
-      if (TINT.size > 120) for (const k of TINT.keys()) if (!BAKE.has(k)) TINT.delete(k);   // modules made up lots of colours
-      e = { pt: tint(SPR.glow, col), lv: null }; TINT.set(col, e);
-    }
-    return e;
-  }
-  // the colours drawn every frame get their glow baked at a few strengths (no globalAlpha needed)
-  const GL = 8, BAKE = new Set([HEAD, TAIL, AMBER].concat(LAMPC, WINC));
-  function glowLevels(e) {
-    if (e.lv) return e.lv;
-    e.lv = [null];
-    for (let l = 1; l <= GL; l++) { const c = document.createElement('canvas'); c.width = c.height = e.pt.width; const g = c.getContext('2d'); g.globalAlpha = l / GL; g.drawImage(e.pt, 0, 0); e.lv.push(c); }
-    return e.lv;
-  }
-
-  // build the common sprites up front (headlights, torch, police torches) so the first night has no hitch
-  let warmed = false;
-  function prewarm() {
-    if (warmed) return; warmed = true;
-    sprites();
-    for (const sp of [0.36, 0.4]) { const b = bucket(sp); for (let k = 0; k < DIRS; k++) coneRot(b, k); }   // headlights, torches
-    for (const c of BAKE) glowLevels(tintOf(c));
   }
 
   // ================= gathering lights =================
@@ -456,82 +366,8 @@
   }
 
   // ================= rendering =================
-  // One half-resolution map. Light accumulates with source-over (alpha = 1 - prod(1 - cut)); a single
-  // 'source-out' fill turns it into the darkness; coloured glows are painted over that; roofs are reset to
-  // a flat dark; roof-level lights (neon, signs, beacons) are cut and painted; the map then goes onto the
-  // screen with nearest-neighbour scaling (it is smooth anyway, and a filtered upscale costs ~7x more).
-  let lm = null, lc = null, MW = 0, MH = 0;
+  // The light map is drawn by WebGL, at half resolution, then goes onto the scene with one filtered drawImage.
   let Ma = 1, Mb = 0, Mc = 0, Md = 1, Me = 0, Mf = 0, vrot = 0, kpx = 1;
-  const BUDGET = 6;   // light pixels per map pixel before the frame drops resolution
-  function ensureMap(cw, ch) {
-    const w = Math.max(1, Math.ceil(cw * Q)), h = Math.max(1, Math.ceil(ch * Q));
-    if (!lm) lm = document.createElement('canvas');
-    if (w === MW && h === MH) return;
-    lm.width = MW = w; lm.height = MH = h; lc = lm.getContext('2d');
-  }
-  // Native-size copies of the round sprites (6 % size steps, fast renderer): an unscaled, unfiltered blit
-  // is the cheapest draw a software-rasterised canvas has; scaling the 256 px original costs about twice that.
-  const NAT = new Map(), NSTEP = Math.log(1.06);
-  let natPx = 0, NATIVE = true;
-  const natSize = d => !NATIVE || d < 3 || d > 512 ? 0 : Math.round(Math.exp(Math.round(Math.log(d) / NSTEP) * NSTEP));
-  function natSprite(key, src, n) {
-    let c = NAT.get(key);
-    if (c) { NAT.delete(key); NAT.set(key, c); return c; }
-    c = document.createElement('canvas'); c.width = c.height = n;
-    const g = c.getContext('2d'); g.imageSmoothingQuality = 'high'; g.drawImage(src, 0, 0, n, n);
-    NAT.set(key, c); natPx += n * n;
-    while (natPx > 4e6 && NAT.size > 1) { const k = NAT.keys().next().value, o = NAT.get(k); NAT.delete(k); natPx -= o.width * o.height; }
-    return c;
-  }
-  function drawCut(r) {
-    const px = Ma * r.x + Mc * r.y + Me, py = Mb * r.x + Md * r.y + Mf;
-    if (r.sp > 0) {
-      lc.globalAlpha = r.cut > 0.97 ? 1 : r.cut;
-      drawCone(r, px, py);
-      lc.globalAlpha = 1;
-      return;
-    }
-    const lev = Math.min(LV, Math.max(1, Math.round(r.cut * LV))), spr = SPR.levels[lev], rx = r.rx * kpx, ry = r.ry * kpx, rot = r.rx === r.ry ? 0 : r.rot + vrot;
-    if (!rot && rx === ry) { const n = natSize(2 * rx); if (n) { lc.drawImage(natSprite('c' + lev + '|' + n, spr, n), px - n / 2, py - n / 2); return; } }
-    if (rx > 300 || ry > 300) { lc.imageSmoothingEnabled = true; lc.drawImage(spr, px - rx, py - ry, 2 * rx, 2 * ry); lc.imageSmoothingEnabled = false; return; }
-    if (!rot) { lc.drawImage(spr, px - rx, py - ry, 2 * rx, 2 * ry); return; }
-    const cs = Math.cos(rot), sn = Math.sin(rot);
-    lc.setTransform(cs, sn, -sn, cs, px, py); lc.drawImage(spr, -rx, -ry, 2 * rx, 2 * ry); lc.setTransform(1, 0, 0, 1, 0, 0);
-  }
-  // A beam turned to its screen angle in 1 degree steps (the old 3.75 degree steps made beams jump as the
-  // camera turned), drawn axis-aligned: a rotated draw costs a software canvas several times more.
-  function drawCone(r, px, py) {
-    const R = r.rx * kpx, cr = coneRot(bucket(r.sp), dirBucket(r.rot + vrot));
-    lc.imageSmoothingEnabled = true;
-    lc.drawImage(cr.cv, px + cr.x0 * R, py + cr.y0 * R, cr.w * R, cr.h * R);
-    lc.imageSmoothingEnabled = false;
-  }
-  function cutPass(a, b, op) {
-    lc.setTransform(1, 0, 0, 1, 0, 0); lc.globalAlpha = 1; lc.globalCompositeOperation = op;
-    for (let k = a; k < b; k++) if (LP[k].cut > 0.004) drawCut(LP[k]);
-  }
-  function glowPass(a, b) {
-    lc.setTransform(1, 0, 0, 1, 0, 0); lc.globalCompositeOperation = 'source-over';
-    for (let k = a; k < b; k++) {
-      const r = LP[k]; if (r.glow <= 0.004) continue;
-      const px = Ma * r.x + Mc * r.y + Me, py = Mb * r.x + Md * r.y + Mf, ga = r.glow > 1 ? 1 : r.glow;
-      if (r.sp > 0) {   // beams glow white: the cut sprite doubles as the haze
-        lc.globalAlpha = ga; drawCone(r, px, py);
-        continue;
-      }
-      const e = tintOf(r.col);
-      let spr = e.pt, lev = 0;
-      if (BAKE.has(r.col)) { const l = Math.round(ga * GL); if (l < 1) continue; lev = l > GL ? GL : l; spr = glowLevels(e)[lev]; lc.globalAlpha = 1; }
-      else lc.globalAlpha = ga;
-      const rx = r.rx * kpx * r.gs, ry = r.ry * kpx * r.gs, rot = r.rx === r.ry ? 0 : r.rot + vrot;
-      if (!rot && rx === ry) { const n = natSize(2 * rx); if (n) { lc.drawImage(natSprite('g' + r.col + '|' + lev + '|' + n, spr, n), px - n / 2, py - n / 2); continue; } }
-      if (rx > 150 || ry > 150) { lc.imageSmoothingEnabled = true; lc.drawImage(spr, px - rx, py - ry, 2 * rx, 2 * ry); lc.imageSmoothingEnabled = false; continue; }
-      if (!rot) { lc.drawImage(spr, px - rx, py - ry, 2 * rx, 2 * ry); continue; }
-      const cs = Math.cos(rot), sn = Math.sin(rot);
-      lc.setTransform(cs, sn, -sn, cs, px, py); lc.drawImage(spr, -rx, -ry, 2 * rx, 2 * ry); lc.setTransform(1, 0, 0, 1, 0, 0);
-    }
-    lc.globalAlpha = 1;
-  }
   // ---------- the WebGL engine ----------
   // Every record becomes one quad in a single vertex buffer; the falloffs (cut (1-d^2)^2, glow (1-d)^2,
   // the headlight cone) are computed per pixel, so there are no sprite levels or direction buckets. Six
@@ -587,8 +423,13 @@
     GE.tried.loose = true;
     return glCreate(false);
   }
-  // WebGL everywhere unless the player picked canvas in the settings.
-  function engineOf(pref) { return pref !== 'canvas' && glReady() ? 'webgl' : 'canvas'; }
+  // WebGL only. A browser without it gets no light map (the night is not darkened); everything else runs.
+  let noGL = false;
+  function engineOf() {
+    if (glReady()) return 'webgl';
+    if (!noGL) { noGL = true; console.warn('[lighting] no WebGL here: the night is drawn without darkness'); }
+    return 'none';
+  }
   // colours -> [r, g, b, a] 0..1 (records carry CSS colours)
   const RGBA = new Map(); let parseCtx = null;
   function rgbaOf(col) {
@@ -648,7 +489,7 @@
     const rGlow = recRange(nGround, nL, true);
     const sun = [nq, nq];
     if (warm) {
-      // the same linear gradient as the canvas path, its parameter t carried in u
+      // dawn and dusk: a warm linear gradient from the side the sun is on, its parameter t carried in u
       const dawn = X.clock < 720, sg = dawn ? 1 : -1, rot = view.rot || 0, ux = Math.cos(rot) * sg, uy = Math.sin(rot) * sg;
       const cx = W / 2, cy = H / 2, R = Math.max(W, H) * 0.65, x0 = cx + ux * R, y0 = cy + uy * R, dx = -ux * R * 1.4, dy = -uy * R * 1.4, L2 = dx * dx + dy * dy;
       const a = dawn ? 0.36 * sky.warm : 0.4 * sky.warm, c = dawn ? [1, 160 / 255, 90 / 255] : [1, 110 / 255, 50 / 255], tq = (x, y) => ((x - x0) * dx + (y - y0) * dy) / L2;
@@ -675,10 +516,9 @@
     ctx.imageSmoothingEnabled = true; ctx.drawImage(GE.cv, 0, 0, W, H, 0, 0, W / Q, H / Q);
   }
 
-  // profiling (X.lighting.debugFlush = true): rasterise each step of the map before timing the next
-  const PH = [0, 0, 0, 0], MP = [0, 0, 0, 0, 0, 0];
-  let dbg = false, tm = 0, offFrame = false;
-  function step(k) { if (!dbg) return; lc.getImageData(0, 0, 1, 1); const n = performance.now(); MP[k] = MP[k] * 0.9 + (n - tm) * 0.1; tm = n; }
+  // profiling (X.lighting.debugFlush = true): rasterise the frame before timing the next phase
+  const PH = [0, 0, 0, 0];
+  let dbg = false, offFrame = false;
   function renderLight(ctx, view, t) {
     if (!X.city) return;
     const set = SET(), lvl = levelOf(set.lighting);
@@ -693,31 +533,17 @@
       return;
     }
     dbg = !!api.debugFlush;
-    if (dbg) { ctx.getImageData(0, 0, 1, 1); api.stats.mapPhase = MP; }
+    if (dbg) ctx.getImageData(0, 0, 1, 1);
     const t0 = performance.now();
-    const eng = engineOf(set.lightEngine), webgl = eng === 'webgl';
-    NATIVE = set.fastRender !== false && api.native !== false;
+    const eng = engineOf(), webgl = eng === 'webgl';
     api.stats.engine = eng;
-    if (!webgl) sprites();
-    // dpr 1 screens may well be rasterised in software: smaller map, nearest-neighbour composite. High-dpi
-    // screens have a GPU canvas in practice, where a bigger map and a filtered composite cost nothing.
-    const hi = view.dpr > 1;
-    Q = api.quality ? cl(+api.quality, 0.2, 1) : lvl === 'low' ? 0.25 : lvl === 'medium' ? 1 / 3 : webgl || hi ? 0.5 : 0.35;
+    Q = api.quality ? cl(+api.quality, 0.2, 1) : lvl === 'low' ? 0.25 : lvl === 'medium' ? 1 / 3 : 0.5;
     const s = view.scale, rot = view.rot || 0, cr = Math.cos(rot), sr = Math.sin(rot);
     vcx = view.cx; vcy = view.cy; vr = view.r; pxm = s * Q; kpx = s * Q; vrot = rot;
     Ma = Q * s * cr; Mb = Q * s * sr; Mc = -Q * s * sr; Md = Q * s * cr;
     Me = Q * (view.ax - s * (cr * view.cx - sr * view.cy)); Mf = Q * (view.ay - s * (sr * view.cx + cr * view.cy));
     gather(view, t);
-    // a frame with huge overdraw (a firefight full of flashes) is drawn at a lower resolution (canvas only)
-    let fq = 1;
-    if (!webgl) {
-      let area = 0;
-      for (let k = 0; k < nL; k++) { const r = LP[k], a = r.sp > 0 ? r.rx * r.rx * 1.2 : 4 * r.rx * r.ry; area += (r.cut > 0.004 ? a : 0) + (r.glow > 0.004 ? a * r.gs * r.gs : 0); }
-      area *= kpx * kpx;
-      fq = area > BUDGET * MW * MH && MW ? Math.max(0.5, Math.sqrt(BUDGET * MW * MH / area)) : 1;
-      if (fq < 1) { Ma *= fq; Mb *= fq; Mc *= fq; Md *= fq; Me *= fq; Mf *= fq; kpx *= fq; }
-    }
-    api.stats.res = fq;
+    api.stats.res = 1;
     PH[0] = PH[1] = PH[2] = performance.now();
     api.stats.lights = nL;
     const d = sky.d, A = d * MAXA, S = X.scene, warm = !S && sky.warm > 0.02, dark = A > 0.004;
@@ -725,47 +551,6 @@
       renderGL(ctx, view, dark, A, warm);
       if (dbg) ctx.getImageData(0, 0, 1, 1);
       PH[1] = PH[2] = performance.now();
-    } else if (dark || nL || warm) {
-      ensureMap(view.cw, view.ch);
-      const UW = Math.min(MW, Math.ceil(MW * fq) + 1), UH = Math.min(MH, Math.ceil(MH * fq) + 1);
-      lc.setTransform(1, 0, 0, 1, 0, 0); lc.globalAlpha = 1; lc.imageSmoothingEnabled = false;
-      const dc = `rgba(${sky.r | 0},${sky.g | 0},${sky.b | 0},`;
-      if (dbg) { lc.getImageData(0, 0, 1, 1); tm = performance.now(); }
-      if (dark && api.copyDark !== false) {
-        // darkness first, then every light cuts it (destination-out): dark * A * prod(1 - cut), the same map
-        // as accumulating the light and filling 'source-out', in one full-map pass fewer
-        lc.globalCompositeOperation = 'copy'; lc.fillStyle = dc + A.toFixed(3) + ')'; lc.fillRect(0, 0, UW, UH); step(0);
-        cutPass(0, nGround, 'destination-out'); step(1);
-        lc.globalCompositeOperation = 'source-over';
-      } else {
-        lc.globalCompositeOperation = 'source-over'; lc.clearRect(0, 0, UW, UH);
-        if (dark) {
-          cutPass(0, nGround, 'source-over'); step(0);
-          lc.globalCompositeOperation = 'source-out'; lc.fillStyle = dc + A.toFixed(3) + ')'; lc.fillRect(0, 0, UW, UH);
-          lc.globalCompositeOperation = 'source-over';
-          step(1);
-        }
-      }
-      glowPass(0, nGround); step(2);
-      if (dark && !S && visB.length) {
-        // roofs sit above the street light: back to a flat, slightly moonlit dark
-        lc.setTransform(Ma, Mb, Mc, Md, Me, Mf); lc.beginPath();
-        for (const b of visB) lc.rect(b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0);
-        lc.globalCompositeOperation = 'destination-out'; lc.fill();
-        lc.globalCompositeOperation = 'source-over'; lc.fillStyle = dc + (A * 0.9).toFixed(3) + ')'; lc.fill();
-      }
-      step(3);
-      if (dark) cutPass(nGround, nL, 'destination-out');
-      step(4);
-      glowPass(nGround, nL); step(5);
-      if (warm) sunGlow(view, fq);
-      lc.imageSmoothingEnabled = true;
-      if (dbg) lc.getImageData(0, 0, 1, 1);
-      PH[1] = performance.now();
-      ctx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
-      ctx.imageSmoothingEnabled = hi; ctx.drawImage(lm, 0, 0, UW, UH, 0, 0, UW / (Q * fq), UH / (Q * fq)); ctx.imageSmoothingEnabled = true;
-      if (dbg) ctx.getImageData(0, 0, 1, 1);
-      PH[2] = performance.now();
     }
     if (em > 0.01 && lvl !== 'low') emissive(ctx, view, t);
     ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
@@ -776,16 +561,6 @@
     // [gather, light map, composite, emissive] (only meaningful with debugFlush)
     const ph = api.stats.phase || (api.stats.phase = [0, 0, 0, 0]);
     ph[0] = ph[0] * 0.9 + (PH[0] - t0) * 0.1; ph[1] = ph[1] * 0.9 + (PH[1] - PH[0]) * 0.1; ph[2] = ph[2] * 0.9 + (PH[2] - PH[1]) * 0.1; ph[3] = ph[3] * 0.9 + (now - PH[2]) * 0.1;
-  }
-  // dawn and dusk: a warm glow from the side the sun is on
-  function sunGlow(view, fq) {
-    const dawn = X.clock < 720, sg = dawn ? 1 : -1, rot = view.rot || 0;
-    const ux = Math.cos(rot) * sg, uy = Math.sin(rot) * sg, cx = view.cw / 2, cy = view.ch / 2, R = Math.max(view.cw, view.ch) * 0.65;
-    lc.setTransform(Q * fq, 0, 0, Q * fq, 0, 0); lc.globalAlpha = 1; lc.globalCompositeOperation = 'source-over';
-    const g = lc.createLinearGradient(cx + ux * R, cy + uy * R, cx - ux * R * 0.4, cy - uy * R * 0.4);
-    g.addColorStop(0, dawn ? `rgba(255,160,90,${(0.36 * sky.warm).toFixed(3)})` : `rgba(255,110,50,${(0.4 * sky.warm).toFixed(3)})`);
-    g.addColorStop(1, 'rgba(255,140,80,0)');
-    lc.fillStyle = g; lc.fillRect(0, 0, view.cw, view.ch);
   }
   // world transform M (a DOMMatrix) * translate(x, y) * rotate(th), without a save/restore
   function place(ctx, M, x, y, th) {
@@ -1047,7 +822,7 @@
 
   X.mod('lighting', {
     order: 90,
-    init() { resetState(); buildFixtures(); updateSky(); skyIcon = ''; hintT = -1; buzzT = 0; prewarm(); },
+    init() { resetState(); buildFixtures(); updateSky(); skyIcon = ''; hintT = -1; buzzT = 0; },
     stop() {
       if (clockEl) { clockEl.removeAttribute('data-sky'); }
       skyIcon = ''; booms = []; lampGrid = null; BF = []; neonExtra = []; signs = []; torch = false; flashK = 0;

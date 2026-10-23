@@ -22,8 +22,8 @@ await t.wait(600);
 const api = await ev(() => ({ s: !!PG.settings, on: typeof PG.onSettings, set: typeof PG.setSetting, ap: typeof PG.applyPreset, presets: Object.keys(PG.QUALITY_PRESETS || {}), q: PG.settings.quality, d: Object.assign({}, PG.settings), sprites: !!(PG.sprites && PG.sprites.get && PG.sprites.glow && PG.sprites.disc), rs: !!PG.renderStats }));
 check('settings API present', api.s && api.on === 'function' && api.set === 'function' && api.ap === 'function' && api.sprites && api.rs, api);
 check('presets low/medium/high/ultra', ['low', 'medium', 'high', 'ultra'].every(p => api.presets.includes(p)), api.presets);
-const d = api.d, PG_DEF_LE = await ev(() => PG.SETTINGS_DEFAULTS.lightEngine);   // the harness starts tests on canvas
-check('defaults: high preset + showFps, fpsCap 0, wheel zoom, radio, shake, light engine webgl', d.quality === 'high' && d.renderScale === 1 && d.maxDpr === 1.5 && d.adaptive === true && d.fastRender === false && d.lighting === 'high' && d.particles === 'high' && d.decals === 'high' && d.detail === 'high' && d.traffic === 1 && d.pedDensity === 1 && d.policeMax === 8 && d.showFps === true && d.fpsCap === 0 && d.wheel === 'zoom' && d.radio === true && d.cameraShake === true && PG_DEF_LE === 'webgl', d);
+const d = api.d;
+check('defaults: high preset + showFps, fpsCap 0, wheel zoom, radio, shake, no light engine setting', d.quality === 'high' && d.renderScale === 1 && d.maxDpr === 1.5 && d.adaptive === true && d.fastRender === false && d.lighting === 'high' && d.particles === 'high' && d.decals === 'high' && d.detail === 'high' && d.traffic === 1 && d.pedDensity === 1 && d.policeMax === 8 && d.showFps === true && d.fpsCap === 0 && d.wheel === 'zoom' && d.radio === true && d.cameraShake === true && !('lightEngine' in d), d);
 
 // presets, Custom, listeners
 const pr = await ev(() => {
@@ -62,7 +62,7 @@ check('` hides and shows the FPS counter (preset untouched)', fps1.hidden && fps
 await t.page.click('#btn-settings'); await t.wait(250);
 const m1 = await ev(() => ({ screen: PG.ui.screen(), rows: document.querySelectorAll('#scr-settings .set-row').length, secs: [...document.querySelectorAll('#scr-settings .set-sec h3')].map(h => h.textContent), q: document.querySelector('#scr-settings .seg.big [aria-pressed="true"]').textContent }));
 check('settings opens from the title', m1.screen === 'settings', m1.screen);
-check('menu has Graphics / Effects / World / Controls / Audio and 23 options', ['Graphics', 'Effects', 'World', 'Controls', 'Audio'].every(s => m1.secs.includes(s)) && m1.rows >= 23, m1);
+check('menu has Graphics / Effects / World / Controls / Audio and 22 options', ['Graphics', 'Effects', 'World', 'Controls', 'Audio'].every(s => m1.secs.includes(s)) && m1.rows >= 22, m1);
 check('current preset shown', m1.q === 'High', m1.q);
 await t.shot('engine-1-settings-title');
 // touch an option: switches to Custom, applies live; then pick a preset back
@@ -147,6 +147,7 @@ await ev(() => PG.setSetting('renderScale', 1));
 
 // fpsCap 30: every other display frame is drawn
 // (paused: a still frame is cheap to draw, so the uncapped rate is the display's)
+const lightLvl = await ev(() => { const l = PG.settings.lighting; PG.setSetting('lighting', 'off'); return l; });   // scheduler checks: light pass off (software WebGL on GPU-less test machines)
 const cap = await ev(async () => {
   PG.pause(true);
   const count = () => new Promise(res => { let n = 0, f = 0; const orig = PG.render; PG.render = function () { n++; return orig.apply(this, arguments); }; const t0 = performance.now(); (function tick() { f++; if (performance.now() - t0 < 2000) requestAnimationFrame(tick); else { PG.render = orig; res({ rps: +(n / 2).toFixed(1), fps: +(f / 2).toFixed(1) }); } })(); });
@@ -182,6 +183,7 @@ const ad = await ev(async () => {
 });
 check('adaptive resolution steps down when pixels are the cost, and back up with headroom', ad.down <= 0.9 && ad.w < 1280 && ad.st1.kept >= 1 && ad.up > ad.down, ad);
 check('adaptive resolution reverts a step that does not help (script-bound frame)', ad.cpu === 1 && ad.st2.reverted > ad.st1.reverted, { cpu: ad.cpu, st2: ad.st2 });
+await ev(l => PG.setSetting('lighting', l), lightLvl);
 await ev(() => PG.applyPreset('high'));
 
 // caps: particles and decals, camera shake, wheel, traffic

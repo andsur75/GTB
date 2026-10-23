@@ -2196,7 +2196,7 @@
       air(ctx, view, t) {
         if (!S) return;
         for (const fl of S.flashes) {
-          const k = 1 - (X.time - fl.t) / 0.18; if (k <= 0 || !X.inView(fl.x, fl.y, 3)) continue;
+          const k = Math.min(1, 1 - (X.time - fl.t) / 0.18); if (k <= 0 || !X.inView(fl.x, fl.y, 3)) continue;   // min: a flash stamped before a clock reset
           ctx.fillStyle = `rgba(255,255,255,${(0.85 * k).toFixed(3)})`; disc(ctx, fl.x, fl.y, 0.25 + (1 - k) * 0.9);
         }
       },
