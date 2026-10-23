@@ -7,13 +7,13 @@
 // PG.carSound.drive): the lab's sliders are the main engine and CARS adds each model's character on top.
 // Adds PG.carSound { P (current params), DEFAULTS, PRESETS, CARS, profileFor, drive, silence, sim, freqOf, step }.
 (function (PG) {
-  const KEY = 'gtb-carsound-v3';
+  const KEY = 'gtb-carsound-v4';
   // [key, label, min, max, step, unit, description]
   const GROUPS = [
     ['Engine', [
       ['cyl', 'Cylinders', 1, 16, 1, '', 'Firings per revolution / 2 set the base pitch.'],
       ['idle', 'Idle rpm', 400, 2000, 50, 'rpm', 'Where the engine sits with the throttle off.'],
-      ['redline', 'Redline', 2000, 12000, 100, 'rpm', 'Rev limiter kicks in here.'],
+      ['redline', 'Redline', 1000, 12000, 100, 'rpm', 'Rev limiter kicks in here.'],
       ['shift', 'Shift up at', 40, 100, 1, '%', 'Auto up-shift point, % of redline.'],
       ['gears', 'Gears', 1, 8, 1, '', 'Number of forward gears.'],
       ['revUp', 'Rev-up speed', 0.2, 4, 0.05, 'x', 'How fast rpm climbs under throttle.'],
@@ -59,11 +59,24 @@
       ['limiter', 'Limiter bounce', 0, 1, 0.01, '', 'How hard the rev limiter cuts.'],
     ]],
   ];
+  // Calm: every engine sound was half as wild as it used to be. calm() halves what makes an engine frantic:
+  // how far the revs (and so the pitch) climb above idle, how fast they climb, distortion, roughness, intake
+  // noise, pops, limiter bounce, bass boost, how much louder revs and throttle make it, detune, filter peak
+  // and the swing of the animated harmonics. Level, tone mix, pitch and cylinders stay as they are.
+  const HALF = ['revUp', 'drive', 'rough', 'noise', 'pops', 'limiter', 'bassBoost', 'volRpm', 'volLoad', 'cutLoad', 'detune', 'animAmp'];
+  function calm(o) {
+    const q = Object.assign({}, o);
+    if (typeof q.redline === 'number') { const idle = typeof q.idle === 'number' ? q.idle : 900; q.redline = Math.round(idle + (q.redline - idle) / 2); }
+    for (const k of HALF) if (typeof q[k] === 'number') q[k] = +(q[k] / 2).toFixed(3);
+    if (typeof q.res === 'number') q.res = +(1 + (q.res - 1) / 2).toFixed(2);
+    return q;
+  }
   // Main engine: the default sound every car in the game is built from (see CARS below).
   const DEFAULTS = { cyl: 1, idle: 900, redline: 12000, shift: 87, gears: 6, revUp: 0.75, revDown: 0.4, drop: 24, shiftTime: 0.35,
     pitch: 0.8, saw: 0.49, square: 0.27, sub: 0.28, harm2: 0.06, detune: 8, drive: 0.84, rough: 0.59,
     cutLo: 500, cutHi: 2030, cutLoad: 690, res: 2.7, sub2: 0, subTri: 0, sub3: 0, halfOrd: 0.29, harm3: 0, harm4: 0, subFollow: 1, animAmp: 0.4, bassBoost: 18, bassFreq: 115,
     vol: 1, volIdle: 0.32, volRpm: 1, volLoad: 0.33, noise: 0.57, pops: 0.51, limiter: 0.63 };
+  Object.assign(DEFAULTS, calm(DEFAULTS));
   const PRESETS = {
     'Main engine': {},
     'V8 muscle': { cyl: 8, idle: 800, redline: 6800, shift: 92, gears: 6, revUp: 1, revDown: 1, drop: 32, shiftTime: 0.18, pitch: 1, saw: 0.6, square: 0.25, sub: 0.5, harm2: 0.15, detune: 12, drive: 0.35, rough: 0.35, cutLo: 380, cutHi: 3200, cutLoad: 1400, res: 2.5, sub2: 0, subTri: 0, sub3: 0, halfOrd: 0, harm3: 0, harm4: 0, subFollow: 0, bassBoost: 0, bassFreq: 120, vol: 0.7, volIdle: 0.35, volRpm: 0.35, volLoad: 0.3, noise: 0.15, pops: 0.5, limiter: 0.6 },
@@ -74,6 +87,7 @@
     'Test Engine': { cyl: 4, idle: 1150, redline: 9300, shift: 87, gears: 6, revUp: 0.75, revDown: 1, drop: 24, shiftTime: 0.18, pitch: 0.8, saw: 0.63, square: 0.36, sub: 0.5, harm2: 0.89, detune: 17, drive: 0.43, rough: 0.49, cutLo: 500, cutHi: 2030, cutLoad: 690, res: 2.5, vol: 0.7, volIdle: 0.35, volRpm: 1, volLoad: 0.25, noise: 0.15, pops: 0.5, limiter: 0.6 },
     'Superbike': { cyl: 4, idle: 1300, redline: 12000, gears: 6, revUp: 3, revDown: 2.5, drop: 22, shiftTime: 0.06, pitch: 1.2, saw: 0.7, square: 0.3, sub: 0.1, harm2: 0.5, detune: 4, drive: 0.4, rough: 0.1, cutLo: 900, cutHi: 9000, res: 5, pops: 0.7 },
   };
+  for (const k in PRESETS) PRESETS[k] = calm(PRESETS[k]);
   // Cylinders by class: heavy trucks and buses 1-2, normal cars 2-4, the best cars 4-10.
   // Per-car character on top of the main engine. Keys ending in 'X' multiply, others add; set: overrides.
   const CARS = {
@@ -94,16 +108,17 @@
     firetruck: { name: 'Fire Truck', pitchX: 0.5, sub: 0.45, driveX: 1.15, cutHiX: 0.5, noise: 0.25, pops: -0.51, set: { cyl: 1, sub2: 0.45, sub3: 0.3 } },
     securicar: { name: 'Securicar', pitchX: 0.7, sub: 0.3, rough: 0.1, cutHiX: 0.7, pops: -0.4, set: { cyl: 2, sub2: 0.3 } },
   };
+  for (const id in CARS) for (const k of ['rough', 'noise', 'pops', 'limiter', 'bassBoost']) if (typeof CARS[id][k] === 'number') CARS[id][k] /= 2;
   const P = Object.assign({}, DEFAULTS);
   try {
-    const v3 = localStorage.getItem(KEY);
-    if (v3) Object.assign(P, JSON.parse(v3));
-    else { Object.assign(P, JSON.parse(localStorage.getItem('gtb-carsound-v2') || '{}')); P.animAmp = DEFAULTS.animAmp; } // keep v2 tuning, new amplitude
+    const v4 = localStorage.getItem(KEY), v3 = localStorage.getItem('gtb-carsound-v3');
+    if (v4) Object.assign(P, JSON.parse(v4));
+    else if (v3) { Object.assign(P, calm(JSON.parse(v3))); save(); }   // tuning saved before the calm-down: calm it too
   } catch (e) { /* storage blocked */ }
-  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(P)); } catch (e) { /* storage blocked */ } };
+  function save() { try { localStorage.setItem(KEY, JSON.stringify(P)); } catch (e) { /* storage blocked */ } }
   const cl = (v, a, b) => Math.max(a, Math.min(b, v));
   // Animated sliders: ping-pong between lo and hi, one full cycle per period (s). Drives lab and game alike.
-  const ANIM = { sub2: [0, 1, 3.1], subTri: [0, 1, 4.7], sub3: [0, 1, 2.3], halfOrd: [0, 1, 5.9], harm3: [0, 1, 6.8], harm4: [0, 1, 3.9], revDown: [0.3, 0.7, 4] };
+  const ANIM = { sub2: [0, 1, 3.1], subTri: [0, 1, 4.7], sub3: [0, 1, 2.3], halfOrd: [0, 1, 5.9], harm3: [0, 1, 6.8], harm4: [0, 1, 3.9], revDown: [0.15, 0.35, 4] };
   function animate() {
     if (typeof P.animAmp !== 'number') P.animAmp = 1;
     const t = (typeof performance !== 'undefined' ? performance.now() : Date.now()) / 1000;
