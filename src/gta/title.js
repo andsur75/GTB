@@ -1,34 +1,54 @@
 // The title screen cover: a comic-panel collage in the spirit of the old GTA box art (flat tinted panels,
-// halftone dots, heavy black outlines, black gutters), painted with this game's own cast: Artur, a police
+// halftone dots, heavy black outlines, slanted cuts and thick black frames), painted with this game's own cast: Artur, a police
 // cruiser, the Take the Bus! bus, Camp Bussby's tank, the police helicopter, a taxi, the bank vault, the loot,
-// a pistol, the night city and a cop on foot. Panels are canvases in #cover's grid, redrawn on resize and a few
-// times a second while the title is up (light bars blink, the rotor turns, Artur talks). Also wires the
+// the night city and a cop on foot. Each panel paints into its own canvas, then all are clipped to their
+// slanted polygons on one canvas in #cover; live panels repaint a few times a second while the title is up (light bars blink, the rotor turns, Artur talks). Also wires the
 // title's Controls button (the full controls list opens over the cover).
 (function (PG) {
   if (typeof document === 'undefined') return;
   const cover = document.getElementById('cover');
   if (!cover) return;
   const TAU = Math.PI * 2, INK = '#0b0b0d';
-  // panel: grid area, tint, draw(g, w, h, t)
+  // Panels: a tint, a painter draw(g, w, h, t) for the panel's bounding box, live (repainted while the title
+  // is up) or not, and its polygon per layout in 0..1 screen units. The cuts between panels are slanted
+  // and every edge is stroked with a thick black frame, like the box art.
   const PANELS = [
-    // the night city sits under the logo (g); the heroes go round the edges. wide: hidden on a phone
-    { a: 'a', c: '#e2a93a', draw: artur },
-    { a: 'b', c: '#3f7fd0', draw: cruiser },
-    { a: 'h', c: '#c9c2ad', draw: vault },
-    { a: 'g', c: '#2c3d8a', draw: city },
-    { a: 'c', c: '#d8402f', draw: bus },
-    { a: 'e', c: '#6f7d3a', draw: tank },
-    { a: 'f', c: '#e8579e', draw: taxi },
-    { a: 'd', c: '#4fa59b', draw: heli },
-    { a: 'i', c: '#e3742c', draw: cop },
-    { a: 'j', c: '#3d9a4f', draw: loot, wide: true },
-    { a: 'k', c: '#8a3fa0', draw: pistol, wide: true },
+    { id: 'artur', c: '#e2a93a', draw: artur, live: true },
+    { id: 'tank', c: '#6f7d3a', draw: tank },
+    { id: 'vault', c: '#c9c2ad', draw: vault, live: true },
+    { id: 'city', c: '#2c3d8a', draw: city, live: true },
+    { id: 'bus', c: '#d8402f', draw: bus },
+    { id: 'taxi', c: '#e8579e', draw: taxi },
+    { id: 'cruiser', c: '#3f7fd0', draw: cruiser, live: true },
+    { id: 'heli', c: '#4fa59b', draw: heli, live: true },
+    { id: 'cop', c: '#e3742c', draw: cop, live: true },
+    { id: 'loot', c: '#3d9a4f', draw: loot },
   ];
-  const els = PANELS.map(p => {
-    const d = document.createElement('div'); d.className = 'pn' + (p.wide ? ' wide-only' : ''); d.style.gridArea = p.a; d.style.setProperty('--pc', p.c);
-    const cv = document.createElement('canvas'); d.appendChild(cv); cover.appendChild(d);
-    return { p, d, cv };
-  });
+  // landscape: three slanted columns (the logo sits on the night city in the middle)
+  const WIDE = {
+    artur: [[0, 0], [0.30, 0], [0.284, 0.40], [0, 0.46]],
+    tank: [[0, 0.46], [0.284, 0.40], [0.2712, 0.72], [0, 0.76]],
+    vault: [[0, 0.76], [0.2712, 0.72], [0.26, 1], [0, 1]],
+    city: [[0.30, 0], [0.71, 0], [0.7364, 0.66], [0.276, 0.60]],
+    bus: [[0.276, 0.60], [0.52, 0.6318], [0.48, 1], [0.26, 1]],
+    taxi: [[0.52, 0.6318], [0.7364, 0.66], [0.75, 1], [0.48, 1]],
+    cruiser: [[0.71, 0], [1, 0], [1, 0.24], [0.722, 0.30]],
+    heli: [[0.722, 0.30], [1, 0.24], [1, 0.56], [0.7348, 0.62]],
+    cop: [[0.7348, 0.62], [0.87, 0.5894], [0.86, 1], [0.75, 1]],
+    loot: [[0.87, 0.5894], [1, 0.56], [1, 1], [0.86, 1]],
+  };
+  // portrait (phones): two up top, the city behind the logo, four below
+  const TALL = {
+    artur: [[0, 0], [0.56, 0], [0.5, 0.3], [0, 0.33]],
+    cruiser: [[0.56, 0], [1, 0], [1, 0.27], [0.5, 0.3]],
+    city: [[0, 0.33], [0.5, 0.3], [1, 0.27], [1, 0.66], [0, 0.7]],
+    bus: [[0, 0.7], [0.6, 0.68], [0.55, 0.85], [0, 0.87]],
+    taxi: [[0.6, 0.68], [1, 0.66], [1, 0.83], [0.55, 0.85]],
+    tank: [[0, 0.87], [0.55, 0.85], [0.5, 1], [0, 1]],
+    cop: [[0.55, 0.85], [1, 0.83], [1, 1], [0.5, 1]],
+  };
+  const main = document.createElement('canvas'); cover.appendChild(main);
+  const els = PANELS.map(p => ({ p, cv: document.createElement('canvas'), w: 0, h: 0, bx: 0, by: 0, poly: null, painted: false }));
 
   // ---------- comic helpers ----------
   const HT = new Map();
@@ -58,11 +78,11 @@
   // a hard comic drop shadow under whatever fn paints
   // (shadow offsets ignore the transform: off is in CSS pixels, scaled to the bitmap here)
   let DPR = 1;
-  function inked(g, off, fn) { g.save(); g.shadowColor = INK; g.shadowBlur = 0; g.shadowOffsetX = g.shadowOffsetY = off * DPR; fn(); g.restore(); }
+  function inked(g, off, fn) { g.save(); g.shadowColor = INK; g.shadowBlur = 0; g.shadowOffsetX = g.shadowOffsetY = off * 1.5 * DPR; fn(); g.restore(); }
   function label(g, text, x, y, size, col, rot, font) {
     g.save(); g.translate(x, y); g.rotate(rot || 0);
-    g.font = (font || "400 " + size + "px 'Bowlby One', Impact, sans-serif"); g.textAlign = 'center'; g.textBaseline = 'middle';
-    g.lineJoin = 'round'; g.lineWidth = size * 0.22; g.strokeStyle = INK; g.strokeText(text, 0, 0); g.fillStyle = col; g.fillText(text, 0, 0);
+    g.font = (font || "400 " + size + "px Bevan, 'Rockwell Extra Bold', Georgia, serif"); g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.lineJoin = 'round'; g.lineWidth = size * 0.3; g.strokeStyle = INK; g.strokeText(text, 0, 0); g.fillStyle = col; g.fillText(text, 0, 0);
     g.restore();
   }
 
@@ -75,7 +95,6 @@
       inked(g, 6, () => UI.drawArturHead(g, 0.25, t, false, Math.sin(t * 3) > 0.3));
       g.restore();
     }
-    label(g, 'ARTUR', w * 0.5, h * 0.1, Math.min(w, h) * 0.11, '#fff', -0.05);
   }
   function car(g, o, ppm) {
     inked(g, 5, () => PG.drawCar && PG.drawCar(g, Object.assign({ x: 0, y: 0, th: 0 }, o)));
@@ -92,7 +111,6 @@
     const gl = g.createRadialGradient(w * 0.5, h * 0.55, 0, w * 0.5, h * 0.55, Math.max(w, h) * 0.6);
     gl.addColorStop(0, on ? 'rgba(255,60,60,0.35)' : 'rgba(60,110,255,0.35)'); gl.addColorStop(1, 'rgba(0,0,0,0)');
     g.fillStyle = gl; g.fillRect(0, 0, w, h); g.globalCompositeOperation = 'source-over';
-    label(g, 'POLITI', w * 0.5, h * 0.9, Math.min(w * 0.22, h * 0.08), '#fff', 0.04);
   }
   function bus(g, w, h) {
     bg(g, w, h, '#d8402f');
@@ -105,7 +123,7 @@
     g.fillStyle = '#9bd3ff'; g.fillRect(x + L * 0.95, y + H * 0.12, L * 0.03, H * 0.56);
     g.fillStyle = INK; for (const fx of [0.18, 0.78]) { g.beginPath(); g.arc(x + L * fx, y + H, H * 0.17, 0, TAU); g.fill(); }
     g.restore();
-    label(g, 'TAKE THE BUS!', w * 0.5, h * 0.9, Math.min(w * 0.08, h * 0.1), '#f4c20d', -0.04);
+    label(g, 'TAKE THE BUS!', w * 0.46, h * 0.86, Math.min(w * 0.075, h * 0.09), '#f4c20d', -0.04);
   }
   function heli(g, w, h, t) {
     bg(g, w, h, '#4fa59b');
@@ -138,7 +156,6 @@
     inked(g, 4, () => { g.fillStyle = '#4a5a24'; g.beginPath(); g.arc(0, 0.2, 1.15, 0, TAU); g.fill(); });
     g.fillStyle = '#e9e4d8'; star(g, 0, 0.2, 0.55);
     g.restore();
-    label(g, 'CAMP BUSSBY', w * 0.5, h * 0.1, Math.min(w * 0.13, h * 0.08), '#e9e4d8', 0.03);
   }
   function star(g, x, y, r) {
     g.beginPath();
@@ -152,7 +169,6 @@
       car(g, { len: 4.37, wid: 1.79, color: '#f2c230', lights: true }, ppm);
       g.fillStyle = '#1b1f27'; g.fillRect(-0.25, -0.42, 0.5, 0.84); g.fillStyle = '#ffe680'; g.fillRect(-0.2, -0.36, 0.4, 0.72);
     });
-    label(g, 'TAXI', w * 0.5, h * 0.12, Math.min(w * 0.2, h * 0.1), '#fff', -0.06);
   }
   function city(g, w, h, t) {
     g.fillStyle = '#141a3a'; g.fillRect(0, 0, w, h);
@@ -178,7 +194,6 @@
     for (let i = 0; i < 3; i++) { const a = sp + i * TAU / 3; g.beginPath(); g.moveTo(cx, cy); g.lineTo(cx + Math.cos(a) * r * 0.5, cy + Math.sin(a) * r * 0.5); g.stroke(); }
     g.fillStyle = '#d4af37'; g.beginPath(); g.arc(cx, cy, r * 0.14, 0, TAU); g.fill();
     g.beginPath(); g.arc(cx, cy, r, 0, TAU); outline(g, Math.max(3, r * 0.04));
-    label(g, 'FJORD SAVINGS', w * 0.34, h * 0.2, Math.min(w * 0.055, h * 0.12), '#fff', -0.06);
   }
   function cop(g, w, h, t) {
     bg(g, w, h, '#e3742c');
@@ -189,7 +204,7 @@
       try { inked(g, 4, () => X.drawPed(g, p, t)); } catch (e) { /* a ped renderer that wants more state: the panel stays plain */ }
       g.restore();
     }
-    label(g, 'STOPP!', w * 0.5, h * 0.13, Math.min(w * 0.2, h * 0.1), '#fff', -0.08);
+    label(g, 'STOPP!', w * 0.5, h * 0.17, Math.min(w * 0.17, h * 0.09), '#fff', -0.08);
   }
   function loot(g, w, h) {
     bg(g, w, h, '#3d9a4f');
@@ -198,54 +213,66 @@
       g.save(); g.translate(w * x, h * y); g.rotate(rot); g.scale(s * k, s * k);
       inked(g, 4, () => { g.fillStyle = '#d8c79a'; g.beginPath(); g.moveTo(-0.9, 0.9); g.quadraticCurveTo(-1.1, -0.4, -0.35, -0.75); g.lineTo(0.35, -0.75); g.quadraticCurveTo(1.1, -0.4, 0.9, 0.9); g.closePath(); g.fill(); });
       g.fillStyle = '#8a6b3a'; g.fillRect(-0.4, -0.95, 0.8, 0.22);
-      g.font = "400 1px 'Bowlby One', Impact, sans-serif"; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#2f7d3a'; g.fillText('$', 0, 0.2);
+      g.font = "400 1px Bevan, Georgia, serif"; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#2f7d3a'; g.fillText('$', 0, 0.2);
       g.restore();
     }
   }
-  function pistol(g, w, h) {
-    bg(g, w, h, '#8a3fa0'); rays(g, w * 0.7, h * 0.4, Math.hypot(w, h), 'rgba(255,255,255,0.1)', 16);
-    const s = Math.min(w, h) / 3.2;
-    g.save(); g.translate(w * 0.48, h * 0.55); g.rotate(-0.3); g.scale(s, s);
-    inked(g, 5, () => {
-      g.fillStyle = '#26282d'; g.fillRect(-1.1, -0.42, 2.1, 0.5);
-      g.beginPath(); g.moveTo(-1.0, 0.05); g.lineTo(-0.35, 0.05); g.lineTo(-0.5, 1.05); g.lineTo(-1.05, 1.0); g.closePath(); g.fill();
-    });
-    g.fillStyle = '#4a4e57'; g.fillRect(-1.1, -0.42, 2.1, 0.12);
-    g.strokeStyle = '#26282d'; g.lineWidth = 0.08; g.beginPath(); g.arc(-0.25, 0.22, 0.2, 0, Math.PI); g.stroke();
-    g.fillStyle = '#ffd23a'; g.globalCompositeOperation = 'lighter'; g.beginPath(); g.arc(1.25, -0.17, 0.32, 0, TAU); g.fill(); g.globalCompositeOperation = 'source-over';
-    g.restore();
-    label(g, 'BANG', w * 0.72, h * 0.2, Math.min(w * 0.18, h * 0.12), '#ffd23a', 0.12);
-  }
   function mulberry(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 
-  // ---------- sizing and the paint loop ----------
-  function size(e) {
-    const r = e.d.getBoundingClientRect(), dpr = Math.min(2, window.devicePixelRatio || 1);
-    const W = Math.max(1, Math.round(r.width * dpr)), H = Math.max(1, Math.round(r.height * dpr));
-    if (e.cv.width !== W || e.cv.height !== H) { e.cv.width = W; e.cv.height = H; }
-    e.w = r.width; e.h = r.height; e.dpr = dpr;
+  // ---------- layout, paint and compose ----------
+  let W = 0, H = 0, dpr = 1, G = 10;
+  function layout() {
+    const r = cover.getBoundingClientRect(); dpr = Math.min(2, window.devicePixelRatio || 1);
+    W = Math.max(1, r.width); H = Math.max(1, r.height);
+    main.width = Math.round(W * dpr); main.height = Math.round(H * dpr);
+    G = Math.max(10, Math.round(Math.min(W, H) * 0.024));   // the black frame between panels
+    const L = W >= H * 0.9 ? WIDE : TALL;
+    for (const e of els) {
+      const pts = L[e.p.id];
+      e.poly = pts ? pts.map(q => [q[0] * W, q[1] * H]) : null;
+      if (!e.poly) continue;
+      const xs = e.poly.map(q => q[0]), ys = e.poly.map(q => q[1]);
+      e.bx = Math.min(...xs); e.by = Math.min(...ys); e.w = Math.max(...xs) - e.bx; e.h = Math.max(...ys) - e.by;
+      e.cv.width = Math.max(1, Math.round(e.w * dpr)); e.cv.height = Math.max(1, Math.round(e.h * dpr));
+      e.painted = false;
+    }
   }
   function paint(e, t) {
-    if (!e.w || !e.h) return;
     const g = e.cv.getContext('2d');
-    g.setTransform(e.dpr, 0, 0, e.dpr, 0, 0); DPR = e.dpr;
-    try { e.p.draw(g, e.w, e.h, t); } catch (err) { g.setTransform(e.dpr, 0, 0, e.dpr, 0, 0); g.fillStyle = e.p.c; g.fillRect(0, 0, e.w, e.h); }
+    g.setTransform(dpr, 0, 0, dpr, 0, 0); DPR = dpr;
+    try { e.p.draw(g, e.w, e.h, t); } catch (err) { g.setTransform(dpr, 0, 0, dpr, 0, 0); g.fillStyle = e.p.c; g.fillRect(0, 0, e.w, e.h); }
+    e.painted = true;
+  }
+  const path = (g, poly) => { g.beginPath(); poly.forEach((q, i) => i ? g.lineTo(q[0], q[1]) : g.moveTo(q[0], q[1])); g.closePath(); };
+  function compose() {
+    const g = main.getContext('2d');
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.fillStyle = INK; g.fillRect(0, 0, W, H);
+    for (const e of els) {
+      if (!e.poly) continue;
+      g.save(); path(g, e.poly); g.clip(); g.drawImage(e.cv, e.bx, e.by, e.w, e.h); g.restore();
+    }
+    // the frames: every panel edge stroked thick (half lands on each neighbour), then the outer border
+    g.lineJoin = 'miter'; g.strokeStyle = INK; g.lineWidth = G;
+    for (const e of els) if (e.poly) { path(g, e.poly); g.stroke(); }
+    g.lineWidth = G * 2.2; g.strokeRect(0, 0, W, H);
   }
   const scr = document.getElementById('scr-title');
   const up = () => scr && !scr.hidden;
-  let last = 0, sized = false;
+  let last = 0, laid = false;
   function frame(ts) {
     requestAnimationFrame(frame);
-    if (!up()) { sized = false; return; }
-    if (!sized) { els.forEach(size); sized = true; last = 0; }
+    if (!up()) { laid = false; return; }
+    if (!laid) { layout(); laid = true; last = 0; }
     const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (last && (reduce || ts - last < 125)) return;   // ~8 fps is plenty for blinking lights and a rotor
     last = ts;
     const t = ts / 1000;
-    for (const e of els) paint(e, t);
+    for (const e of els) if (e.poly && (e.p.live || !e.painted)) paint(e, t);
+    compose();
   }
-  window.addEventListener('resize', () => { sized = false; });
-  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { last = 0; });
+  window.addEventListener('resize', () => { laid = false; });
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { laid = false; });
   requestAnimationFrame(frame);
 
   // ---------- the controls list, behind a button ----------
@@ -258,5 +285,5 @@
     close.addEventListener('click', () => set(false));
     window.addEventListener('keydown', e => { if (e.code === 'Escape' && !box.hidden && up()) { e.preventDefault(); e.stopImmediatePropagation(); set(false); } }, { capture: true });
   }
-  PG.titleCover = { panels: PANELS.map(p => p.a), repaint: () => { sized = false; } };
+  PG.titleCover = { panels: PANELS.map(p => p.id), repaint: () => { laid = false; } };
 })(typeof window !== 'undefined' ? (window.PG = window.PG || {}) : (globalThis.PG = globalThis.PG || {}));
