@@ -949,6 +949,9 @@
     else if (X.touch.aim != null) p.th = X.touch.aim;
     else if (len > 0.1) { const a = Math.atan2(my, mx); p.th += wrap(a - p.th) * Math.min(1, dt * 14); }
     p.aim = p.th;
+    // legs follow the way you walk; p.th (the upper body) follows the aim. Legs keep their last heading when still.
+    if (p.legTh == null) p.legTh = p.th;
+    if (Math.hypot(p.vx, p.vy) > 0.4) p.legTh += wrap(Math.atan2(p.vy, p.vx) - p.legTh) * Math.min(1, dt * 12);
   }
   // Generic person movement with collisions: want (wx, wy) is the target velocity.
   X.movePed = function (p, dt, wx, wy) {

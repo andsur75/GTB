@@ -1,0 +1,9 @@
+{
+  "name": "Grand Theft Bus",
+  "slug": "grand-theft-bus",
+  "tagline": "A whole city at night: steal anything with wheels and stay off the police radio",
+  "description": "A top-down open-city crime game from the Take the Bus! series.\n\nSteal anything with wheels, answer the ringing payphones for Artur's missions, rob the bank, and keep the police off your back. Five live radio stations, side jobs in taxis, buses, ambulances and fire trucks, and a Pay 'n' Spray when it gets hot.\n\nControls: WASD or arrows to walk and drive, F to get in and out, Space for the handbrake, click or Ctrl to shoot, Tab for the big map, P or Esc to pause, O for settings.",
+  "entry": "index.html",
+  "patchNotes": "First upload to GameLab",
+  "media": ["media/title.png", "media/gameplay.png"]
+}

@@ -1739,12 +1739,18 @@
     const armed = p.weapon && p.weapon !== 'fists' && !p.holster;
     const W = armed && X.WEAPONS ? X.WEAPONS[p.weapon] : null, held = armed ? (W ? W.held : 'pistol') : null;
     const lean = outfit === 'old' ? 0.07 : 0;
-    // legs and shoes
+    // The player's body is split: legs face the walking direction, the head faces the aim (p.th), and the
+    // torso with its arms turns halfway between the two.
+    const legRel = p.isPlayer && p.legTh != null ? PG.wrap(p.legTh - p.th) : 0;
+    ctx.save();
+    ctx.rotate(legRel);
     if (amp > 0.06) {
       ctx.strokeStyle = CC.pants; ctx.lineWidth = 0.15; ctx.beginPath(); ctx.moveTo(0, -0.1); ctx.lineTo(sw, -0.11); ctx.moveTo(0, 0.1); ctx.lineTo(-sw, 0.11); ctx.stroke();
       if (LOWD) { /* no shoes */ } else if (outfit === 'jog') { ctx.strokeStyle = CC.skin; ctx.lineWidth = 0.11; ctx.beginPath(); ctx.moveTo(sw * 0.5, -0.105); ctx.lineTo(sw, -0.11); ctx.moveTo(-sw * 0.5, 0.105); ctx.lineTo(-sw, 0.11); ctx.stroke(); }
       if (!LOWD) { ctx.fillStyle = outfit === 'jog' ? '#f2f2f2' : '#17171a'; ctx.beginPath(); dot(ctx, sw + 0.06, -0.11, 0.07); dot(ctx, -sw + 0.06, 0.11, 0.07); ctx.fill(); }
     } else if (!LOWD) { ctx.fillStyle = '#17171a'; ctx.beginPath(); dot(ctx, 0.12, -0.1, 0.065); dot(ctx, 0.12, 0.1, 0.065); ctx.fill(); }
+    ctx.restore();
+    ctx.save(); ctx.rotate(legRel / 2);   // torso and arms: halfway between legs and aim
     // hands (left = -y)
     let lx, ly, rx, ry;
     if (run) { lx = 0.12 - sw * 0.7; ly = -0.27; rx = 0.12 + sw * 0.7; ry = 0.27; }
@@ -1790,6 +1796,7 @@
     else if (p.holster && p.weapon === 'bat') { ctx.strokeStyle = '#b07a3e'; ctx.lineWidth = 0.08; ctx.beginPath(); ctx.moveTo(-0.28, 0.24); ctx.lineTo(0.12, -0.12); ctx.stroke(); }
     if (!LOWD) { ctx.fillStyle = outfit === 'swat' ? '#1c1f24' : CC.skin; ctx.beginPath(); dot(ctx, lx, ly, 0.065); dot(ctx, rx, ry, 0.065); ctx.fill(); }
     if (outfit === 'metal' && !LOWD) { ctx.strokeStyle = '#9aa0a8'; ctx.lineWidth = 0.03; ctx.beginPath(); ctx.arc(lx, ly, 0.075, 0, TAU); ctx.moveTo(rx + 0.075, ry); ctx.arc(rx, ry, 0.075, 0, TAU); ctx.stroke(); }
+    ctx.restore();
     // head
     let hx = 0.03 + lean;
     if (pose === 'headbang') hx += Math.sin(t * 10 + p.id) * 0.08;
