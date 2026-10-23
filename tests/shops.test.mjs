@@ -2,11 +2,12 @@
 // car bomb purchase), remote and fused car bombs, export and crusher (pay, removal, bomb in the crusher),
 // Artur's Garage (saved and respawned next game), a second game, pause, fps and screenshots.
 // Usage: node tests/shops.test.mjs <built.html> <screenshot dir>
-import { launch } from './harness.mjs';
+import { launch, fpsSkip } from './harness.mjs';
 
 const t = await launch({ html: process.argv[2], out: process.argv[3] });
 let fails = 0;
 const ok = (name, cond, info) => {
+  if (fpsSkip(name, cond, info)) return;
   console.log(`${cond ? 'PASS' : 'FAIL'} ${name}${info !== undefined ? ' ' + (typeof info === 'string' ? info : JSON.stringify(info)) : ''}`);
   if (!cond) fails++;
 };

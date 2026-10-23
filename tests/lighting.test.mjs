@@ -4,10 +4,10 @@
 // neon/signs/beacons, lightAt, the light cap, pause, restart, dayPhase events, the HUD clock icon, fps in
 // a busy night scene, the quality levels (off / low / medium / high) and the WebGL light engine.
 // Usage: node tests/lighting.test.mjs <built.html> <screenshot dir>
-import { launch } from './harness.mjs';
+import { launch, fpsSkip } from './harness.mjs';
 const t = await launch({ html: process.argv[2], out: process.argv[3] });
 let failed = 0;
-const check = (name, ok, info) => { if (!ok) failed++; console.log(`${ok ? 'PASS' : 'FAIL'} ${name}${info !== undefined ? ' — ' + (typeof info === 'string' ? info : JSON.stringify(info)) : ''}`); };
+const check = (name, ok, info) => { if (fpsSkip(name, ok, info)) return; if (!ok) failed++; console.log(`${ok ? 'PASS' : 'FAIL'} ${name}${info !== undefined ? ' — ' + (typeof info === 'string' ? info : JSON.stringify(info)) : ''}`); };
 const freeze = () => t.eval(() => { PG.game.status = 'freeze'; });
 const play = () => t.eval(() => { PG.game.status = 'play'; });
 const settle = (ms) => t.wait(ms || 160);

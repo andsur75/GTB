@@ -5,10 +5,10 @@
 // the bar (drinks, Artur, jukebox, pool), breakables, music and pause, fps in a busy club and a shoot-out,
 // and a second game. Works with or without the other modules.
 // Usage: node tests/interiors.test.mjs <built.html> <screenshot dir>
-import { launch } from './harness.mjs';
+import { launch, fpsSkip } from './harness.mjs';
 const t = await launch({ html: process.argv[2], out: process.argv[3] });
 let failed = 0;
-const check = (name, ok, info) => { if (!ok) failed++; console.log(`${ok ? 'PASS' : 'FAIL'} ${name}${info !== undefined ? ' — ' + (typeof info === 'string' ? info : JSON.stringify(info)) : ''}`); };
+const check = (name, ok, info) => { if (fpsSkip(name, ok, info)) return; if (!ok) failed++; console.log(`${ok ? 'PASS' : 'FAIL'} ${name}${info !== undefined ? ' — ' + (typeof info === 'string' ? info : JSON.stringify(info)) : ''}`); };
 const until = (fn, ms) => t.eval(([src, ms]) => new Promise(r => { const f = new Function('return (' + src + ')()'); const t0 = performance.now(); (function g() { let v; try { v = f(); } catch { v = null; } if (v || performance.now() - t0 > ms) r(v); else requestAnimationFrame(g); })(); }), [fn.toString(), ms]);
 const fps = ms => t.eval(ms => new Promise(r => { let n = 0; const t0 = performance.now(); (function f() { n++; if (performance.now() - t0 < ms) requestAnimationFrame(f); else r(Math.round(n / (ms / 1000))); })(); }), ms);
 
@@ -40,7 +40,7 @@ const api = await t.eval(() => {
 });
 const places = ['bank', 'police', 'hospital', 'gunshop', 'bar', 'apartment', 'hideout'], gens = ['store', 'lobby', 'office', 'warehouse', 'club', 'diner'];
 check('every place has a door (no doors for the spray and crusher pads)', places.every(k => api.types[k] === 1) && !api.spray, api.types);
-check('about one building in four gets a generic door of all six kinds', gens.every(k => api.types[k] >= 3) && api.gen > api.eligible * 0.12 && api.gen < api.eligible * 0.3, { gen: api.gen, eligible: api.eligible });
+check('most buildings get a door (every street-facing one), with many themes besides the six basic kinds', gens.every(k => api.types[k] >= 3) && api.gen > api.eligible * 0.7 && Object.keys(api.types).length >= 40, { gen: api.gen, eligible: api.eligible, themes: Object.keys(api.types).length });
 check('doors stand on free pavement', api.bad === 0, api.bad);
 check('X.interiors.bank ready from the start', api.bank && api.cash > 10000 && !api.alarm && !api.open, api);
 

@@ -6,13 +6,13 @@
 // Usage: node tests/engine.test.mjs <built.html> <shotDir>
 import path from 'node:path';
 import fs from 'node:fs';
-import { launch } from './harness.mjs';
+import { launch, fpsSkip } from './harness.mjs';
 
 const html = path.resolve(process.argv[2] || 'Take_the_Bus_Drift.html');
 const out = path.resolve(process.argv[3] || '/tmp/gta-shots/engine');
 fs.mkdirSync(out, { recursive: true });
 let fails = 0;
-const check = (name, ok, info) => { console.log((ok ? 'PASS ' : 'FAIL ') + name + (info !== undefined ? '  ' + (typeof info === 'string' ? info : JSON.stringify(info)) : '')); if (!ok) fails++; };
+const check = (name, ok, info) => { if (fpsSkip(name, ok, info)) return; console.log((ok ? 'PASS ' : 'FAIL ') + name + (info !== undefined ? '  ' + (typeof info === 'string' ? info : JSON.stringify(info)) : '')); if (!ok) fails++; };
 
 // ---------------------------------------------------------------- title screen
 const t = await launch({ html, out, start: false });

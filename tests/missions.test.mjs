@@ -2,11 +2,12 @@
 // with teleports (plus fail paths: wrecked car, timer, wasted), odd jobs after the story, persistence after
 // a page reload, a second game, fps in a busy scenario and screenshots of the visuals.
 // Usage: node tests/missions.test.mjs <built.html> <shotDir>
-import { launch } from './harness.mjs';
+import { launch, fpsSkip } from './harness.mjs';
 
 const html = process.argv[2], out = process.argv[3] || '/tmp/gta-shots/missions';
 let fails = 0;
 const ok = (name, cond, info) => {
+  if (fpsSkip(name, cond, info)) return;
   console.log((cond ? 'PASS ' : 'FAIL ') + name + (info !== undefined ? ' ' + (typeof info === 'string' ? info : JSON.stringify(info)) : ''));
   if (!cond) fails++;
 };

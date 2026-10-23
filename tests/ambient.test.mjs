@@ -7,10 +7,10 @@
 // flying, petting a cat, seagulls over Old Pier, the train passes, audio voices stop on pause and mute,
 // the quality governor, a second game, and fps in a busy storm.
 // Usage: node tests/ambient.test.mjs <built.html> <screenshot dir>
-import { launch } from './harness.mjs';
+import { launch, fpsSkip } from './harness.mjs';
 const t = await launch({ html: process.argv[2], out: process.argv[3] });
 let failed = 0;
-const check = (name, ok, info) => { if (!ok) failed++; console.log(`${ok ? 'PASS' : 'FAIL'} ${name}${info !== undefined ? ' — ' + (typeof info === 'string' ? info : JSON.stringify(info)) : ''}`); };
+const check = (name, ok, info) => { if (fpsSkip(name, ok, info)) return; if (!ok) failed++; console.log(`${ok ? 'PASS' : 'FAIL'} ${name}${info !== undefined ? ' — ' + (typeof info === 'string' ? info : JSON.stringify(info)) : ''}`); };
 const snap = async name => { await t.eval(() => { PG.game.status = 'freeze'; }); await t.wait(150); await t.shot(name); await t.eval(() => { PG.game.status = 'play'; }); };
 const until = (fn, ms) => t.eval(([src, ms]) => new Promise(r => { const f = new Function('return (' + src + ')()'); const t0 = performance.now(); (function g() { let v; try { v = f(); } catch (e) { v = null; } if (v || performance.now() - t0 > ms) r(v); else requestAnimationFrame(g); })(); }), [fn.toString(), ms]);
 

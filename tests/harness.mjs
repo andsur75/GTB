@@ -9,6 +9,14 @@ import fs from 'node:fs';
 const pwPath = execSync('npm root -g').toString().trim() + '/playwright/index.js';
 const pw = await import(pwPath); const chromium = pw.chromium || pw.default.chromium;
 
+let softwareGL = null;
+// A frame-rate check (name mentions fps) on a machine without a graphics card is reported as SKIP, not FAIL:
+// call first thing in a test's check(); true means it was handled.
+export function fpsSkip(name, ok, info) {
+  if (ok || !softwareGL || !/fps/i.test(String(name))) return false;
+  console.log(`SKIP ${name} (software WebGL: ${softwareGL})${info !== undefined ? ' ' + (typeof info === 'string' ? info : JSON.stringify(info)) : ''}`);
+  return true;
+}
 export async function launch(o = {}) {
   const html = path.resolve(o.html || 'Take_the_Bus_Drift.html');
   const outDir = path.resolve(o.out || '/tmp/gta-shots');
@@ -22,6 +30,8 @@ export async function launch(o = {}) {
   await page.evaluate(() => localStorage.setItem('ttb.v1', JSON.stringify({ nick: 'Tester', gtaIntroSeen: true, muted: true })));
   await page.reload();
   await page.waitForTimeout(400);
+  // No graphics card (SwiftShader, llvmpipe): WebGL runs on the CPU and every frame-rate check measures that.
+  if (softwareGL === null) softwareGL = await page.evaluate(() => { const g = document.createElement('canvas').getContext('webgl'); if (!g) return 'no WebGL'; const e = g.getExtension('WEBGL_debug_renderer_info'), r = String(e ? g.getParameter(e.UNMASKED_RENDERER_WEBGL) : g.getParameter(g.RENDERER)); return /swiftshader|llvmpipe|software|basic render/i.test(r) ? r : ''; });
   if (o.start !== false) {
     await page.click('#btn-gta');
     await page.waitForSelector('#scr-ready:not([hidden])', { timeout: 8000 });

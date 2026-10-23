@@ -6,10 +6,10 @@
 // sequences at street zoom and zoomed in. Also: keyboard square-up, stomps on people who are down (punches pass
 // over them), trading blows with a mashing player, and a punch that never lands when its thrower is sent flying.
 // Usage: node tests/brawl.test.mjs <built.html> <screenshot dir>
-import { launch } from './harness.mjs';
+import { launch, fpsSkip } from './harness.mjs';
 const t = await launch({ html: process.argv[2], out: process.argv[3] });
 let fails = 0;
-const check = (name, ok, info) => { console.log(`${ok ? 'PASS' : 'FAIL'} ${name}${info !== undefined ? ' ' + JSON.stringify(info) : ''}`); if (!ok) fails++; };
+const check = (name, ok, info) => { if (fpsSkip(name, ok, info)) return; console.log(`${ok ? 'PASS' : 'FAIL'} ${name}${info !== undefined ? ' ' + JSON.stringify(info) : ''}`); if (!ok) fails++; };
 const snap = name => t.shot('brawl-' + name);
 const frames = n => t.eval(k => new Promise(r => { let i = 0; (function f() { if (++i >= k) r(); else requestAnimationFrame(f); })(); }), n);
 

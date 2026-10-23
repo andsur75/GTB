@@ -2,10 +2,10 @@
 // door from the far side (never through it); the frame loop's stats and the settings it honours (traffic, decals)
 // are wired. Works with core alone or with every module.
 // Usage: node tests/core.test.mjs <built.html> <screenshot dir>
-import { launch } from './harness.mjs';
+import { launch, fpsSkip } from './harness.mjs';
 const t = await launch({ html: process.argv[2], out: process.argv[3] });
 let fails = 0;
-const check = (name, ok, info) => { console.log(`${ok ? 'PASS' : 'FAIL'} ${name}${info !== undefined ? ' ' + JSON.stringify(info) : ''}`); if (!ok) fails++; };
+const check = (name, ok, info) => { if (fpsSkip(name, ok, info)) return; console.log(`${ok ? 'PASS' : 'FAIL'} ${name}${info !== undefined ? ' ' + JSON.stringify(info) : ''}`); if (!ok) fails++; };
 const until = async (fn, ms) => { const t0 = Date.now(); for (;;) { const r = await t.eval(fn); if (r || Date.now() - t0 > ms) return r; await t.wait(60); } };
 
 const s0 = await t.eval(() => { const X = PG.gta; return { mode: PG.game.mode, cars: X.cars.length, path: X.cars.filter(c => c.ctrl === 'path').length, parked: X.cars.filter(c => c.ctrl === 'parked').length, places: Object.keys(X.places), p: X.playerPos() }; });

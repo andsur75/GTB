@@ -4,10 +4,10 @@
 // retaliation and respect, corpse cleanup, crowd spacing, the X.drawPed lineup (with sound on), fps in a
 // busy scene, doors, horns and pointed guns, and a second game. Works with or without the other modules.
 // Usage: node tests/peds.test.mjs <built.html> <screenshot dir>
-import { launch } from './harness.mjs';
+import { launch, fpsSkip } from './harness.mjs';
 const t = await launch({ html: process.argv[2], out: process.argv[3] });
 let fails = 0;
-const check = (name, ok, info) => { console.log(`${ok ? 'PASS' : 'FAIL'} ${name}${info !== undefined ? ' ' + JSON.stringify(info) : ''}`); if (!ok) fails++; };
+const check = (name, ok, info) => { if (fpsSkip(name, ok, info)) return; console.log(`${ok ? 'PASS' : 'FAIL'} ${name}${info !== undefined ? ' ' + JSON.stringify(info) : ''}`); if (!ok) fails++; };
 const waitFor = async (fn, ms, arg) => { const t0 = Date.now(); for (;;) { const r = await t.eval(fn, arg); if (r || Date.now() - t0 > ms) return r; await t.wait(100); } };
 const snap = name => t.shot('peds-' + name);
 

@@ -3,10 +3,10 @@
 // helicopter gunners, water on fire pools, cop-car crimes, drop merging and caps, night glow, sound paths,
 // restart and fps in a busy firefight.
 // Usage: node tests/weapons.test.mjs <built.html> <screenshot dir>
-import { launch } from './harness.mjs';
+import { launch, fpsSkip } from './harness.mjs';
 const t = await launch({ html: process.argv[2], out: process.argv[3] });
 let failed = 0;
-const check = (name, ok, info) => { if (!ok) failed++; console.log(`${ok ? 'PASS' : 'FAIL'} ${name}${info !== undefined ? ' — ' + (typeof info === 'string' ? info : JSON.stringify(info)) : ''}`); };
+const check = (name, ok, info) => { if (fpsSkip(name, ok, info)) return; if (!ok) failed++; console.log(`${ok ? 'PASS' : 'FAIL'} ${name}${info !== undefined ? ' — ' + (typeof info === 'string' ? info : JSON.stringify(info)) : ''}`); };
 const frames = n => t.eval(k => new Promise(r => { let i = 0; (function f() { if (++i >= k) r(); else requestAnimationFrame(f); })(); }), n);
 // freeze the simulation (render keeps going) so short-lived effects can be photographed
 const snap = async name => { await t.eval(() => { PG.game.status = 'freeze'; }); await t.wait(120); await t.shot(name); await t.eval(() => { PG.game.status = 'play'; }); };

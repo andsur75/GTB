@@ -11,10 +11,10 @@
 // out at normal zoom and zoomed in, a carjack, the bus, the tank, vans with everything open.
 // Works with the full build and with core + doors only.
 // Usage: node tests/doors.test.mjs <built.html> <screenshot dir>
-import { launch } from './harness.mjs';
+import { launch, fpsSkip } from './harness.mjs';
 const t = await launch({ html: process.argv[2], out: process.argv[3] });
 let fails = 0;
-const check = (name, ok, info) => { console.log(`${ok ? 'PASS' : 'FAIL'} ${name}${info !== undefined ? ' ' + JSON.stringify(info) : ''}`); if (!ok) fails++; };
+const check = (name, ok, info) => { if (fpsSkip(name, ok, info)) return; console.log(`${ok ? 'PASS' : 'FAIL'} ${name}${info !== undefined ? ' ' + JSON.stringify(info) : ''}`); if (!ok) fails++; };
 const r2 = v => Math.round(v * 100) / 100;
 
 // ---- in-page helpers (on window: they survive a second game) ----

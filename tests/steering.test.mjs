@@ -1,10 +1,10 @@
 // Mouse steering while the right button is held: hidden cursor, a world-locked marker that relative mouse motion swings round the car,
 // the car turning onto the marker direction and holding it, A/D winning over the mouse, cursor restored off the road.
-import { launch } from './harness.mjs';
+import { launch, fpsSkip } from './harness.mjs';
 const t = await launch({ html: process.argv[2], out: process.argv[3] });
 const wrap = a => Math.atan2(Math.sin(a), Math.cos(a));
 let failed = 0;
-const check = (ok, msg) => { console.log((ok ? 'PASS ' : 'FAIL ') + msg); if (!ok) failed++; };
+const check = (ok, msg) => { if (fpsSkip(msg, ok)) return; console.log((ok ? 'PASS ' : 'FAIL ') + msg); if (!ok) failed++; };
 await t.wait(800);
 await t.mouse(640, 300); await t.mouse(650, 300);
 // an X5 in the middle of the widest junction, heading east, the area cleared

@@ -6,11 +6,12 @@
 // shots), Vigilante (a fleeing suspect, boxed in and arrested, then wrecked without a wanted level), the job
 // vehicle blowing up, pause, fps while hosing, a second game and screenshots.
 // Usage: node tests/jobs.test.mjs <built.html> <screenshot dir>
-import { launch } from './harness.mjs';
+import { launch, fpsSkip } from './harness.mjs';
 
 const t = await launch({ html: process.argv[2], out: process.argv[3] });
 let fails = 0;
 const ok = (name, cond, info) => {
+  if (fpsSkip(name, cond, info)) return;
   console.log(`${cond ? 'PASS' : 'FAIL'} ${name}${info !== undefined ? ' ' + (typeof info === 'string' ? info : JSON.stringify(info)) : ''}`);
   if (!cond) fails++;
 };

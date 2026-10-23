@@ -4,10 +4,10 @@
 // shooting it down), stake-outs and raids indoors, radio, sirens (horn toggle, audio, pause), stealing a
 // cruiser, respray, a second game and fps in a big chase.
 // Usage: node tests/police.test.mjs <built.html> <screenshot dir>
-import { launch } from './harness.mjs';
+import { launch, fpsSkip } from './harness.mjs';
 const t = await launch({ html: process.argv[2], out: process.argv[3] });
 let failed = 0;
-const check = (name, ok, info) => { if (!ok) failed++; console.log(`${ok ? 'PASS' : 'FAIL'} ${name}${info !== undefined ? ' — ' + (typeof info === 'string' ? info : JSON.stringify(info)) : ''}`); };
+const check = (name, ok, info) => { if (fpsSkip(name, ok, info)) return; if (!ok) failed++; console.log(`${ok ? 'PASS' : 'FAIL'} ${name}${info !== undefined ? ' — ' + (typeof info === 'string' ? info : JSON.stringify(info)) : ''}`); };
 const snap = async name => { await t.eval(() => { PG.game.status = 'freeze'; }); await t.wait(120); await t.shot(name); await t.eval(() => { PG.game.status = 'play'; }); };
 // poll a condition inside the page every frame, up to ms; resolves with the last value
 const until = (fn, ms) => t.eval(([src, ms]) => new Promise(r => { const f = new Function('return (' + src + ')()'); const t0 = performance.now(); (function g() { let v; try { v = f(); } catch (e) { v = null; } if (v || performance.now() - t0 > ms) r(v); else requestAnimationFrame(g); })(); }), [fn.toString(), ms]);
