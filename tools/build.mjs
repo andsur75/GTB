@@ -28,6 +28,9 @@ const scripts = files.map(f => {
   if (src.includes('</script')) { console.error(f + '.js contains "</script"'); process.exit(1); }
   return `<script>\n// ---- gta/${f}.js ----\n${src.trimEnd()}\n</script>`;
 }).join('\n');
+// The title logo picture (tools/logo-maker.html makes it), when there is one, goes in as a data URI.
+const logoPng = path.join(root, 'src/assets/title-logo.png');
+const logo = fs.existsSync(logoPng) ? `<img class="logo-img" alt="" src="data:image/png;base64,${fs.readFileSync(logoPng).toString('base64')}">` : '';
 fs.mkdirSync(path.dirname(out), { recursive: true });
-fs.writeFileSync(out, base.replace(MARK, () => scripts));
+fs.writeFileSync(out, base.replace(MARK, () => scripts).replace('<!-- TITLE_LOGO -->', () => logo));
 console.log(`built ${path.relative(process.cwd(), out)} with [${files.join(', ')}] (${fs.statSync(out).size} bytes)`);

@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Logo Maker</title>
+<!--
+  Логотип для титульного экрана: «grand / theft / idea» шрифтом Pricedown, белые буквы, толстая чёрная обводка,
+  тень. Открой этот файл у себя в браузере (двойным щелчком), выбери скачанный файл шрифта — он читается прямо
+  с твоего диска и никуда не уходит, — и нажми «Сохранить PNG». Готовый title-logo.png положи в src/assets/
+  репозитория: сборка (tools/build.mjs) встроит его в игру вместо текстового логотипа.
+  Pricedown Black: https://www.dafont.com/pricedown.font (Typodermic Desktop License: логотипы и статичная
+  графика можно, встраивать сам шрифт в игру нельзя — поэтому картинка).
+-->
+<style>
+  :root { --bg: #111214; --panel: #1b1d21; --line: #2c2f35; --fg: #ece8dc; --muted: #9da3ab; --accent: #f4c20d; color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.4 system-ui, -apple-system, 'Segoe UI', sans-serif; }
+  main { max-width: 1100px; margin: 0 auto; padding: 20px 16px 40px; display: grid; grid-template-columns: minmax(0, 330px) minmax(0, 1fr); gap: 18px; }
+  @media (max-width: 760px) { main { grid-template-columns: 1fr; } }
+  h1 { grid-column: 1 / -1; margin: 0; font-size: 22px; }
+  h1 small { display: block; font-size: 14px; font-weight: 400; color: var(--muted); margin-top: 4px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+  label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
+  label b { color: var(--fg); font-weight: 600; font-size: 14px; }
+  .row { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+  output { color: var(--accent); font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  textarea, input[type=text] { background: #0c0d0f; color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 8px; font: 16px/1.3 ui-monospace, monospace; resize: vertical; }
+  .file { border: 2px dashed var(--line); border-radius: 8px; padding: 12px; text-align: center; color: var(--muted); }
+  .file.ok { border-color: #4fbf6a; color: #bfe8c9; }
+  button { font: 600 16px system-ui, sans-serif; padding: 10px 16px; border-radius: 8px; border: 0; background: var(--accent); color: #111; cursor: pointer; }
+  button:disabled { opacity: 0.45; cursor: default; }
+  button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .stage { background-color: #8fb3c9; background-image: linear-gradient(45deg, #7aa0b8 25%, transparent 25%, transparent 75%, #7aa0b8 75%), linear-gradient(45deg, #7aa0b8 25%, transparent 25%, transparent 75%, #7aa0b8 75%);
+    background-size: 24px 24px; background-position: 0 0, 12px 12px; border-radius: 10px; padding: 16px; display: grid; place-items: center; min-height: 360px; overflow: auto; }
+  .stage canvas { max-width: 100%; height: auto; display: block; }
+  .note { font-size: 13px; color: var(--muted); margin: 0; }
+  .note a { color: var(--accent); }
+  .warn { color: #ffb02e; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Логотип для титульного экрана<small>Pricedown с твоего диска → PNG с прозрачным фоном → <code>src/assets/title-logo.png</code></small></h1>
+  <section class="panel" aria-label="Настройки">
+    <label class="file" id="drop" for="font">
+      <b>1. Файл шрифта</b>
+      <span id="font-state">Выбери Pricedown (.otf / .ttf) — скачай с <a href="https://www.dafont.com/pricedown.font" target="_blank" rel="noopener">dafont.com/pricedown.font</a></span>
+      <input type="file" id="font" accept=".otf,.ttf,.woff,.woff2,font/*">
+    </label>
+    <label><b>2. Текст (строка = строка логотипа)</b><textarea id="text" rows="3">grand
+theft
+idea</textarea></label>
+    <label><span class="row"><b>Размер букв</b><output id="o-size"></output></span><input type="range" id="size" min="80" max="400" step="5" value="240"></label>
+    <label><span class="row"><b>Межстрочный</b><output id="o-lead"></output></span><input type="range" id="lead" min="0.6" max="1.2" step="0.01" value="0.82"></label>
+    <label><span class="row"><b>Между буквами</b><output id="o-track"></output></span><input type="range" id="track" min="-0.1" max="0.1" step="0.005" value="-0.01"></label>
+    <label><span class="row"><b>Обводка</b><output id="o-stroke"></output></span><input type="range" id="stroke" min="0" max="0.3" step="0.005" value="0.12"></label>
+    <label><span class="row"><b>Тень</b><output id="o-shadow"></output></span><input type="range" id="shadow" min="0" max="0.15" step="0.005" value="0.05"></label>
+    <label><span class="row"><b>Сжатие по ширине</b><output id="o-squeeze"></output></span><input type="range" id="squeeze" min="0.7" max="1.1" step="0.01" value="1"></label>
+    <button id="save" disabled>3. Сохранить PNG</button>
+    <p class="note" id="msg">Шрифт читается только в этой вкладке и никуда не отправляется.</p>
+  </section>
+  <section class="stage" aria-label="Предпросмотр"><canvas id="cv" width="10" height="10"></canvas></section>
+</main>
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const cv = $('cv'), g = cv.getContext('2d');
+  const ctl = ['size', 'lead', 'track', 'stroke', 'shadow', 'squeeze'];
+  const fmt = { size: v => v + ' px', lead: v => (+v).toFixed(2), track: v => (+v).toFixed(3) + ' em', stroke: v => (+v).toFixed(3) + ' em', shadow: v => (+v).toFixed(3) + ' em', squeeze: v => Math.round(v * 100) + '%' };
+  let family = null;   // the loaded font's family name
+
+  async function useFont(file) {
+    const st = $('font-state');
+    try {
+      const face = new FontFace('LogoFont', await file.arrayBuffer());
+      await face.load(); document.fonts.add(face);
+      family = 'LogoFont';
+      st.textContent = '✓ ' + file.name; $('drop').classList.add('ok'); $('save').disabled = false;
+      $('msg').textContent = 'Готово. Подкрути ползунки и сохрани PNG.'; $('msg').className = 'note';
+      draw();
+    } catch (e) {
+      family = null; $('save').disabled = true; $('drop').classList.remove('ok');
+      st.textContent = 'Не получилось прочитать этот файл как шрифт. Нужен .otf или .ttf.';
+    }
+  }
+  $('font').addEventListener('change', e => { const f = e.target.files && e.target.files[0]; if (f) useFont(f); });
+  const drop = $('drop');
+  ['dragover', 'dragenter'].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); }));
+  drop.addEventListener('drop', e => { e.preventDefault(); const f = e.dataTransfer.files && e.dataTransfer.files[0]; if (f) useFont(f); });
+
+  function val(id) { return +$(id).value; }
+  function draw() {
+    for (const id of ctl) $('o-' + id).textContent = fmt[id]($(id).value);
+    const lines = $('text').value.split('\n').map(s => s.trim()).filter(Boolean);
+    const size = val('size'), lead = val('lead'), track = val('track'), stroke = val('stroke') * size, sh = val('shadow') * size, sq = val('squeeze');
+    const font = '400 ' + size + 'px ' + (family ? 'LogoFont' : "'Pricedown Bl', 'Pricedown', Impact, sans-serif");
+    // measure on a scratch context
+    g.font = font; if ('letterSpacing' in g) g.letterSpacing = (track * size) + 'px';
+    const widths = lines.map(l => g.measureText(l).width * sq);
+    const pad = Math.ceil(stroke + sh + size * 0.1), lineH = size * lead;
+    const W = Math.ceil(Math.max(1, ...widths) + pad * 2), H = Math.ceil(lineH * (lines.length - 1) + size * 1.05 + pad * 2);
+    cv.width = W; cv.height = H;
+    g.clearRect(0, 0, W, H);
+    g.font = font; if ('letterSpacing' in g) g.letterSpacing = (track * size) + 'px';
+    g.textAlign = 'center'; g.textBaseline = 'alphabetic'; g.lineJoin = 'round'; g.miterLimit = 2;
+    const base = i => pad + size * 0.82 + i * lineH;
+    // shadow and outline in one black pass, then the white letters
+    for (let pass = 0; pass < 2; pass++) lines.forEach((l, i) => {
+      g.save(); g.translate(W / 2, base(i)); g.scale(sq, 1);
+      if (pass === 0) {
+        g.fillStyle = g.strokeStyle = '#050505'; g.lineWidth = stroke * 2;
+        if (sh) { g.save(); g.translate(sh * 0.6 / sq, sh); if (stroke) g.strokeText(l, 0, 0); g.fillText(l, 0, 0); g.restore(); }
+        if (stroke) g.strokeText(l, 0, 0);
+      } else { g.fillStyle = '#ffffff'; g.fillText(l, 0, 0); }
+      g.restore();
+    });
+    if (!family) { $('msg').innerHTML = '<span class="warn">Шрифт не выбран: показан запасной.</span> Выбери файл Pricedown, и сохранение включится.'; }
+  }
+  for (const id of ctl) $(id).addEventListener('input', draw);
+  $('text').addEventListener('input', draw);
+  $('save').addEventListener('click', () => {
+    cv.toBlob(b => {
+      const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = 'title-logo.png';
+      document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+      $('msg').textContent = 'Сохранено: title-logo.png (' + cv.width + '×' + cv.height + '). Положи его в src/assets/ и пересобери игру.';
+    }, 'image/png');
+  });
+  draw();
+})();
+</script>
+</body>
+</html>

@@ -1839,7 +1839,7 @@ body.fps-on #gta-hud .g-tl { top: calc(40px + env(safe-area-inset-top, 0px)); }
   };
 
   PG.GTA_DEF = {
-    id: 'GTA', mode: 'gta', name: 'Grand Theft Auto: Ice City', zone: 'Free roam',
+    id: 'GTA', mode: 'gta', name: 'Grand Theft Idea: Ice City', zone: 'Free roam',
     intro: 'A whole city that nobody planned, at night. Steal anything with wheels, answer the ringing phones for work, and stay off the police radio. Or do not.',
     goal: 'WASD move · F get in or out / doors · Mouse or Ctrl (or Space on foot) fires · Q/E or 1-9 weapons · Shift sprint / full throttle · Space handbrake · H horn · C camera · hold Tab for the big map',
     introLines: [
